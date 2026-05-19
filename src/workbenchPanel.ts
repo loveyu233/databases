@@ -2145,7 +2145,7 @@ export class DatabaseWorkbenchPanel {
     .ai-timeline-actions { display: flex; flex-wrap: wrap; gap: 7px; }
     .ai-timeline-actions button { padding: 5px 8px; font-size: 11px; }
 
-    .result-area { position: relative; min-height: 0; overflow: hidden; display: grid; grid-template-rows: auto minmax(0, 1fr); align-self: stretch; }
+    .result-area { position: relative; min-width: 0; min-height: 0; overflow: hidden; display: grid; grid-template-rows: auto minmax(0, 1fr); align-self: stretch; }
     .status { min-height: 37px; padding: 7px 22px; border-bottom: 1px solid var(--line); color: var(--muted); font-size: 12px; display: flex; align-items: center; gap: 12px; }
     .status-text { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .status-actions { margin-left: auto; display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex: 0 0 auto; }
@@ -2153,7 +2153,7 @@ export class DatabaseWorkbenchPanel {
     .hidden { display: none !important; }
     .status strong { color: var(--ok); }
     .status.error { color: var(--danger); }
-    .grid-scroll { min-height: 0; overflow: auto; }
+    .grid-scroll { min-width: 0; max-width: 100%; min-height: 0; overflow: auto; }
     .grid-scroll.has-pager { padding-bottom: 58px; scroll-padding-bottom: 58px; }
     .pager {
       display: none;
@@ -2183,9 +2183,10 @@ export class DatabaseWorkbenchPanel {
     .pager button:disabled { cursor: not-allowed; opacity: .45; }
     .pager-ellipsis { color: var(--muted); padding: 0 2px; }
     table { width: 100%; border-collapse: separate; border-spacing: 0; font-family: var(--mono); font-size: 12px; }
-    .data-table { font-size: var(--data-table-font-size); }
+    .data-table { width: max-content; min-width: 100%; font-size: var(--data-table-font-size); }
     th { position: sticky; top: 0; z-index: 2; text-align: center; color: var(--fg); background: var(--panel-2); border-bottom: 1px solid var(--line); }
     th, td { height: 33px; padding: 0 10px; border-bottom: 1px solid rgba(127,127,127,.18); white-space: nowrap; max-width: 420px; overflow: hidden; text-overflow: ellipsis; }
+    .data-table th, .data-table td { min-width: 120px; }
     td { text-align: center; }
     .insert-row td { background: rgba(115, 201, 145, .08); border-bottom-color: rgba(115, 201, 145, .28); }
     .data-row.selected-row td {
