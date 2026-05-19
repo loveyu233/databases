@@ -2183,10 +2183,32 @@ export class DatabaseWorkbenchPanel {
     .pager button:disabled { cursor: not-allowed; opacity: .45; }
     .pager-ellipsis { color: var(--muted); padding: 0 2px; }
     table { width: 100%; border-collapse: separate; border-spacing: 0; font-family: var(--mono); font-size: 12px; }
-    .data-table { width: max-content; min-width: 100%; font-size: var(--data-table-font-size); }
+    .data-table { width: max-content; min-width: max(100%, calc(var(--column-count, 1) * 120px)); font-size: var(--data-table-font-size); }
     th { position: sticky; top: 0; z-index: 2; text-align: center; color: var(--fg); background: var(--panel-2); border-bottom: 1px solid var(--line); }
     th, td { height: 33px; padding: 0 10px; border-bottom: 1px solid rgba(127,127,127,.18); white-space: nowrap; max-width: 420px; overflow: hidden; text-overflow: ellipsis; }
     .data-table th, .data-table td { min-width: 120px; }
+    .table-x-scroll-row { display: none; }
+    .grid-scroll.wide-table .table-x-scroll-row { display: table-row; }
+    .table-x-scroll-row th {
+      top: var(--result-header-height, 33px);
+      z-index: 3;
+      height: 16px;
+      min-width: 0;
+      max-width: none;
+      padding: 0;
+      overflow: visible;
+      border-bottom: 1px solid var(--line);
+      background: var(--panel-2);
+    }
+    .table-x-scroll {
+      position: sticky;
+      left: 0;
+      height: 16px;
+      overflow-x: auto;
+      overflow-y: hidden;
+      scrollbar-gutter: stable;
+    }
+    .table-x-scroll-inner { height: 1px; }
     td { text-align: center; }
     .insert-row td { background: rgba(115, 201, 145, .08); border-bottom-color: rgba(115, 201, 145, .28); }
     .data-row.selected-row td {
@@ -3446,6 +3468,8 @@ export class DatabaseWorkbenchPanel {
     const statusText = $("#statusText");
     const result = $("#result");
     const pager = $("#pager");
+    let syncingTableHorizontalScroll = false;
+    let resultHorizontalResizeObserver = null;
 	    const exportOverlay = $("#exportOverlay");
 	    const exportDialog = $("#exportDialog");
 	    const exportRowLimitInput = $("#exportRowLimitInput");
@@ -6752,6 +6776,7 @@ export class DatabaseWorkbenchPanel {
 
     function renderResultTable(queryResult, rowsToRender) {
       hideRowContextMenu();
+      teardownResultHorizontalScrollbar();
       const allColumns = mergeColumns(state.quickInsert.active ? getSchemaColumnNames() : [], queryResult.columns || []);
       const columns = getVisibleColumns(allColumns);
       setStatus(buildResultStatus(queryResult), false, true);
@@ -6791,7 +6816,8 @@ export class DatabaseWorkbenchPanel {
         const title = copyable ? displayValue + "\\n双击复制到剪贴板" : displayValue;
         return '<td class="data-cell ' + (editable ? 'editable-cell' : '') + (inspectable ? ' inspectable-cell' : '') + (copyable ? ' copyable-cell' : '') + (pending ? ' pending-cell' : '') + '" data-row-index="' + entry.index + '" data-column="' + escapeHtml(column) + '" title="' + escapeHtml(title) + '"><span class="cell-value">' + renderCellDisplayValue(displayValue) + '</span></td>';
       }).join("") + '</tr>').join("");
-      result.innerHTML = '<table class="data-table"><thead><tr>' + head + '</tr></thead><tbody>' + body + '</tbody></table>';
+      result.innerHTML = '<table class="data-table" style="--column-count: ' + columns.length + '"><thead><tr class="data-header-row">' + head + '</tr><tr class="table-x-scroll-row"><th colspan="' + columns.length + '"><div class="table-x-scroll" aria-label="横向滚动查看更多字段"><div class="table-x-scroll-inner"></div></div></th></tr></thead><tbody>' + body + '</tbody></table>';
+      setupResultHorizontalScrollbar();
       if (sortableHeaders) {
         result.querySelectorAll(".sort-header").forEach((button) => {
           button.addEventListener("click", () => {
@@ -6817,6 +6843,59 @@ export class DatabaseWorkbenchPanel {
         cell.addEventListener("mousedown", (event) => startRowSelection(event, cell));
         cell.addEventListener("mouseenter", () => extendRowSelection(cell));
       });
+    }
+
+    function teardownResultHorizontalScrollbar() {
+      if (resultHorizontalResizeObserver) {
+        resultHorizontalResizeObserver.disconnect();
+        resultHorizontalResizeObserver = null;
+      }
+      result.classList.remove("wide-table");
+      result.onscroll = null;
+      result.style.removeProperty("--result-header-height");
+    }
+
+    function setupResultHorizontalScrollbar() {
+      const table = result.querySelector(".data-table");
+      const scrollbar = result.querySelector(".table-x-scroll");
+      const scrollbarInner = result.querySelector(".table-x-scroll-inner");
+      if (!table || !scrollbar || !scrollbarInner) {
+        teardownResultHorizontalScrollbar();
+        return;
+      }
+
+      const syncScrollbarSize = () => {
+        const headerHeight = table.querySelector(".data-header-row")?.getBoundingClientRect().height || 33;
+        const tableWidth = table.scrollWidth;
+        const viewportWidth = result.clientWidth;
+        result.style.setProperty("--result-header-height", headerHeight + "px");
+        scrollbar.style.width = Math.max(0, viewportWidth) + "px";
+        scrollbarInner.style.width = tableWidth + "px";
+        result.classList.toggle("wide-table", tableWidth > viewportWidth + 1);
+        if (scrollbar.scrollLeft !== result.scrollLeft) {
+          scrollbar.scrollLeft = result.scrollLeft;
+        }
+      };
+
+      syncScrollbarSize();
+      requestAnimationFrame(syncScrollbarSize);
+      if (typeof ResizeObserver !== "undefined") {
+        resultHorizontalResizeObserver = new ResizeObserver(syncScrollbarSize);
+        resultHorizontalResizeObserver.observe(result);
+        resultHorizontalResizeObserver.observe(table);
+      }
+      scrollbar.addEventListener("scroll", () => {
+        if (syncingTableHorizontalScroll) return;
+        syncingTableHorizontalScroll = true;
+        result.scrollLeft = scrollbar.scrollLeft;
+        syncingTableHorizontalScroll = false;
+      });
+      result.onscroll = () => {
+        if (syncingTableHorizontalScroll) return;
+        syncingTableHorizontalScroll = true;
+        scrollbar.scrollLeft = result.scrollLeft;
+        syncingTableHorizontalScroll = false;
+      };
     }
 
     function renderQuickInsertRow(columns) {
