@@ -1,0 +1,14 @@
+.vscode/**
+.vscode-test/**
+.license-private/**
+.git/**
+.jj/**
+src/**
+tests/**
+tools/**
+.gitignore
+.DS_Store
+**/*.map
+*.vsix
+tsconfig.json
+node_modules/**/.bin/**

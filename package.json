@@ -1,0 +1,709 @@
+{
+  "name": "loveyu-database-workbench",
+  "displayName": "Database Workbench",
+  "description": "在 VS Code 中管理 MySQL、PostgreSQL、Redis、Elasticsearch，并通过 AI 生成查询。",
+  "version": "1.0.7",
+  "publisher": "loveyu",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/loveyu233/databases.git"
+  },
+  "homepage": "https://github.com/loveyu233/databases",
+  "bugs": {
+    "url": "https://github.com/loveyu233/databases/issues"
+  },
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Data Science",
+    "AI",
+    "Other"
+  ],
+  "keywords": [
+    "database",
+    "sql",
+    "mysql",
+    "postgresql",
+    "redis",
+    "elasticsearch",
+    "ai"
+  ],
+  "activationEvents": [
+    "onView:databaseWorkbench.connections",
+    "onCommand:databaseWorkbench.addConnection",
+    "onCommand:databaseWorkbench.refresh",
+    "onCommand:databaseWorkbench.refreshNode",
+    "onCommand:databaseWorkbench.openDatabase",
+    "onCommand:databaseWorkbench.editConnection",
+    "onCommand:databaseWorkbench.deleteConnection",
+    "onCommand:databaseWorkbench.testConnection",
+    "onCommand:databaseWorkbench.configureAi",
+    "onCommand:databaseWorkbench.testAiConfig",
+    "onCommand:databaseWorkbench.filterDatabases",
+    "onCommand:databaseWorkbench.createResource",
+    "onCommand:databaseWorkbench.openTable",
+    "onCommand:databaseWorkbench.editDatabase",
+    "onCommand:databaseWorkbench.deleteDatabase",
+    "onCommand:databaseWorkbench.addTable",
+    "onCommand:databaseWorkbench.copyDatabaseSchema",
+    "onCommand:databaseWorkbench.openQueryConsole",
+    "onCommand:databaseWorkbench.compareSchema",
+    "onCommand:databaseWorkbench.editTable",
+    "onCommand:databaseWorkbench.deleteTable",
+    "onCommand:databaseWorkbench.showMachineCode",
+    "onCommand:databaseWorkbench.activatePro",
+    "onCommand:databaseWorkbench.deactivateProForTesting",
+    "onCommand:databaseWorkbench.showProStatus",
+    "onCommand:databaseWorkbench.showAddMenu",
+    "onCommand:databaseWorkbench.addGroup",
+    "onCommand:databaseWorkbench.renameGroup",
+    "onCommand:databaseWorkbench.changeGroupColor",
+    "onCommand:databaseWorkbench.deleteGroup",
+    "onCommand:databaseWorkbench.exportConnections",
+    "onCommand:databaseWorkbench.addConnectionToGroup",
+    "onCommand:databaseWorkbench.pinNode",
+    "onCommand:databaseWorkbench.unpinNode"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "databaseWorkbench.addConnection",
+        "title": "Database Workbench: 添加数据库连接",
+        "icon": "$(add)"
+      },
+      {
+        "command": "databaseWorkbench.refresh",
+        "title": "Database Workbench: 刷新连接树",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "databaseWorkbench.refreshNode",
+        "title": "刷新",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "databaseWorkbench.openDatabase",
+        "title": "Database Workbench: 打开数据库",
+        "icon": "$(database)"
+      },
+      {
+        "command": "databaseWorkbench.openTable",
+        "title": "Database Workbench: 查看表信息",
+        "icon": "$(table)"
+      },
+      {
+        "command": "databaseWorkbench.editConnection",
+        "title": "修改连接",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "databaseWorkbench.deleteConnection",
+        "title": "删除连接",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "databaseWorkbench.testConnection",
+        "title": "Database Workbench: 测试连接",
+        "icon": "$(plug)"
+      },
+      {
+        "command": "databaseWorkbench.configureAi",
+        "title": "Database Workbench: 配置 AI",
+        "icon": "$(gear)"
+      },
+      {
+        "command": "databaseWorkbench.testAiConfig",
+        "title": "Database Workbench: 测试 AI 配置",
+        "icon": "$(beaker)"
+      },
+      {
+        "command": "databaseWorkbench.filterDatabases",
+        "title": "筛选显示数据库/DB/索引",
+        "icon": "$(filter)"
+      },
+      {
+        "command": "databaseWorkbench.createResource",
+        "title": "创建",
+        "icon": "$(add)"
+      },
+      {
+        "command": "databaseWorkbench.editDatabase",
+        "title": "修改数据库",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "databaseWorkbench.deleteDatabase",
+        "title": "删除数据库",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "databaseWorkbench.addTable",
+        "title": "添加表",
+        "icon": "$(add)"
+      },
+      {
+        "command": "databaseWorkbench.copyDatabaseSchema",
+        "title": "复制表结构",
+        "icon": "$(copy)"
+      },
+      {
+        "command": "databaseWorkbench.openQueryConsole",
+        "title": "查询控制台",
+        "icon": "$(terminal)"
+      },
+      {
+        "command": "databaseWorkbench.compareSchema",
+        "title": "对比表结构",
+        "icon": "$(diff)"
+      },
+      {
+        "command": "databaseWorkbench.editTable",
+        "title": "修改表结构",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "databaseWorkbench.deleteTable",
+        "title": "删除表",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "databaseWorkbench.showMachineCode",
+        "title": "Database Workbench: 显示机器码",
+        "icon": "$(key)"
+      },
+      {
+        "command": "databaseWorkbench.activatePro",
+        "title": "Database Workbench: 激活 Pro",
+        "icon": "$(unlock)"
+      },
+      {
+        "command": "databaseWorkbench.deactivateProForTesting",
+        "title": "Database Workbench: 取消激活（测试使用）",
+        "icon": "$(debug-disconnect)"
+      },
+      {
+        "command": "databaseWorkbench.showProStatus",
+        "title": "Database Workbench: 查看 Pro 状态",
+        "icon": "$(verified)"
+      },
+      {
+        "command": "databaseWorkbench.showAddMenu",
+        "title": "Database Workbench: 添加",
+        "icon": "$(add)"
+      },
+      {
+        "command": "databaseWorkbench.addGroup",
+        "title": "Database Workbench: 添加分组",
+        "icon": "$(folder)"
+      },
+      {
+        "command": "databaseWorkbench.renameGroup",
+        "title": "修改分组名称",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "databaseWorkbench.changeGroupColor",
+        "title": "修改分组颜色",
+        "icon": "$(symbol-color)"
+      },
+      {
+        "command": "databaseWorkbench.deleteGroup",
+        "title": "删除分组",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "databaseWorkbench.exportConnections",
+        "title": "Database Workbench: 导出连接",
+        "icon": "$(export)"
+      },
+      {
+        "command": "databaseWorkbench.addConnectionToGroup",
+        "title": "添加数据库连接",
+        "icon": "$(add)"
+      },
+      {
+        "command": "databaseWorkbench.pinNode",
+        "title": "置顶",
+        "icon": "$(pinned)"
+      },
+      {
+        "command": "databaseWorkbench.unpinNode",
+        "title": "取消置顶",
+        "icon": "$(pinned)"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "databaseWorkbench",
+          "title": "数据库工作台",
+          "icon": "assets/activitybar.svg"
+        }
+      ]
+    },
+    "views": {
+      "databaseWorkbench": [
+        {
+          "id": "databaseWorkbench.connections",
+          "name": "连接与数据库",
+          "icon": "$(database)"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "databaseWorkbench.showAddMenu",
+          "when": "view == databaseWorkbench.connections",
+          "group": "navigation@0"
+        },
+        {
+          "command": "databaseWorkbench.exportConnections",
+          "when": "view == databaseWorkbench.connections",
+          "group": "navigation@1"
+        },
+        {
+          "command": "databaseWorkbench.refresh",
+          "when": "view == databaseWorkbench.connections",
+          "group": "navigation@2"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "databaseWorkbench.refreshNode",
+          "when": "view == databaseWorkbench.connections && viewItem =~ /databaseWorkbench\\.(connection|database|table)\\./",
+          "group": "navigation@0"
+        },
+        {
+          "command": "databaseWorkbench.filterDatabases",
+          "when": "view == databaseWorkbench.connections && viewItem =~ /databaseWorkbench\\.connection\\./",
+          "group": "inline@1"
+        },
+        {
+          "command": "databaseWorkbench.createResource",
+          "when": "view == databaseWorkbench.connections && viewItem =~ /databaseWorkbench\\.connection\\.(mysql|postgres|elasticsearch)/",
+          "group": "inline@2"
+        },
+        {
+          "command": "databaseWorkbench.filterDatabases",
+          "when": "view == databaseWorkbench.connections && viewItem == databaseWorkbench.databaseFilter",
+          "group": "inline@1"
+        },
+        {
+          "command": "databaseWorkbench.editConnection",
+          "when": "view == databaseWorkbench.connections && viewItem =~ /databaseWorkbench\\.connection\\./",
+          "group": "1_manage@1"
+        },
+        {
+          "command": "databaseWorkbench.deleteConnection",
+          "when": "view == databaseWorkbench.connections && viewItem =~ /databaseWorkbench\\.connection\\./",
+          "group": "1_manage@2"
+        },
+        {
+          "command": "databaseWorkbench.createResource",
+          "when": "view == databaseWorkbench.connections && viewItem =~ /databaseWorkbench\\.connection\\.(mysql|postgres|elasticsearch)/",
+          "group": "1_manage@3"
+        },
+        {
+          "command": "databaseWorkbench.editDatabase",
+          "when": "view == databaseWorkbench.connections && viewItem =~ /databaseWorkbench\\.database\\.(mysql|postgres)/",
+          "group": "1_manage@1"
+        },
+        {
+          "command": "databaseWorkbench.deleteDatabase",
+          "when": "view == databaseWorkbench.connections && viewItem =~ /databaseWorkbench\\.database\\.(mysql|postgres)/",
+          "group": "1_manage@2"
+        },
+        {
+          "command": "databaseWorkbench.addTable",
+          "when": "view == databaseWorkbench.connections && viewItem =~ /databaseWorkbench\\.database\\.(mysql|postgres)/",
+          "group": "1_manage@3"
+        },
+        {
+          "command": "databaseWorkbench.openQueryConsole",
+          "when": "view == databaseWorkbench.connections && viewItem =~ /databaseWorkbench\\.database\\.(mysql|postgres)/",
+          "group": "1_manage@4"
+        },
+        {
+          "command": "databaseWorkbench.copyDatabaseSchema",
+          "when": "view == databaseWorkbench.connections && viewItem =~ /databaseWorkbench\\.database\\.mysql\\./",
+          "group": "1_manage@5"
+        },
+        {
+          "command": "databaseWorkbench.compareSchema",
+          "when": "view == databaseWorkbench.connections && viewItem =~ /databaseWorkbench\\.database\\.(mysql|postgres)/",
+          "group": "1_manage@6"
+        },
+        {
+          "command": "databaseWorkbench.editTable",
+          "when": "view == databaseWorkbench.connections && viewItem =~ /databaseWorkbench\\.table\\.(mysql|postgres)/",
+          "group": "1_manage@1"
+        },
+        {
+          "command": "databaseWorkbench.deleteTable",
+          "when": "view == databaseWorkbench.connections && viewItem =~ /databaseWorkbench\\.table\\.(mysql|postgres)/",
+          "group": "1_manage@2"
+        },
+        {
+          "command": "databaseWorkbench.renameGroup",
+          "when": "view == databaseWorkbench.connections && viewItem =~ /databaseWorkbench\\.group\\./",
+          "group": "1_manage@1"
+        },
+        {
+          "command": "databaseWorkbench.changeGroupColor",
+          "when": "view == databaseWorkbench.connections && viewItem =~ /databaseWorkbench\\.group\\./",
+          "group": "1_manage@2"
+        },
+        {
+          "command": "databaseWorkbench.deleteGroup",
+          "when": "view == databaseWorkbench.connections && viewItem =~ /databaseWorkbench\\.group\\./",
+          "group": "1_manage@3"
+        },
+        {
+          "command": "databaseWorkbench.addConnectionToGroup",
+          "when": "view == databaseWorkbench.connections && viewItem =~ /databaseWorkbench\\.group\\./",
+          "group": "1_manage@0"
+        },
+        {
+          "command": "databaseWorkbench.pinNode",
+          "when": "view == databaseWorkbench.connections && viewItem =~ /databaseWorkbench\\.(group|connection|database|table)\\..*\\.unpinned$/",
+          "group": "navigation@1"
+        },
+        {
+          "command": "databaseWorkbench.unpinNode",
+          "when": "view == databaseWorkbench.connections && viewItem =~ /databaseWorkbench\\.(group|connection|database|table)\\..*\\.pinned$/",
+          "group": "navigation@1"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Database Workbench",
+      "properties": {
+        "databaseWorkbench.pro.machineCode": {
+          "type": "string",
+          "default": "",
+          "order": 0,
+          "markdownDescription": "Pro 离线授权机器码操作项。点击 [复制机器码](command:databaseWorkbench.showMachineCode) 会自动复制当前机器码到剪贴板；拿到作者发放的许可证后，可点击 [激活 Pro](command:databaseWorkbench.activatePro)。此设置项无需填写。"
+        },
+        "databaseWorkbench.ai.provider": {
+          "type": "string",
+          "default": "openai",
+          "order": 1,
+          "enum": [
+            "openai",
+            "anthropic",
+            "gemini",
+            "deepseek",
+            "qwen",
+            "doubao",
+            "zhipu",
+            "moonshot",
+            "baichuan",
+            "minimax",
+            "hunyuan",
+            "xai",
+            "perplexity",
+            "cohere",
+            "nvidia",
+            "mistral",
+            "openrouter",
+            "siliconflow",
+            "groq",
+            "together",
+            "ollama",
+            "lmstudio",
+            "custom"
+          ],
+          "enumItemLabels": [
+            "OpenAI",
+            "Anthropic Claude",
+            "Google Gemini",
+            "DeepSeek",
+            "阿里云百炼 / 通义千问",
+            "火山方舟 / 豆包",
+            "智谱 GLM",
+            "Moonshot / Kimi",
+            "百川智能",
+            "MiniMax",
+            "腾讯混元",
+            "xAI Grok",
+            "Perplexity",
+            "Cohere",
+            "NVIDIA NIM",
+            "Mistral AI",
+            "OpenRouter",
+            "硅基流动 SiliconFlow",
+            "Groq",
+            "Together AI",
+            "Ollama 本地模型",
+            "LM Studio 本地模型",
+            "自定义 OpenAI 兼容"
+          ],
+          "markdownDescription": "AI 供应商。插件会按所选厂商走 OpenAI 兼容 Chat Completions 接口；选择后可运行 [配置 AI](command:databaseWorkbench.configureAi) 预填推荐 Base URL / 模型名称，再填写 API Key。配置完成后点击 [测试](command:databaseWorkbench.testAiConfig) 验证。",
+          "enumDescriptions": [
+            "OpenAI 官方 API",
+            "Anthropic OpenAI 兼容接口",
+            "Gemini OpenAI 兼容接口",
+            "DeepSeek OpenAI 兼容接口",
+            "DashScope OpenAI 兼容接口",
+            "Volcengine Ark OpenAI 兼容接口",
+            "智谱 OpenAI 兼容接口",
+            "Moonshot OpenAI 兼容接口",
+            "百川 OpenAI 兼容接口",
+            "MiniMax OpenAI 兼容接口",
+            "腾讯混元 OpenAI 兼容接口",
+            "xAI OpenAI 兼容接口",
+            "Perplexity OpenAI 兼容接口",
+            "Cohere OpenAI 兼容接口",
+            "NVIDIA NIM OpenAI 兼容接口",
+            "Mistral OpenAI 兼容接口",
+            "多模型聚合 OpenAI 兼容接口",
+            "SiliconFlow OpenAI 兼容接口",
+            "Groq OpenAI 兼容接口",
+            "Together OpenAI 兼容接口",
+            "Ollama OpenAI 兼容接口",
+            "LM Studio OpenAI 兼容接口",
+            "自定义网关、代理或企业内部模型服务"
+          ]
+        },
+        "databaseWorkbench.ai.useStream": {
+          "type": "boolean",
+          "default": true,
+          "order": 2,
+          "markdownDescription": "是否使用流式请求。开启后会发送 `stream: true`，适合要求流式响应的大模型服务。"
+        },
+        "databaseWorkbench.ai.baseUrl": {
+          "type": "string",
+          "default": "",
+          "order": 3,
+          "markdownDescription": "所选厂商的 OpenAI 兼容接口基础地址，例如 `https://api.openai.com/v1`、`https://api.deepseek.com`、`https://dashscope.aliyuncs.com/compatible-mode/v1`。"
+        },
+        "databaseWorkbench.ai.apiKey": {
+          "type": "string",
+          "default": "",
+          "order": 4,
+          "markdownDescription": "所选厂商的 API Key。配置完成后可运行命令 `Database Workbench: 测试 AI 配置` 发送 `hello` 验证。"
+        },
+        "databaseWorkbench.ai.modelName": {
+          "type": "string",
+          "default": "",
+          "order": 5,
+          "markdownDescription": "所选厂商的模型名称，例如 `gpt-4o-mini`、`deepseek-chat`、`qwen-plus`。"
+        },
+        "databaseWorkbench.ai.debugMode": {
+          "type": "boolean",
+          "default": false,
+          "description": "AI 调试模式。开启后，每次发送 AI 请求前会把本次请求内容复制到剪切板，便于排查提示词和上下文。"
+        },
+        "databaseWorkbench.ai.timeoutMs": {
+          "type": "number",
+          "default": 30000,
+          "minimum": 5000,
+          "description": "AI 接口请求超时时间，单位毫秒。"
+        },
+        "databaseWorkbench.ai.errorTranslationTimeoutMs": {
+          "type": "number",
+          "default": 5000,
+          "minimum": 1000,
+          "description": "表结构修改失败后，使用 AI 翻译数据库错误的超时时间，单位毫秒。超时后直接展示原始错误。"
+        },
+        "databaseWorkbench.ai.maxSchemaChars": {
+          "type": "number",
+          "default": 16000,
+          "minimum": 4000,
+          "description": "发送给 AI 的表结构最大字符数。"
+        },
+        "databaseWorkbench.query.defaultLimit": {
+          "type": "number",
+          "default": 30,
+          "minimum": 1,
+          "maximum": 1000,
+          "description": "点击表名预览数据和快速查询时默认读取的最大行数。右侧查询数量输入框的修改仅对当前页面临时生效，只有修改此设置才会持久化。"
+        },
+        "databaseWorkbench.query.maxRows": {
+          "type": "number",
+          "default": 500,
+          "minimum": 1,
+          "maximum": 5000,
+          "description": "任意查询最多展示的行数，用于避免误查过大结果集。"
+        },
+        "databaseWorkbench.export.transactionThreshold": {
+          "type": "number",
+          "default": 100,
+          "minimum": 1,
+          "maximum": 100000,
+          "description": "MySQL 导出行数达到多少时开启事务分页读取，用于保证大数据导出的一致性。"
+        },
+        "databaseWorkbench.export.pageSize": {
+          "type": "number",
+          "default": 100,
+          "minimum": 1,
+          "maximum": 5000,
+          "description": "MySQL 导出开启事务分页后，每次从数据库读取的行数。"
+        },
+        "databaseWorkbench.export.maxRows": {
+          "type": "number",
+          "default": 10000,
+          "minimum": 1,
+          "maximum": 1000000,
+          "description": "单次导出允许的最大行数，用于避免导出大结果集导致插件内存占用过高。"
+        },
+        "databaseWorkbench.elasticsearch.requestTimeoutMs": {
+          "type": "number",
+          "default": 30000,
+          "minimum": 1000,
+          "maximum": 600000,
+          "description": "Elasticsearch HTTP 请求超时时间，单位毫秒。"
+        },
+        "databaseWorkbench.elasticsearch.maxResponseBytes": {
+          "type": "number",
+          "default": 10485760,
+          "minimum": 1048576,
+          "maximum": 104857600,
+          "description": "Elasticsearch 单次 HTTP 响应体最大字节数，超过后会中止请求，避免内存占用过高。"
+        },
+        "databaseWorkbench.elasticsearch.allowInsecureTls": {
+          "type": "boolean",
+          "default": false,
+          "description": "是否允许 Elasticsearch HTTPS 连接跳过证书校验。仅在本地自签证书等可信环境下开启。"
+        },
+        "databaseWorkbench.table.showColumnComments": {
+          "type": "boolean",
+          "default": true,
+          "description": "是否在表格表头中展示字段描述信息。"
+        },
+        "databaseWorkbench.table.hiddenColumnCommentNames": {
+          "type": "array",
+          "default": [
+            "id",
+            "created_at",
+            "updated_at",
+            "deleted_at"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "description": "不展示字段描述的字段名称列表，大小写不敏感。"
+        },
+        "databaseWorkbench.log.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "是否记录通过插件执行的数据和表结构修改日志。日志会保存修改前后的真实数据，请确保日志目录安全。"
+        },
+        "databaseWorkbench.log.directory": {
+          "type": "string",
+          "default": "",
+          "description": "操作日志保存目录。留空时默认保存到用户目录下的 LoveyuDatabaseWorkbench/logs。"
+        },
+        "databaseWorkbench.log.maxEntriesPerTable": {
+          "type": "number",
+          "default": 1000,
+          "minimum": 100,
+          "maximum": 100000,
+          "description": "每个连接/数据库/表最多保留多少条操作日志，超过后自动清理更早记录，降低日志文件体积和内存占用。"
+        },
+        "databaseWorkbench.pro.deactivateForTesting": {
+          "type": "string",
+          "default": "",
+          "order": 9999,
+          "markdownDescription": "测试使用：点击 [取消激活](command:databaseWorkbench.deactivateProForTesting) 会删除本机保存的 Pro 许可证，让插件回到非激活状态。此设置项无需填写。"
+        },
+        "databaseWorkbench.table.dataGridFontSize": {
+          "type": "number",
+          "default": 12,
+          "minimum": 9,
+          "maximum": 24,
+          "description": "标签页数据表格字体大小，单位 px。修改后已打开的标签页会自动更新。"
+        }
+      }
+    },
+    "viewsWelcome": [
+      {
+        "view": "databaseWorkbench.connections",
+        "contents": "还没有数据库连接。\n[添加数据库连接](command:databaseWorkbench.addConnection) 后即可展开库表并打开查询页。"
+      }
+    ],
+    "colors": [
+      {
+        "id": "databaseWorkbench.group.red",
+        "description": "分组红色",
+        "defaults": {
+          "dark": "#e15f5f",
+          "light": "#c23b3b",
+          "highContrast": "#ff6b6b"
+        }
+      },
+      {
+        "id": "databaseWorkbench.group.orange",
+        "description": "分组橙色",
+        "defaults": {
+          "dark": "#d9863d",
+          "light": "#b86622",
+          "highContrast": "#ff9f45"
+        }
+      },
+      {
+        "id": "databaseWorkbench.group.yellow",
+        "description": "分组黄色",
+        "defaults": {
+          "dark": "#c9a227",
+          "light": "#9f7d16",
+          "highContrast": "#ffd166"
+        }
+      },
+      {
+        "id": "databaseWorkbench.group.green",
+        "description": "分组绿色",
+        "defaults": {
+          "dark": "#4fa96b",
+          "light": "#30824a",
+          "highContrast": "#63d487"
+        }
+      },
+      {
+        "id": "databaseWorkbench.group.blue",
+        "description": "分组蓝色",
+        "defaults": {
+          "dark": "#4f8ecb",
+          "light": "#2f6fa8",
+          "highContrast": "#6bb7ff"
+        }
+      },
+      {
+        "id": "databaseWorkbench.group.purple",
+        "description": "分组紫色",
+        "defaults": {
+          "dark": "#9d78d8",
+          "light": "#7d59b8",
+          "highContrast": "#c59cff"
+        }
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "test:schema-sync": "npm run compile && node tests/schemaSync.test.js && node tests/schemaCompareWebview.test.js",
+    "package": "vsce package --allow-missing-repository"
+  },
+  "dependencies": {
+    "mysql2": "^3.15.3",
+    "pg": "^8.16.3",
+    "redis": "^5.12.1",
+    "sql.js": "^1.14.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.30",
+    "@types/pg": "^8.15.6",
+    "@types/sql.js": "^1.4.11",
+    "@types/vscode": "^1.90.0",
+    "@vscode/vsce": "^3.6.0",
+    "typescript": "^5.8.3"
+  },
+  "icon": "assets/icon.png",
+  "pricing": "Trial"
+}
