@@ -4119,7 +4119,7 @@ export class DatabaseWorkbenchPanel {
         while (index < text.length) {
           const char = text[index];
           literal += char;
-          if (char === "\\" && index + 1 < text.length) {
+          if (char === "\\\\" && index + 1 < text.length) {
             index += 1;
             literal += text[index];
             continue;
@@ -4145,7 +4145,7 @@ export class DatabaseWorkbenchPanel {
       }
       const raw = literal.slice(1, -1).replace(/''/g, "'");
       const trimmed = raw.trim();
-      if (!/^[\\[{]/.test(trimmed)) {
+      if (!trimmed.startsWith("[") && !trimmed.startsWith("{")) {
         return literal;
       }
       try {
