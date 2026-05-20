@@ -3295,18 +3295,22 @@ export class DatabaseWorkbenchPanel {
     }
 	    .schema-confirm-sql {
 	      width: 100%;
+	      max-width: 100%;
 	      height: 100%;
 	      min-height: 0;
 	      max-height: none;
 	      box-sizing: border-box;
       margin: 0;
       padding: 12px;
-      overflow: auto;
+      overflow-x: hidden;
+      overflow-y: auto;
       border: 1px solid var(--line);
       border-radius: 10px;
       background: var(--panel);
       color: var(--fg);
-      white-space: pre;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      word-break: break-word;
       font-family: var(--mono);
       font-size: var(--sql-confirm-font-size, 15px);
 	      line-height: 1.6;

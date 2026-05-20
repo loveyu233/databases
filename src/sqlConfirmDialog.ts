@@ -55,7 +55,7 @@ function renderSqlConfirmHtml(options: SqlConfirmOptions): string {
     .title { font-weight: 700; color: var(--fg); }
     .subtitle { margin-top: 4px; color: var(--muted); font-size: 12px; }
     .body { min-height: 0; padding: 14px 16px; overflow: hidden; }
-    pre { width: 100%; height: 100%; min-height: 0; margin: 0; padding: 12px; overflow: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--fg); white-space: pre; font-family: var(--mono); font-size: ${sqlConfirmFontSize}px; line-height: 1.6; overscroll-behavior: contain; }
+    pre { width: 100%; max-width: 100%; height: 100%; min-height: 0; margin: 0; padding: 12px; overflow-x: hidden; overflow-y: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--fg); white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; font-family: var(--mono); font-size: ${sqlConfirmFontSize}px; line-height: 1.6; overscroll-behavior: contain; }
     pre .sql-token-keyword { color: #7dd3fc; font-weight: 700; }
     pre .sql-token-string { color: #f9a8d4; }
     pre .sql-token-number { color: #fbbf24; }

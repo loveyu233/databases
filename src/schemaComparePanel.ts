@@ -768,7 +768,7 @@ function renderCompareHtml(sqlConfirmFontSize = 15): string {
 	    .sql-confirm-title { font-weight: 700; color: var(--fg); }
 	    .sql-confirm-subtitle { margin-top: 4px; color: var(--muted); font-size: 12px; }
 	    .sql-confirm-body { min-height: 0; padding: 14px 16px; overflow: hidden; }
-	    .sql-confirm-code { box-sizing: border-box; width: 100%; height: 100%; min-height: 0; margin: 0; padding: 12px; overflow: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--fg); white-space: pre; font-family: var(--vscode-editor-font-family); font-size: ${sqlConfirmFontSize}px; line-height: 1.6; overscroll-behavior: contain; }
+	    .sql-confirm-code { box-sizing: border-box; width: 100%; max-width: 100%; height: 100%; min-height: 0; margin: 0; padding: 12px; overflow-x: hidden; overflow-y: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--fg); white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; font-family: var(--vscode-editor-font-family); font-size: ${sqlConfirmFontSize}px; line-height: 1.6; overscroll-behavior: contain; }
 	    .sql-confirm-code .sql-token-keyword { color: #7dd3fc; font-weight: 700; }
 	    .sql-confirm-code .sql-token-string { color: #f9a8d4; }
 	    .sql-confirm-code .sql-token-number { color: #fbbf24; }
