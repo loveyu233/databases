@@ -1995,10 +1995,115 @@ export class DatabaseWorkbenchPanel {
       margin: 0;
       -webkit-appearance: none;
     }
-    .field:focus, textarea:focus { border-color: var(--button); }
-    #limitInput { text-align: center; padding-left: 6px; padding-right: 6px; }
+	    .field:focus, textarea:focus { border-color: var(--button); }
+	    #limitInput { text-align: center; padding-left: 6px; padding-right: 6px; }
+	    .sql-highlight-wrap {
+	      position: relative;
+	      min-width: 0;
+	      min-height: 0;
+	    }
+	    .sql-highlight-wrap .field,
+	    .sql-highlight-wrap textarea {
+	      position: relative;
+	      z-index: 1;
+	      color: transparent;
+	      -webkit-text-fill-color: transparent;
+	      caret-color: var(--fg);
+	      background: transparent;
+	    }
+	    .sql-highlight-wrap .field::placeholder,
+	    .sql-highlight-wrap textarea::placeholder {
+	      color: var(--muted);
+	      -webkit-text-fill-color: var(--muted);
+	    }
+	    .sql-highlight-wrap .field::selection,
+	    .sql-highlight-wrap textarea::selection {
+	      color: transparent;
+	      -webkit-text-fill-color: transparent;
+	      background: rgba(14, 99, 156, .38);
+	    }
+	    .sql-highlight-code {
+	      position: absolute;
+	      inset: 0;
+	      z-index: 0;
+	      box-sizing: border-box;
+	      margin: 0;
+	      overflow: hidden;
+	      pointer-events: none;
+	      border: 1px solid var(--line);
+	      border-radius: 7px;
+	      color: var(--fg);
+	      background: var(--input);
+	      white-space: pre-wrap;
+	      overflow-wrap: anywhere;
+	      font-family: var(--mono);
+	      font-size: 12px;
+	      line-height: 1.55;
+	    }
+	    .quick-sql-highlight .field,
+	    .quick-sql-highlight .sql-highlight-code {
+	      height: 100%;
+	      min-height: 34px;
+	      padding: 8px 10px;
+	      font-family: var(--mono);
+	      font-size: 12px;
+	      line-height: 1.45;
+	      white-space: pre;
+	      overflow-wrap: normal;
+	    }
+	    .editor-sql-highlight textarea {
+	      background: transparent;
+	    }
+	    .editor-sql-highlight .sql-highlight-code {
+	      padding: 11px 12px;
+	      border-radius: var(--radius);
+	    }
+	    .sql-highlight-code .sql-token-keyword,
+	    .code-suggest-label .sql-token-keyword { color: #7dd3fc; font-weight: 700; }
+	    .sql-highlight-code .sql-token-string,
+	    .code-suggest-label .sql-token-string { color: #f9a8d4; }
+	    .sql-highlight-code .sql-token-number,
+	    .code-suggest-label .sql-token-number { color: #fbbf24; }
+	    .sql-highlight-code .sql-token-comment,
+	    .code-suggest-label .sql-token-comment { color: var(--muted); font-style: italic; }
+	    .sql-highlight-code .sql-token-field,
+	    .code-suggest-label .sql-token-field { color: #c4b5fd; }
+	    .sql-highlight-code .sql-token-table,
+	    .code-suggest-label .sql-token-table { font-weight: 750; border-radius: 4px; padding: 0 2px; }
+	    .sql-highlight-code .sql-token-table-0,
+	    .sql-highlight-code .sql-token-field-0,
+	    .code-suggest-label .sql-token-table-0,
+	    .code-suggest-label .sql-token-field-0 { color: #34d399; background: rgba(52, 211, 153, .12); }
+	    .sql-highlight-code .sql-token-table-1,
+	    .sql-highlight-code .sql-token-field-1,
+	    .code-suggest-label .sql-token-table-1,
+	    .code-suggest-label .sql-token-field-1 { color: #60a5fa; background: rgba(96, 165, 250, .12); }
+	    .sql-highlight-code .sql-token-table-2,
+	    .sql-highlight-code .sql-token-field-2,
+	    .code-suggest-label .sql-token-table-2,
+	    .code-suggest-label .sql-token-field-2 { color: #f472b6; background: rgba(244, 114, 182, .12); }
+	    .sql-highlight-code .sql-token-table-3,
+	    .sql-highlight-code .sql-token-field-3,
+	    .code-suggest-label .sql-token-table-3,
+	    .code-suggest-label .sql-token-field-3 { color: #fbbf24; background: rgba(251, 191, 36, .12); }
+	    .sql-highlight-code .sql-token-table-4,
+	    .sql-highlight-code .sql-token-field-4,
+	    .code-suggest-label .sql-token-table-4,
+	    .code-suggest-label .sql-token-field-4 { color: #a78bfa; background: rgba(167, 139, 250, .12); }
+	    .sql-highlight-code .sql-token-table-5,
+	    .sql-highlight-code .sql-token-field-5,
+	    .code-suggest-label .sql-token-table-5,
+	    .code-suggest-label .sql-token-field-5 { color: #fb7185; background: rgba(251, 113, 133, .12); }
+	    .sql-highlight-code .sql-token-table-6,
+	    .sql-highlight-code .sql-token-field-6,
+	    .code-suggest-label .sql-token-table-6,
+	    .code-suggest-label .sql-token-field-6 { color: #2dd4bf; background: rgba(45, 212, 191, .12); }
+	    .sql-highlight-code .sql-token-table-7,
+	    .sql-highlight-code .sql-token-field-7,
+	    .code-suggest-label .sql-token-table-7,
+	    .code-suggest-label .sql-token-field-7 { color: #c084fc; background: rgba(192, 132, 252, .12); }
 
-    .sql-drawer { border-bottom: 1px solid var(--line); background: var(--panel); display: none; }
+	    .sql-drawer { border-bottom: 1px solid var(--line); background: var(--panel); display: none; }
     .sql-drawer.open { display: block; }
     .drawer-grid { display: grid; grid-template-columns: 1fr; gap: 12px; padding: 14px 22px; }
     .sql-editor-row { min-height: 0; display: grid; grid-template-rows: minmax(0, 1fr) auto; gap: 10px; align-items: stretch; }
@@ -3271,10 +3376,13 @@ export class DatabaseWorkbenchPanel {
 	    </header>
 
     <section class="main">
-      <section class="quick">
-        <input class="field" id="whereInput" placeholder="快速条件：例如 status = 'paid' AND id > 100" />
-        <input class="field" id="limitInput" type="number" max="5000" value="30" title="限制行数；输入负数表示查询全部" />
-        <button id="quickBtn">查询</button>
+	    <section class="quick">
+	      <div class="sql-highlight-wrap quick-sql-highlight">
+	        <pre class="sql-highlight-code" id="whereHighlight" aria-hidden="true"></pre>
+	        <input class="field" id="whereInput" placeholder="快速条件：例如 status = 'paid' AND id > 100" />
+	      </div>
+	      <input class="field" id="limitInput" type="number" max="5000" value="30" title="限制行数；输入负数表示查询全部" />
+	      <button id="quickBtn">查询</button>
         <button class="secondary" id="toggleSqlBtn">打开 SQL / AI</button>
         <button class="secondary" id="quickAddBtn">快速添加</button>
       </section>
@@ -3284,8 +3392,11 @@ export class DatabaseWorkbenchPanel {
           <div class="ai-workspace">
             <div class="ai-editor-card">
               <label for="sqlInput">SQL 编辑器</label>
-              <div class="sql-editor-row">
-                <textarea id="sqlInput" spellcheck="false" placeholder="这里保持纯净，只放当前要执行的 SQL / Redis 命令 / Elasticsearch 查询。AI 提问和 @ai{}、@gen{}、@table{} 请写到右侧时间线输入框。"></textarea>
+	            <div class="sql-editor-row">
+	              <div class="sql-highlight-wrap editor-sql-highlight">
+	                <pre class="sql-highlight-code" id="sqlHighlight" aria-hidden="true"></pre>
+	                <textarea id="sqlInput" spellcheck="false" placeholder="这里保持纯净，只放当前要执行的 SQL / Redis 命令 / Elasticsearch 查询。AI 提问和 @ai{}、@gen{}、@table{} 请写到右侧时间线输入框。"></textarea>
+	              </div>
                 <div class="drawer-actions">
                   <button id="runSqlBtn">执行 SQL</button>
                   <button class="secondary" id="formatBtn">格式化</button>
@@ -3580,11 +3691,13 @@ export class DatabaseWorkbenchPanel {
     let webviewPersistedState = typeof vscode.getState === "function" ? (vscode.getState() || {}) : {};
 	    const state = { database: "", connectionId: "", connectionName: "", connectionType: "mysql", queryConsole: false, connections: [], tables: [], selectedTable: "", currentTable: null, schemaEditor: null, defaultLimit: 30, tableDisplay: { showColumnComments: true, hiddenColumnCommentNames: ["id", "created_at", "updated_at", "deleted_at"], dataGridFontSize: 12 }, schemaCapabilities: { supportsNotEmptyStringCheck: false }, lastSql: "", currentResult: null, sortColumn: "", sortDirection: "asc", fieldColumns: [], selectedColumns: [], fieldSelectionInitialized: false, lastQueryMode: "preview", primaryKeys: [], columnTypes: {}, columnComments: {}, columnMeta: {}, pendingEdits: {}, quickInsert: { active: false, values: {} }, rowSelection: { selected: [], dragging: false, anchor: null, deleting: false }, importSource: { databases: [], tables: [], columns: [], mappings: [] }, redisDetail: { key: "", keyType: "", page: 1, pageSize: 30, totalRows: 0, totalPages: 1, columns: [], rows: [], search: "", fuzzySearch: false, sortDirection: "asc", memoryUsage: null, contextRowIndex: -1 }, operationLogs: [], selectedLogId: "", rollbackingLogId: "", rollbackError: null, logContextLogId: "", activeLogTagColor: "", logTagDraft: { logId: "", color: "blue" }, aiTimeline: [], aiActiveTimelineId: "", aiContinueParentId: "", aiContinueSourceId: "" };
     const $ = (selector) => document.querySelector(selector);
-    const sqlInput = $("#sqlInput");
+	    const sqlInput = $("#sqlInput");
+	    const sqlHighlight = $("#sqlHighlight");
     const aiPromptInput = $("#aiPromptInput");
     const aiTimeline = $("#aiTimeline");
     const sqlTagValidation = $("#sqlTagValidation");
-    const whereInput = $("#whereInput");
+	    const whereInput = $("#whereInput");
+	    const whereHighlight = $("#whereHighlight");
     const limitInput = $("#limitInput");
     const autoRefreshInput = $("#autoRefreshInput");
     const status = $("#status");
@@ -3724,8 +3837,9 @@ export class DatabaseWorkbenchPanel {
         completionUsage = normalizeCompletionUsage(message.completionUsage || webviewPersistedState.completionUsage);
         limitInput.value = String(state.defaultLimit);
         $("#crumb").textContent = state.connectionName + " / " + state.database;
-        applyConnectionMode();
-        renderAiTimeline();
+	        applyConnectionMode();
+	        updateAllSqlHighlights();
+	        renderAiTimeline();
         if (state.queryConsole) {
           renderQueryConsoleIntro();
         } else if (state.connectionType === "redis" && !state.selectedTable) {
@@ -3742,9 +3856,10 @@ export class DatabaseWorkbenchPanel {
         state.tableDisplay = normalizeTableDisplayConfig(message.tableDisplay);
         applyTableDisplayConfig();
         state.schemaCapabilities = normalizeSchemaCapabilities(message.schemaCapabilities);
-        applyConnectionMode();
-        renderTableInfo(message.table, message.defaultLimit);
-        return;
+	        applyConnectionMode();
+	        renderTableInfo(message.table, message.defaultLimit);
+	        updateAllSqlHighlights();
+	        return;
       }
       if (message.type === "tableDisplayConfig") {
         state.tableDisplay = normalizeTableDisplayConfig(message.tableDisplay);
@@ -3763,9 +3878,10 @@ export class DatabaseWorkbenchPanel {
         state.lastSql = message.sql || state.lastSql;
         if (preserveSqlInputOnNextResult) {
           preserveSqlInputOnNextResult = false;
-        } else if (state.lastQueryMode === "sql") {
-          sqlInput.value = state.lastSql;
-        }
+	        } else if (state.lastQueryMode === "sql") {
+	          sqlInput.value = state.lastSql;
+	          updateSqlInputHighlight(sqlInput);
+	        }
         renderResult(message.result);
         return;
       }
@@ -4202,9 +4318,10 @@ export class DatabaseWorkbenchPanel {
       pendingAiTimelineId = "";
       renderAiTimeline();
     });
-    $("#formatBtn").addEventListener("click", () => {
-      sqlInput.value = formatEditorText(sqlInput.value);
-      sqlInput.focus();
+	    $("#formatBtn").addEventListener("click", () => {
+	      sqlInput.value = formatEditorText(sqlInput.value);
+	      updateSqlInputHighlight(sqlInput);
+	      sqlInput.focus();
       moveCursorToEnd(sqlInput);
     });
 
@@ -4236,9 +4353,9 @@ export class DatabaseWorkbenchPanel {
 	      return expandJsonSqlLiterals(formatted);
 	    }
 
-	    function renderHighlightedConfirmSql(sql) {
-	      const tokens = tokenizeConfirmSql(sql);
-	      const tableStyles = collectConfirmSqlTableStyles(tokens);
+		    function renderHighlightedConfirmSql(sql, options = {}) {
+		      const tokens = tokenizeConfirmSql(sql);
+		      const tableStyles = collectConfirmSqlTableStyles(tokens, options);
 	      let html = "";
 	      for (let index = 0; index < tokens.length; index += 1) {
 	        const token = tokens[index];
@@ -4256,11 +4373,11 @@ export class DatabaseWorkbenchPanel {
 	          html += wrapConfirmSqlToken(token.value, "sql-token-number");
 	        } else if (isConfirmSqlKeyword(upper)) {
 	          html += wrapConfirmSqlToken(token.value, "sql-token-keyword");
-	        } else if (tableStyles.has(normalized.toLowerCase())) {
-	          html += wrapConfirmSqlToken(token.value, "sql-token-table " + tableStyles.get(normalized.toLowerCase()));
-	        } else if (token.type === "identifier" || token.type === "word") {
-	          const ownerStyle = getConfirmSqlFieldOwnerStyle(tokens, index, tableStyles);
-	          html += wrapConfirmSqlToken(token.value, ownerStyle ? "sql-token-field " + ownerStyle.replace("sql-token-table", "sql-token-field") : "sql-token-field");
+		        } else if (tableStyles.has(normalized.toLowerCase())) {
+		          html += wrapConfirmSqlToken(token.value, "sql-token-table " + tableStyles.get(normalized.toLowerCase()));
+		        } else if (token.type === "identifier" || token.type === "word") {
+		          const fieldStyle = getConfirmSqlFieldOwnerStyle(tokens, index, tableStyles) || getImplicitCurrentFieldStyle(normalized, options, tableStyles);
+		          html += wrapConfirmSqlToken(token.value, fieldStyle ? "sql-token-field " + fieldStyle.replace("sql-token-table", "sql-token-field") : "sql-token-field");
 	        } else {
 	          html += escapeHtml(token.value);
 	        }
@@ -4345,9 +4462,9 @@ export class DatabaseWorkbenchPanel {
 	      return tokens;
 	    }
 
-	    function collectConfirmSqlTableStyles(tokens) {
-	      const tableStyles = new Map();
-	      const names = [];
+		    function collectConfirmSqlTableStyles(tokens, options = {}) {
+		      const tableStyles = new Map();
+		      const names = [];
 	      const significant = tokens.map((token, index) => ({ token, index })).filter((item) => item.token.type !== "space" && item.token.type !== "comment");
 	      const addTable = (name) => {
 	        const normalized = normalizeSqlIdentifier(name).toLowerCase();
@@ -4355,9 +4472,12 @@ export class DatabaseWorkbenchPanel {
 	        if (tableStyles.has(normalized)) return tableStyles.get(normalized);
 	        const style = "sql-token-table-" + (names.length % 8);
 	        tableStyles.set(normalized, style);
-	        names.push(normalized);
-	        return style;
-	      };
+		        names.push(normalized);
+		        return style;
+		      };
+		      if (options.seedCurrentTable && state.selectedTable) {
+		        addTable(state.selectedTable);
+		      }
 	      let expectTable = false;
 	      let inFromList = false;
 	      for (let pos = 0; pos < significant.length; pos += 1) {
@@ -4399,13 +4519,21 @@ export class DatabaseWorkbenchPanel {
 	      tableStyles.set(aliasName.toLowerCase(), style);
 	}
 
-	    function getConfirmSqlFieldOwnerStyle(tokens, index, tableStyles) {
-	      const prevDot = findSignificantSqlToken(tokens, index, -1);
-	      if (!prevDot || prevDot.value !== ".") return "";
-	      const owner = findSignificantSqlToken(tokens, prevDot.index, -1);
-	      if (!owner) return "";
-	      return tableStyles.get(normalizeSqlIdentifier(owner.value).toLowerCase()) || "";
-	    }
+		    function getConfirmSqlFieldOwnerStyle(tokens, index, tableStyles) {
+		      const prevDot = findSignificantSqlToken(tokens, index, -1);
+		      if (!prevDot || prevDot.value !== ".") return "";
+		      const owner = findSignificantSqlToken(tokens, prevDot.index, -1);
+		      if (!owner) return "";
+		      return tableStyles.get(normalizeSqlIdentifier(owner.value).toLowerCase()) || "";
+		    }
+
+		    function getImplicitCurrentFieldStyle(identifier, options, tableStyles) {
+		      if (!options.seedCurrentTable || !state.selectedTable) return "";
+		      const table = findSchemaTable(state.selectedTable);
+		      const normalized = String(identifier || "").toLowerCase();
+		      if (!table || !(table.columns || []).some((column) => String(column.name).toLowerCase() === normalized)) return "";
+		      return tableStyles.get(String(table.name).toLowerCase()) || tableStyles.get(String(state.selectedTable).toLowerCase()) || "";
+		    }
 
 	    function readQualifiedSqlName(significant, pos) {
 	      let name = significant[pos].token.value;
@@ -4456,11 +4584,13 @@ export class DatabaseWorkbenchPanel {
 
 	    function isConfirmSqlKeyword(upper) {
 	      return [
-	        "ADD", "AFTER", "ALTER", "AND", "AS", "ASC", "BEGIN", "BETWEEN", "BY", "CASCADE", "CASE", "CHANGE", "CHECK", "COLLATE", "COLUMN", "COMMENT", "COMMIT",
-	        "CONSTRAINT", "CREATE", "DATABASE", "DEFAULT", "DELETE", "DESC", "DISTINCT", "DROP", "ELSE", "END", "ENGINE", "EXISTS", "EXPIRE", "FOREIGN", "FROM",
-	        "GROUP", "HAVING", "IF", "IN", "INDEX", "INNER", "INSERT", "INTO", "IS", "JOIN", "KEY", "LEFT", "LIKE", "LIMIT", "MODIFY", "NOT", "NULL", "ON", "OR",
-	        "ORDER", "OUTER", "PERSIST", "PRIMARY", "REFERENCES", "RENAME", "RETURNING", "RIGHT", "SELECT", "SET", "TABLE", "THEN", "TO", "TRUNCATE", "UNION",
-	        "UNIQUE", "UNLINK", "UPDATE", "USING", "VALUES", "WHEN", "WHERE"
+		        "ADD", "AFTER", "ALL", "ALTER", "AND", "ANY", "ARRAY", "AS", "ASC", "BEGIN", "BETWEEN", "BIGSERIAL", "BY", "CASCADE", "CASE", "CAST", "CHANGE",
+		        "CHECK", "COLLATE", "COLUMN", "COMMENT", "COMMIT", "CONFLICT", "CONSTRAINT", "CREATE", "CROSS", "CURRENT_DATE", "CURRENT_TIMESTAMP", "DATABASE",
+		        "DEFAULT", "DELETE", "DESC", "DISTINCT", "DO", "DROP", "ELSE", "END", "ENGINE", "EXISTS", "EXPIRE", "FALSE", "FOREIGN", "FROM", "FULL", "GROUP",
+		        "HAVING", "IF", "ILIKE", "IN", "INDEX", "INNER", "INSERT", "INTERVAL", "INTO", "IS", "JOIN", "JSONB", "KEY", "LEFT", "LIKE", "LIMIT", "MODIFY",
+		        "NOT", "NOTHING", "NULL", "OFFSET", "ON", "OR", "ORDER", "OUTER", "OVER", "PARTITION", "PERSIST", "PRIMARY", "RECURSIVE", "REFERENCES", "RENAME",
+		        "RETURNING", "RIGHT", "SELECT", "SERIAL", "SET", "TABLE", "THEN", "TO", "TRUE", "TRUNCATE", "UNION", "UNIQUE", "UNLINK", "UPDATE", "USING",
+		        "VALUES", "WHEN", "WHERE", "WINDOW", "WITH"
 	      ].includes(upper);
 	    }
 
@@ -4580,10 +4710,10 @@ export class DatabaseWorkbenchPanel {
       return undefined;
     }
 
-    function attachSqlAutocomplete(input, mode) {
-      if (!input || autocompleteBound.has(input)) return;
-      autocompleteBound.add(input);
-      input.setAttribute("autocomplete", "off");
+	    function attachSqlAutocomplete(input, mode) {
+	      if (!input || autocompleteBound.has(input)) return;
+	      autocompleteBound.add(input);
+	      input.setAttribute("autocomplete", "off");
       input.addEventListener("compositionstart", () => {
         composingInputs.add(input);
         if (activeCompletion?.input === input) hideCodeSuggest();
@@ -4592,17 +4722,20 @@ export class DatabaseWorkbenchPanel {
         composingInputs.delete(input);
         if (activeCompletion?.input === input) hideCodeSuggest();
       });
-      input.addEventListener("input", (event) => {
-        if (event.isComposing || composingInputs.has(input)) {
-          if (activeCompletion?.input === input) hideCodeSuggest();
-          return;
-        }
-        showCodeSuggest(input, mode, false);
-      });
-      input.addEventListener("click", (event) => {
-        event.stopPropagation();
-        if (activeCompletion?.input === input) showCodeSuggest(input, mode, false);
-      });
+	      input.addEventListener("input", (event) => {
+	        updateSqlInputHighlight(input);
+	        if (event.isComposing || composingInputs.has(input)) {
+	          if (activeCompletion?.input === input) hideCodeSuggest();
+	          return;
+	        }
+	        showCodeSuggest(input, mode, false);
+	      });
+	      input.addEventListener("scroll", () => syncSqlHighlightScroll(input));
+	      input.addEventListener("click", (event) => {
+	        event.stopPropagation();
+	        updateSqlInputHighlight(input);
+	        if (activeCompletion?.input === input) showCodeSuggest(input, mode, false);
+	      });
       input.addEventListener("keydown", (event) => {
         if (event.isComposing || composingInputs.has(input)) {
           if (activeCompletion?.input === input) hideCodeSuggest();
@@ -4634,18 +4767,53 @@ export class DatabaseWorkbenchPanel {
           hideCodeSuggest();
         }
       });
-      input.addEventListener("blur", () => window.setTimeout(() => {
-        if (activeCompletion?.input === input) hideCodeSuggest();
-      }, 160));
-    }
+	      input.addEventListener("blur", () => window.setTimeout(() => {
+	        if (activeCompletion?.input === input) hideCodeSuggest();
+	      }, 160));
+	      updateSqlInputHighlight(input);
+	    }
 
-    function stopAutocompleteKey(event) {
-      event.preventDefault();
-      event.stopPropagation();
-      event.stopImmediatePropagation();
-    }
+	    function stopAutocompleteKey(event) {
+	      event.preventDefault();
+	      event.stopPropagation();
+	      event.stopImmediatePropagation();
+	    }
 
-    function showCodeSuggest(input, mode, force) {
+	    function getSqlHighlightElement(input) {
+	      if (input === sqlInput) return sqlHighlight;
+	      if (input === whereInput) return whereHighlight;
+	      return null;
+	    }
+
+	    function updateSqlInputHighlight(input) {
+	      const highlight = getSqlHighlightElement(input);
+	      if (!highlight) return;
+	      highlight.innerHTML = renderHighlightedEditorSql(input.value, input === whereInput ? "where" : "sql");
+	      syncSqlHighlightScroll(input);
+	    }
+
+	    function updateAllSqlHighlights() {
+	      updateSqlInputHighlight(sqlInput);
+	      updateSqlInputHighlight(whereInput);
+	    }
+
+	    function syncSqlHighlightScroll(input) {
+	      const highlight = getSqlHighlightElement(input);
+	      if (!highlight) return;
+	      highlight.scrollTop = input.scrollTop || 0;
+	      highlight.scrollLeft = input.scrollLeft || 0;
+	    }
+
+	    function renderHighlightedEditorSql(value, mode) {
+	      const text = String(value || "");
+	      if (!text) return "";
+	      if (state.connectionType === "redis" || state.connectionType === "elasticsearch") {
+	        return escapeHtml(text);
+	      }
+	      return renderHighlightedConfirmSql(text, { seedCurrentTable: mode === "where" });
+	    }
+
+	    function showCodeSuggest(input, mode, force) {
       const completion = buildCodeCompletion(input, mode, force);
       if (!completion.items.length) {
         hideCodeSuggest();
@@ -5156,7 +5324,7 @@ export class DatabaseWorkbenchPanel {
       } else {
         codeSuggest.innerHTML = activeCompletion.items.map((item, index) =>
           '<button class="code-suggest-item' + (index === activeCompletion.selected ? ' active' : '') + '" data-completion-index="' + index + '">'
-          + '<span class="code-suggest-label">' + escapeHtml(item.label) + '</span>'
+	          + '<span class="code-suggest-label">' + renderCompletionLabel(item) + '</span>'
           + '<span class="code-suggest-kind">' + escapeHtml(item.kind) + (item.currentTableField ? ' · 当前表' : '') + '</span>'
           + '</button>'
         ).join("");
@@ -5168,10 +5336,34 @@ export class DatabaseWorkbenchPanel {
           activeCompletion.selected = Number(button.getAttribute("data-completion-index"));
           acceptCodeSuggestion();
         });
-      });
-    }
+	      });
+	    }
 
-    function positionCodeSuggest(input) {
+	    function renderCompletionLabel(item) {
+	      const kind = String(item.kind || "");
+	      const label = String(item.label || "");
+	      if (kind.includes("关键字")) {
+	        return wrapConfirmSqlToken(label, "sql-token-keyword");
+	      }
+	      if (kind.includes("字段")) {
+	        const dotIndex = label.indexOf(".");
+	        if (dotIndex > 0) {
+	          return wrapConfirmSqlToken(label.slice(0, dotIndex), "sql-token-table sql-token-table-0")
+	            + escapeHtml(".")
+	            + wrapConfirmSqlToken(label.slice(dotIndex + 1), "sql-token-field sql-token-field-0");
+	        }
+	        return wrapConfirmSqlToken(label, "sql-token-field");
+	      }
+	      if (kind.includes("表") || kind.includes("Index") || kind.includes("Key")) {
+	        return wrapConfirmSqlToken(label, "sql-token-table sql-token-table-0");
+	      }
+	      if (kind.includes("函数")) {
+	        return renderHighlightedConfirmSql(label);
+	      }
+	      return escapeHtml(label);
+	    }
+
+	    function positionCodeSuggest(input) {
       const rect = input.getBoundingClientRect();
       const width = Math.max(260, Math.min(rect.width, 520));
       const left = Math.min(rect.left, window.innerWidth - width - 12);
@@ -5196,9 +5388,10 @@ export class DatabaseWorkbenchPanel {
       if (!activeCompletion?.items.length) return;
       const item = activeCompletion.items[activeCompletion.selected];
       const input = activeCompletion.input;
-      recordCompletionUsage(item);
-      input.setRangeText(item.insert, activeCompletion.replaceStart, activeCompletion.replaceEnd, "end");
-      hideCodeSuggest();
+	      recordCompletionUsage(item);
+	      input.setRangeText(item.insert, activeCompletion.replaceStart, activeCompletion.replaceEnd, "end");
+	      updateSqlInputHighlight(input);
+	      hideCodeSuggest();
       input.focus();
       if (typeof input.selectionStart === "number" && item.cursorOffset) {
         const position = Math.max(0, input.selectionStart + item.cursorOffset);
@@ -7255,8 +7448,9 @@ export class DatabaseWorkbenchPanel {
       state.currentResult = null;
       state.selectedTable = table.name;
       state.defaultLimit = defaultLimit || state.defaultLimit;
-      limitInput.value = String(state.defaultLimit);
-      whereInput.value = "";
+	      limitInput.value = String(state.defaultLimit);
+	      whereInput.value = "";
+	      updateSqlInputHighlight(whereInput);
       state.lastQueryMode = "preview";
       state.fieldColumns = previousFieldColumns;
       state.selectedColumns = previousSelectedColumns;
@@ -9749,9 +9943,10 @@ export class DatabaseWorkbenchPanel {
 
     function applyTimelineSql(item) {
       if (!item.generatedText) return;
-      const editorSql = formatEditorText(item.generatedText);
-      sqlInput.value = editorSql;
-      moveCursorToEnd(sqlInput);
+	      const editorSql = formatEditorText(item.generatedText);
+	      sqlInput.value = editorSql;
+	      updateSqlInputHighlight(sqlInput);
+	      moveCursorToEnd(sqlInput);
       state.lastSql = editorSql;
       state.aiActiveTimelineId = item.id;
       state.aiTimeline.forEach((entry) => entry.applied = entry.id === item.id);
@@ -9814,9 +10009,10 @@ export class DatabaseWorkbenchPanel {
         item.errorMessage = "";
       }
       pendingAiTimelineId = "";
-      const editorSql = formatEditorText(sql);
-      sqlInput.value = editorSql;
-      moveCursorToEnd(sqlInput);
+	      const editorSql = formatEditorText(sql);
+	      sqlInput.value = editorSql;
+	      updateSqlInputHighlight(sqlInput);
+	      moveCursorToEnd(sqlInput);
       state.lastSql = editorSql;
       if (item) {
         state.aiActiveTimelineId = item.id;
