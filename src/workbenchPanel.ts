@@ -18,6 +18,7 @@ import {
   isAiConfigured,
   OperationLogEntry,
   PanelMessage,
+  QuickRefreshQuery,
   QueryResult,
   SchemaCapabilities,
   TableInfo,
@@ -305,7 +306,7 @@ export class DatabaseWorkbenchPanel {
           await this.markOperationLog(message.logId, message.label, message.color);
           return;
         case "updateCells":
-          await this.updateCells(message.table, message.primaryKeys, message.updates, message.confirmed === true);
+          await this.updateCells(message.table, message.primaryKeys, message.updates, message.confirmed === true, message.refreshQuery);
           return;
         case "generateSql":
           await this.generateSql(message.prompt, message.tableNames);
@@ -1108,7 +1109,8 @@ export class DatabaseWorkbenchPanel {
     table: string,
     primaryKeys: string[],
     updates: Array<{ primaryValues: Record<string, unknown>; changes: Record<string, unknown> }>,
-    confirmed: boolean
+    confirmed: boolean,
+    refreshQuery?: QuickRefreshQuery
   ): Promise<void> {
     if (!table || primaryKeys.length === 0 || updates.length === 0) {
       throw new Error("缺少主键或修改内容，无法构造 UPDATE。");
@@ -1124,6 +1126,7 @@ export class DatabaseWorkbenchPanel {
         table,
         primaryKeys,
         updates,
+        refreshQuery,
       });
       return;
     }
@@ -1161,6 +1164,18 @@ export class DatabaseWorkbenchPanel {
       throw error;
     }
     this.panel.webview.postMessage({ type: "editsApplied" });
+    if (refreshQuery?.table) {
+      await this.runQuickQuery(
+        refreshQuery.table,
+        String(refreshQuery.where ?? ""),
+        Number(refreshQuery.limit || getQueryConfig().defaultLimit),
+        refreshQuery.page,
+        refreshQuery.sortColumn,
+        refreshQuery.sortDirection,
+        false
+      );
+      return;
+    }
     await this.previewTable(table);
   }
 
@@ -5172,6 +5187,7 @@ export class DatabaseWorkbenchPanel {
 	        table: message.table,
 	        primaryKeys: message.primaryKeys || [],
 	        updates: message.updates || [],
+	        refreshQuery: message.refreshQuery || null,
 	      };
       schemaConfirmTitle.textContent = message.title || "确认执行下面的 UPDATE 语句吗？";
       schemaConfirmSql.textContent = formatConfirmSqlPreview(message.sql);
@@ -8497,12 +8513,47 @@ export class DatabaseWorkbenchPanel {
         existing.changes[edit.column] = edit.newValue;
         byRow.set(edit.rowIndex, existing);
       }
-      const updates = [...byRow.values()].filter((item) => Object.keys(item.changes).length > 0);
-      if (!updates.length) return;
-      vscode.postMessage({ type: "updateCells", table: state.selectedTable, primaryKeys: state.primaryKeys, updates });
-    }
+	      const updates = [...byRow.values()].filter((item) => Object.keys(item.changes).length > 0);
+	      if (!updates.length) return;
+	      vscode.postMessage({ type: "updateCells", table: state.selectedTable, primaryKeys: state.primaryKeys, updates, refreshQuery: getQuickRefreshQueryForEdits() });
+	    }
 
-    function submitRedisPendingEdits() {
+	    function getQuickRefreshQueryForEdits() {
+	      const pagination = state.currentResult?.pagination;
+	      if (pagination?.mode === "quick") {
+	        return {
+	          table: pagination.table || getQuickQueryTarget(),
+	          where: pagination.where || "",
+	          limit: pagination.pageSize || Number(limitInput.value || state.defaultLimit),
+	          page: pagination.page || 1,
+	          sortColumn: pagination.sortColumn || state.sortColumn,
+	          sortDirection: pagination.sortDirection || state.sortDirection,
+	        };
+	      }
+	      if (state.lastQueryMode === "quick") {
+	        return {
+	          table: getQuickQueryTarget(),
+	          where: whereInput.value,
+	          limit: Number(limitInput.value || state.defaultLimit),
+	          page: 1,
+	          sortColumn: state.sortColumn,
+	          sortDirection: state.sortDirection,
+	        };
+	      }
+	      if (state.lastQueryMode === "preview") {
+	        return {
+	          table: getQuickQueryTarget(),
+	          where: "",
+	          limit: Number(limitInput.value || state.defaultLimit),
+	          page: 1,
+	          sortColumn: state.sortColumn,
+	          sortDirection: state.sortDirection,
+	        };
+	      }
+	      return null;
+	    }
+
+	    function submitRedisPendingEdits() {
       const updates = [];
       const ttlUpdates = [];
       for (const edit of Object.values(state.pendingEdits)) {

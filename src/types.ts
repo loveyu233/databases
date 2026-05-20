@@ -260,6 +260,15 @@ export type SchemaCapabilities = {
   mysqlVersion?: string;
 };
 
+export type QuickRefreshQuery = {
+  table: string;
+  where: string;
+  limit: number;
+  page?: number;
+  sortColumn?: string;
+  sortDirection?: "asc" | "desc";
+};
+
 export type PanelMessage =
   | { type: "ready" }
   | { type: "previewTable"; table: string }
@@ -298,6 +307,7 @@ export type PanelMessage =
         changes: Record<string, unknown>;
       }>;
       confirmed?: boolean;
+      refreshQuery?: QuickRefreshQuery;
     }
   | { type: "generateSql"; prompt: string; tableNames?: string[] }
   | { type: "saveCompletionUsage"; completionUsage: Record<string, number> }
@@ -320,7 +330,7 @@ export type PanelToWebviewMessage =
   | { type: "schemaDraftApplied" }
   | { type: "schemaDraftError"; message: string }
   | { type: "schemaDraftPreview"; title: string; sql: string }
-  | { type: "updateCellsPreview"; title: string; sql: string; table: string; primaryKeys: string[]; updates: Array<{ primaryValues: Record<string, unknown>; changes: Record<string, unknown> }> }
+  | { type: "updateCellsPreview"; title: string; sql: string; table: string; primaryKeys: string[]; updates: Array<{ primaryValues: Record<string, unknown>; changes: Record<string, unknown> }>; refreshQuery?: QuickRefreshQuery }
   | { type: "sqlConfirmPreview"; title: string; sql: string; action: PanelMessage; status?: string; cancelAction?: PanelMessage }
   | { type: "openSchemaEditor"; mode: "editTable" | "createTable" }
   | { type: "generatedSql"; sql: string }
