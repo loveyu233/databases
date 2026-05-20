@@ -7,7 +7,7 @@ import { registerOfflineLicenseCommands, requireProFeature } from "./license/off
 import { SchemaComparePanel } from "./schemaComparePanel";
 import { showSqlConfirmDialog } from "./sqlConfirmDialog";
 import { ConnectionStore, normalizeConnectionGroupColor } from "./storage";
-import { asConnectionNode, asDatabaseFilterNode, asDatabaseNode, asGroupNode, asTableNode, ConnectionGroupDecorationProvider, ConnectionsTreeProvider, getTreeNodePinKey, TreeNode } from "./tree";
+import { ActiveTreeSelection, asConnectionNode, asDatabaseFilterNode, asDatabaseNode, asGroupNode, asTableNode, ConnectionGroupDecorationProvider, ConnectionsTreeProvider, getTreeNodePinKey, TreeNode } from "./tree";
 import { AI_PROVIDER_PRESETS, ConnectionGroup, ConnectionGroupColor, DatabaseType, DbConnectionConfig, getAiConfig, getAiProviderPreset } from "./types";
 import { DatabaseWorkbenchPanel } from "./workbenchPanel";
 
@@ -42,7 +42,9 @@ export function activate(context: vscode.ExtensionContext): void {
     ...registerOfflineLicenseCommands(context),
     connectionsTreeView,
     vscode.window.registerFileDecorationProvider(groupDecorationProvider),
-    DatabaseWorkbenchPanel.onDidChangeActiveTable((table) => treeProvider.setActiveTable(table)),
+    DatabaseWorkbenchPanel.onDidChangeActiveTreeSelection((selection) => {
+      void revealActiveTreeSelection(connectionsTreeView, treeProvider, selection);
+    }),
     vscode.workspace.onDidChangeConfiguration((event) => {
       if (event.affectsConfiguration("databaseWorkbench.table")) {
         DatabaseWorkbenchPanel.refreshTableDisplayConfig();
@@ -149,6 +151,30 @@ export function activate(context: vscode.ExtensionContext): void {
 }
 
 export function deactivate(): void {}
+
+async function revealActiveTreeSelection(
+  treeView: vscode.TreeView<TreeNode>,
+  treeProvider: ConnectionsTreeProvider,
+  selection: ActiveTreeSelection | undefined
+): Promise<void> {
+  if (!selection) {
+    return;
+  }
+  const node = treeProvider.resolveActiveSelectionNode(selection);
+  if (!node) {
+    return;
+  }
+
+  try {
+    await treeView.reveal(node, {
+      expand: selection.kind === "table",
+      focus: false,
+      select: true,
+    });
+  } catch {
+    // The node may be filtered out or unavailable while its parent is refreshing.
+  }
+}
 
 async function refreshTreeNode(
   context: vscode.ExtensionContext,

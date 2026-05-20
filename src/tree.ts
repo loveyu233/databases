@@ -14,17 +14,15 @@ export type TreeNode =
   | { kind: "database"; connection: DbConnectionConfig; database: string }
   | { kind: "table"; connection: DbConnectionConfig; database: string; table: string; comment?: string };
 
-export type ActiveTableHighlight = {
-  connectionId: string;
-  database: string;
-  table: string;
-};
+export type ActiveTreeSelection =
+  | { kind: "database"; connectionId: string; database: string }
+  | { kind: "table"; connectionId: string; database: string; table: string };
 
 export class ConnectionsTreeProvider implements vscode.TreeDataProvider<TreeNode>, vscode.TreeDragAndDropController<TreeNode> {
   private readonly onDidChangeTreeDataEmitter = new vscode.EventEmitter<TreeNode | undefined | null | void>();
   readonly onDidChangeTreeData = this.onDidChangeTreeDataEmitter.event;
   private readonly connectionCounts = new Map<string, { selected: number; total: number }>();
-  private activeTableKey = "";
+  private readonly nodeCache = new Map<string, TreeNode>();
   readonly dragMimeTypes = [CONNECTION_DRAG_MIME];
   readonly dropMimeTypes = [CONNECTION_DRAG_MIME];
 
@@ -35,15 +33,6 @@ export class ConnectionsTreeProvider implements vscode.TreeDataProvider<TreeNode
 
   refresh(node?: TreeNode): void {
     this.onDidChangeTreeDataEmitter.fire(node);
-  }
-
-  setActiveTable(table?: ActiveTableHighlight): void {
-    const nextKey = table ? buildActiveTableKey(table.connectionId, table.database, table.table) : "";
-    if (nextKey === this.activeTableKey) {
-      return;
-    }
-    this.activeTableKey = nextKey;
-    this.refresh();
   }
 
   getTreeItem(node: TreeNode): vscode.TreeItem {
@@ -105,24 +94,14 @@ export class ConnectionsTreeProvider implements vscode.TreeDataProvider<TreeNode
       return item;
     }
 
+    const item = new vscode.TreeItem(node.table, vscode.TreeItemCollapsibleState.None);
     const pinned = this.isPinned(node);
-    const active = this.isActiveTable(node);
-    const item = new vscode.TreeItem(
-      active ? { label: node.table, highlights: [[0, node.table.length]] } : node.table,
-      vscode.TreeItemCollapsibleState.None
-    );
     item.description = `${pinned ? "置顶 · " : ""}${node.comment?.trim() || getTableDescription(node.connection.type)}`;
     item.tooltip = node.comment?.trim()
-      ? `${active ? "当前操作表。\n" : ""}${pinned ? "已置顶。\n" : ""}${node.table}\n${node.comment.trim()}`
-      : `${active ? "当前操作表。\n" : ""}${pinned ? "已置顶： " : ""}${node.table}`;
-    if (active) {
-      item.description = `${pinned ? "置顶 · " : ""}当前 · ${node.comment?.trim() || getTableDescription(node.connection.type)}`;
-    }
+      ? `${pinned ? "已置顶。\n" : ""}${node.table}\n${node.comment.trim()}`
+      : `${pinned ? "已置顶： " : ""}${node.table}`;
     item.contextValue = `databaseWorkbench.table.${node.connection.type}.${pinned ? "pinned" : "unpinned"}`;
-    item.iconPath = new vscode.ThemeIcon(
-      node.connection.type === "redis" ? "symbol-key" : node.connection.type === "elasticsearch" ? "symbol-array" : "table",
-      active ? new vscode.ThemeColor("list.highlightForeground") : undefined
-    );
+    item.iconPath = new vscode.ThemeIcon(node.connection.type === "redis" ? "symbol-key" : node.connection.type === "elasticsearch" ? "symbol-array" : "table");
     item.command = {
       command: "databaseWorkbench.openTable",
       title: "查看表信息",
@@ -137,17 +116,17 @@ export class ConnectionsTreeProvider implements vscode.TreeDataProvider<TreeNode
       const connections = this.store.getAll();
       const groupIds = new Set(groups.map((group) => group.id));
       return [
-        ...this.sortPinnedFirst(groups.map((group): TreeNode => ({ kind: "group", group }))),
+        ...this.sortPinnedFirst(groups.map((group): TreeNode => this.getCachedNode({ kind: "group", group }))),
         ...this.sortPinnedFirst(connections
           .filter((connection) => !connection.groupId || !groupIds.has(connection.groupId))
-          .map((connection): TreeNode => ({ kind: "connection", connection }))),
+          .map((connection): TreeNode => this.getCachedNode({ kind: "connection", connection }))),
       ];
     }
 
     if (node.kind === "group") {
       return this.sortPinnedFirst(this.store.getAll()
         .filter((connection) => connection.groupId === node.group.id)
-        .map((connection): TreeNode => ({ kind: "connection", connection })));
+        .map((connection): TreeNode => this.getCachedNode({ kind: "connection", connection })));
     }
 
     if (node.kind === "connection") {
@@ -163,16 +142,16 @@ export class ConnectionsTreeProvider implements vscode.TreeDataProvider<TreeNode
           const selectedIndexes = await this.resolveSelectedNames(connection.id, indexes);
           this.updateConnectionCount(node, selectedIndexes.length, indexes.length);
           return [
-            { kind: "databaseFilter", connection: node.connection, scope: "index", selected: selectedIndexes.length, total: indexes.length },
-            ...this.sortPinnedFirst(databases.map((database): TreeNode => ({ kind: "database", connection: node.connection, database }))),
+            this.getCachedNode({ kind: "databaseFilter", connection: node.connection, scope: "index", selected: selectedIndexes.length, total: indexes.length }),
+            ...this.sortPinnedFirst(databases.map((database): TreeNode => this.getCachedNode({ kind: "database", connection: node.connection, database }))),
           ];
         }
 
         const selectedDatabases = await this.resolveSelectedNames(connection.id, databases);
         this.updateConnectionCount(node, selectedDatabases.length, databases.length);
         return [
-          { kind: "databaseFilter", connection: node.connection, scope: "database", selected: selectedDatabases.length, total: databases.length },
-          ...this.sortPinnedFirst(selectedDatabases.map((database): TreeNode => ({ kind: "database", connection: node.connection, database }))),
+          this.getCachedNode({ kind: "databaseFilter", connection: node.connection, scope: "database", selected: selectedDatabases.length, total: databases.length }),
+          ...this.sortPinnedFirst(selectedDatabases.map((database): TreeNode => this.getCachedNode({ kind: "database", connection: node.connection, database }))),
         ];
       } catch (error) {
         vscode.window.showErrorMessage(`读取数据库列表失败：${formatError(error)}`);
@@ -194,7 +173,7 @@ export class ConnectionsTreeProvider implements vscode.TreeDataProvider<TreeNode
         const visibleTables = node.connection.type === "elasticsearch"
           ? filterBySavedNames(tables, this.store.getDatabaseFilter(node.connection.id))
           : tables;
-        return this.sortPinnedFirst(visibleTables.map((table) => ({
+        return this.sortPinnedFirst(visibleTables.map((table) => this.getCachedNode({
           kind: "table",
           connection: node.connection,
           database: node.database,
@@ -208,6 +187,36 @@ export class ConnectionsTreeProvider implements vscode.TreeDataProvider<TreeNode
     }
 
     return [];
+  }
+
+  getParent(node: TreeNode): vscode.ProviderResult<TreeNode> {
+    if (node.kind === "group") {
+      return undefined;
+    }
+
+    if (node.kind === "connection") {
+      const group = node.connection.groupId
+        ? this.store.getGroups().find((item) => item.id === node.connection.groupId)
+        : undefined;
+      return group ? this.getCachedNode({ kind: "group", group }) : undefined;
+    }
+
+    if (node.kind === "database" || node.kind === "databaseFilter") {
+      return this.getCachedNode({ kind: "connection", connection: node.connection });
+    }
+
+    return this.getCachedNode({ kind: "database", connection: node.connection, database: node.database });
+  }
+
+  resolveActiveSelectionNode(selection: ActiveTreeSelection): TreeNode | undefined {
+    const connection = this.store.getAll().find((item) => item.id === selection.connectionId);
+    if (!connection) {
+      return undefined;
+    }
+    if (selection.kind === "database") {
+      return this.getCachedNode({ kind: "database", connection, database: selection.database });
+    }
+    return this.getCachedNode({ kind: "table", connection, database: selection.database, table: selection.table });
   }
 
   async handleDrag(source: readonly TreeNode[], dataTransfer: vscode.DataTransfer): Promise<void> {
@@ -268,8 +277,15 @@ export class ConnectionsTreeProvider implements vscode.TreeDataProvider<TreeNode
     return this.store.isPinnedNodeKey(getTreeNodePinKey(node));
   }
 
-  private isActiveTable(node: { kind: "table"; connection: DbConnectionConfig; database: string; table: string }): boolean {
-    return this.activeTableKey === buildActiveTableKey(node.connection.id, node.database, node.table);
+  private getCachedNode<T extends TreeNode>(node: T): T {
+    const key = getTreeNodePinKey(node);
+    const existing = this.nodeCache.get(key);
+    if (existing) {
+      Object.assign(existing, node);
+      return existing as T;
+    }
+    this.nodeCache.set(key, node);
+    return node;
   }
 
   private sortPinnedFirst<T extends TreeNode>(nodes: T[]): T[] {
@@ -336,10 +352,6 @@ export function getTreeNodePinKey(node: TreeNode): string {
     return `database:${node.connection.id}:${encodePinPart(node.kind === "database" ? node.database : "__filter__")}`;
   }
   return `table:${node.connection.id}:${encodePinPart(node.database)}:${encodePinPart(node.table)}`;
-}
-
-function buildActiveTableKey(connectionId: string, database: string, table: string): string {
-  return `${connectionId}\n${database}\n${table}`;
 }
 
 function isTreeNode(value: unknown): value is TreeNode {

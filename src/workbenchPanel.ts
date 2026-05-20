@@ -29,11 +29,9 @@ type WorkbenchPanelOptions = {
   schemaEditorMode?: SchemaEditorMode;
   queryConsole?: boolean;
 };
-export type ActiveWorkbenchTable = {
-  connectionId: string;
-  database: string;
-  table: string;
-};
+export type ActiveWorkbenchTreeSelection =
+  | { kind: "database"; connectionId: string; database: string }
+  | { kind: "table"; connectionId: string; database: string; table: string };
 type SqlPaginationPlan = {
   executableSql: string;
   baseSql?: string;
@@ -58,8 +56,8 @@ type SqlStatementSelection = {
 export class DatabaseWorkbenchPanel {
   private static readonly panels = new Map<string, DatabaseWorkbenchPanel>();
   private static readonly completionUsageStateKey = "databaseWorkbench.completionUsage";
-  private static readonly activeTableChangedEmitter = new vscode.EventEmitter<ActiveWorkbenchTable | undefined>();
-  static readonly onDidChangeActiveTable = DatabaseWorkbenchPanel.activeTableChangedEmitter.event;
+  private static readonly activeTreeSelectionChangedEmitter = new vscode.EventEmitter<ActiveWorkbenchTreeSelection | undefined>();
+  static readonly onDidChangeActiveTreeSelection = DatabaseWorkbenchPanel.activeTreeSelectionChangedEmitter.event;
   private static activePanelKey = "";
 
   private readonly disposables: vscode.Disposable[] = [];
@@ -212,7 +210,7 @@ export class DatabaseWorkbenchPanel {
     DatabaseWorkbenchPanel.panels.delete(this.panelKey);
     if (DatabaseWorkbenchPanel.activePanelKey === this.panelKey) {
       DatabaseWorkbenchPanel.activePanelKey = "";
-      DatabaseWorkbenchPanel.activeTableChangedEmitter.fire(undefined);
+      DatabaseWorkbenchPanel.activeTreeSelectionChangedEmitter.fire({ kind: "database", connectionId: this.connection.id, database: this.database });
     }
     while (this.disposables.length) {
       this.disposables.pop()?.dispose();
@@ -223,16 +221,16 @@ export class DatabaseWorkbenchPanel {
     if (!this.panel.active) {
       if (DatabaseWorkbenchPanel.activePanelKey === this.panelKey) {
         DatabaseWorkbenchPanel.activePanelKey = "";
-        DatabaseWorkbenchPanel.activeTableChangedEmitter.fire(undefined);
+        DatabaseWorkbenchPanel.activeTreeSelectionChangedEmitter.fire({ kind: "database", connectionId: this.connection.id, database: this.database });
       }
       return;
     }
 
     DatabaseWorkbenchPanel.activePanelKey = this.panelKey;
-    const activeTable = !this.queryConsole && !this.createTablePanel && this.selectedTable
-      ? { connectionId: this.connection.id, database: this.database, table: this.selectedTable }
-      : undefined;
-    DatabaseWorkbenchPanel.activeTableChangedEmitter.fire(activeTable);
+    const selection: ActiveWorkbenchTreeSelection = !this.queryConsole && !this.createTablePanel && this.selectedTable
+      ? { kind: "table", connectionId: this.connection.id, database: this.database, table: this.selectedTable }
+      : { kind: "database", connectionId: this.connection.id, database: this.database };
+    DatabaseWorkbenchPanel.activeTreeSelectionChangedEmitter.fire(selection);
   }
 
   private async refreshPanelData(): Promise<void> {
