@@ -2051,6 +2051,13 @@ export class DatabaseWorkbenchPanel {
 	      white-space: pre;
 	      overflow-wrap: normal;
 	    }
+	    .quick-sql-highlight {
+	      width: 100%;
+	    }
+	    .quick-sql-highlight .field {
+	      width: 100%;
+	      box-sizing: border-box;
+	    }
 	    .editor-sql-highlight textarea {
 	      background: transparent;
 	    }
