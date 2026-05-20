@@ -3074,17 +3074,21 @@ export class DatabaseWorkbenchPanel {
       inset: 0;
       z-index: 130;
       display: none;
-      align-items: center;
+      align-items: stretch;
       justify-content: center;
       padding: 22px;
       background: rgba(0, 0, 0, .46);
+      overflow: hidden;
     }
     .schema-confirm-overlay.open { display: flex; }
     .schema-confirm-card {
       width: min(860px, 94vw);
-      max-height: min(720px, 90vh);
+      height: min(720px, calc(100vh - 44px));
+      max-height: calc(100vh - 44px);
+      align-self: center;
       display: grid;
       grid-template-rows: auto minmax(0, 1fr) auto;
+      min-height: 0;
       border: 1px solid var(--line);
       border-radius: 14px;
       overflow: hidden;
@@ -3104,7 +3108,10 @@ export class DatabaseWorkbenchPanel {
       overflow: hidden;
     }
     .schema-confirm-sql {
-      max-height: min(460px, 56vh);
+      width: 100%;
+      height: 100%;
+      min-height: 0;
+      max-height: none;
       margin: 0;
       padding: 12px;
       overflow: auto;
