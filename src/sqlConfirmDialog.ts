@@ -60,14 +60,14 @@ function renderSqlConfirmHtml(options: SqlConfirmOptions): string {
     pre .sql-token-comment { color: var(--muted); font-style: italic; }
     pre .sql-token-field { color: #c4b5fd; }
     pre .sql-token-table { font-weight: 750; border-radius: 4px; padding: 0 2px; }
-    pre .sql-token-table-0, pre .sql-token-field-0 { color: #34d399; background: rgba(52, 211, 153, .12); }
-    pre .sql-token-table-1, pre .sql-token-field-1 { color: #60a5fa; background: rgba(96, 165, 250, .12); }
-    pre .sql-token-table-2, pre .sql-token-field-2 { color: #f472b6; background: rgba(244, 114, 182, .12); }
-    pre .sql-token-table-3, pre .sql-token-field-3 { color: #fbbf24; background: rgba(251, 191, 36, .12); }
-    pre .sql-token-table-4, pre .sql-token-field-4 { color: #a78bfa; background: rgba(167, 139, 250, .12); }
-    pre .sql-token-table-5, pre .sql-token-field-5 { color: #fb7185; background: rgba(251, 113, 133, .12); }
-    pre .sql-token-table-6, pre .sql-token-field-6 { color: #2dd4bf; background: rgba(45, 212, 191, .12); }
-    pre .sql-token-table-7, pre .sql-token-field-7 { color: #c084fc; background: rgba(192, 132, 252, .12); }
+    pre .sql-token-table-0, pre .sql-token-field-0 { color: #34d399; }
+    pre .sql-token-table-1, pre .sql-token-field-1 { color: #60a5fa; }
+    pre .sql-token-table-2, pre .sql-token-field-2 { color: #f472b6; }
+    pre .sql-token-table-3, pre .sql-token-field-3 { color: #fbbf24; }
+    pre .sql-token-table-4, pre .sql-token-field-4 { color: #a78bfa; }
+    pre .sql-token-table-5, pre .sql-token-field-5 { color: #fb7185; }
+    pre .sql-token-table-6, pre .sql-token-field-6 { color: #2dd4bf; }
+    pre .sql-token-table-7, pre .sql-token-field-7 { color: #c084fc; }
     .actions { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--line); background: rgba(255,255,255,.015); }
     button { border: 0; border-radius: 8px; padding: 7px 14px; cursor: pointer; color: var(--button-fg); background: var(--button); }
     button:hover { background: var(--button-hover); }

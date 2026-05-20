@@ -775,14 +775,14 @@ function renderCompareHtml(): string {
 	    .sql-confirm-code .sql-token-comment { color: var(--muted); font-style: italic; }
 	    .sql-confirm-code .sql-token-field { color: #c4b5fd; }
 	    .sql-confirm-code .sql-token-table { font-weight: 750; border-radius: 4px; padding: 0 2px; }
-	    .sql-confirm-code .sql-token-table-0, .sql-confirm-code .sql-token-field-0 { color: #34d399; background: rgba(52, 211, 153, .12); }
-	    .sql-confirm-code .sql-token-table-1, .sql-confirm-code .sql-token-field-1 { color: #60a5fa; background: rgba(96, 165, 250, .12); }
-	    .sql-confirm-code .sql-token-table-2, .sql-confirm-code .sql-token-field-2 { color: #f472b6; background: rgba(244, 114, 182, .12); }
-	    .sql-confirm-code .sql-token-table-3, .sql-confirm-code .sql-token-field-3 { color: #fbbf24; background: rgba(251, 191, 36, .12); }
-	    .sql-confirm-code .sql-token-table-4, .sql-confirm-code .sql-token-field-4 { color: #a78bfa; background: rgba(167, 139, 250, .12); }
-	    .sql-confirm-code .sql-token-table-5, .sql-confirm-code .sql-token-field-5 { color: #fb7185; background: rgba(251, 113, 133, .12); }
-	    .sql-confirm-code .sql-token-table-6, .sql-confirm-code .sql-token-field-6 { color: #2dd4bf; background: rgba(45, 212, 191, .12); }
-	    .sql-confirm-code .sql-token-table-7, .sql-confirm-code .sql-token-field-7 { color: #c084fc; background: rgba(192, 132, 252, .12); }
+	    .sql-confirm-code .sql-token-table-0, .sql-confirm-code .sql-token-field-0 { color: #34d399; }
+	    .sql-confirm-code .sql-token-table-1, .sql-confirm-code .sql-token-field-1 { color: #60a5fa; }
+	    .sql-confirm-code .sql-token-table-2, .sql-confirm-code .sql-token-field-2 { color: #f472b6; }
+	    .sql-confirm-code .sql-token-table-3, .sql-confirm-code .sql-token-field-3 { color: #fbbf24; }
+	    .sql-confirm-code .sql-token-table-4, .sql-confirm-code .sql-token-field-4 { color: #a78bfa; }
+	    .sql-confirm-code .sql-token-table-5, .sql-confirm-code .sql-token-field-5 { color: #fb7185; }
+	    .sql-confirm-code .sql-token-table-6, .sql-confirm-code .sql-token-field-6 { color: #2dd4bf; }
+	    .sql-confirm-code .sql-token-table-7, .sql-confirm-code .sql-token-field-7 { color: #c084fc; }
 	    .sql-confirm-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--line); background: rgba(255,255,255,.015); }
 	    .empty { color: var(--muted); border: 1px dashed var(--line); border-radius: 10px; padding: 13px; margin: 8px; text-align: center; font-size: 12px; }
     @media (max-width: 1080px) {

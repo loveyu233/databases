@@ -2080,35 +2080,35 @@ export class DatabaseWorkbenchPanel {
 	    .sql-highlight-code .sql-token-table-0,
 	    .sql-highlight-code .sql-token-field-0,
 	    .code-suggest-label .sql-token-table-0,
-	    .code-suggest-label .sql-token-field-0 { color: #34d399; background: rgba(52, 211, 153, .12); }
+	    .code-suggest-label .sql-token-field-0 { color: #34d399; }
 	    .sql-highlight-code .sql-token-table-1,
 	    .sql-highlight-code .sql-token-field-1,
 	    .code-suggest-label .sql-token-table-1,
-	    .code-suggest-label .sql-token-field-1 { color: #60a5fa; background: rgba(96, 165, 250, .12); }
+	    .code-suggest-label .sql-token-field-1 { color: #60a5fa; }
 	    .sql-highlight-code .sql-token-table-2,
 	    .sql-highlight-code .sql-token-field-2,
 	    .code-suggest-label .sql-token-table-2,
-	    .code-suggest-label .sql-token-field-2 { color: #f472b6; background: rgba(244, 114, 182, .12); }
+	    .code-suggest-label .sql-token-field-2 { color: #f472b6; }
 	    .sql-highlight-code .sql-token-table-3,
 	    .sql-highlight-code .sql-token-field-3,
 	    .code-suggest-label .sql-token-table-3,
-	    .code-suggest-label .sql-token-field-3 { color: #fbbf24; background: rgba(251, 191, 36, .12); }
+	    .code-suggest-label .sql-token-field-3 { color: #fbbf24; }
 	    .sql-highlight-code .sql-token-table-4,
 	    .sql-highlight-code .sql-token-field-4,
 	    .code-suggest-label .sql-token-table-4,
-	    .code-suggest-label .sql-token-field-4 { color: #a78bfa; background: rgba(167, 139, 250, .12); }
+	    .code-suggest-label .sql-token-field-4 { color: #a78bfa; }
 	    .sql-highlight-code .sql-token-table-5,
 	    .sql-highlight-code .sql-token-field-5,
 	    .code-suggest-label .sql-token-table-5,
-	    .code-suggest-label .sql-token-field-5 { color: #fb7185; background: rgba(251, 113, 133, .12); }
+	    .code-suggest-label .sql-token-field-5 { color: #fb7185; }
 	    .sql-highlight-code .sql-token-table-6,
 	    .sql-highlight-code .sql-token-field-6,
 	    .code-suggest-label .sql-token-table-6,
-	    .code-suggest-label .sql-token-field-6 { color: #2dd4bf; background: rgba(45, 212, 191, .12); }
+	    .code-suggest-label .sql-token-field-6 { color: #2dd4bf; }
 	    .sql-highlight-code .sql-token-table-7,
 	    .sql-highlight-code .sql-token-field-7,
 	    .code-suggest-label .sql-token-table-7,
-	    .code-suggest-label .sql-token-field-7 { color: #c084fc; background: rgba(192, 132, 252, .12); }
+	    .code-suggest-label .sql-token-field-7 { color: #c084fc; }
 
 	    .sql-drawer { border-bottom: 1px solid var(--line); background: var(--panel); display: none; }
     .sql-drawer.open { display: block; }
@@ -3318,14 +3318,14 @@ export class DatabaseWorkbenchPanel {
 	    .schema-confirm-sql .sql-token-comment { color: var(--muted); font-style: italic; }
 	    .schema-confirm-sql .sql-token-field { color: #c4b5fd; }
 	    .schema-confirm-sql .sql-token-table { font-weight: 750; border-radius: 4px; padding: 0 2px; }
-	    .schema-confirm-sql .sql-token-table-0, .schema-confirm-sql .sql-token-field-0 { color: #34d399; background: rgba(52, 211, 153, .12); }
-	    .schema-confirm-sql .sql-token-table-1, .schema-confirm-sql .sql-token-field-1 { color: #60a5fa; background: rgba(96, 165, 250, .12); }
-	    .schema-confirm-sql .sql-token-table-2, .schema-confirm-sql .sql-token-field-2 { color: #f472b6; background: rgba(244, 114, 182, .12); }
-	    .schema-confirm-sql .sql-token-table-3, .schema-confirm-sql .sql-token-field-3 { color: #fbbf24; background: rgba(251, 191, 36, .12); }
-	    .schema-confirm-sql .sql-token-table-4, .schema-confirm-sql .sql-token-field-4 { color: #a78bfa; background: rgba(167, 139, 250, .12); }
-	    .schema-confirm-sql .sql-token-table-5, .schema-confirm-sql .sql-token-field-5 { color: #fb7185; background: rgba(251, 113, 133, .12); }
-	    .schema-confirm-sql .sql-token-table-6, .schema-confirm-sql .sql-token-field-6 { color: #2dd4bf; background: rgba(45, 212, 191, .12); }
-	    .schema-confirm-sql .sql-token-table-7, .schema-confirm-sql .sql-token-field-7 { color: #c084fc; background: rgba(192, 132, 252, .12); }
+	    .schema-confirm-sql .sql-token-table-0, .schema-confirm-sql .sql-token-field-0 { color: #34d399; }
+	    .schema-confirm-sql .sql-token-table-1, .schema-confirm-sql .sql-token-field-1 { color: #60a5fa; }
+	    .schema-confirm-sql .sql-token-table-2, .schema-confirm-sql .sql-token-field-2 { color: #f472b6; }
+	    .schema-confirm-sql .sql-token-table-3, .schema-confirm-sql .sql-token-field-3 { color: #fbbf24; }
+	    .schema-confirm-sql .sql-token-table-4, .schema-confirm-sql .sql-token-field-4 { color: #a78bfa; }
+	    .schema-confirm-sql .sql-token-table-5, .schema-confirm-sql .sql-token-field-5 { color: #fb7185; }
+	    .schema-confirm-sql .sql-token-table-6, .schema-confirm-sql .sql-token-field-6 { color: #2dd4bf; }
+	    .schema-confirm-sql .sql-token-table-7, .schema-confirm-sql .sql-token-field-7 { color: #c084fc; }
 	    .schema-confirm-actions {
       display: flex;
       justify-content: flex-end;
