@@ -2308,9 +2308,7 @@ export class DatabaseWorkbenchPanel {
     .hidden { display: none !important; }
     .status strong { color: var(--ok); }
     .status.error { color: var(--danger); }
-    .grid-scroll { min-width: 0; max-width: 100%; min-height: 0; overflow: auto; }
-    .grid-scroll::-webkit-scrollbar:horizontal { height: 0; display: none; }
-    .grid-scroll::-webkit-scrollbar-corner { background: transparent; }
+    .grid-scroll { min-width: 0; max-width: 100%; min-height: 0; overflow-x: hidden; overflow-y: auto; }
     .grid-scroll.has-pager { padding-bottom: 58px; scroll-padding-bottom: 58px; }
     .pager {
       display: none;
