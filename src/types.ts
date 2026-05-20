@@ -219,6 +219,7 @@ export type TableDisplayConfig = {
   showColumnComments: boolean;
   hiddenColumnCommentNames: string[];
   dataGridFontSize: number;
+  sqlConfirmFontSize: number;
 };
 
 export type LogConfig = {
@@ -404,7 +405,13 @@ export function getTableDisplayConfig(): TableDisplayConfig {
     showColumnComments: config.get("showColumnComments", true),
     hiddenColumnCommentNames: config.get("hiddenColumnCommentNames", ["id", "created_at", "updated_at", "deleted_at"]),
     dataGridFontSize: clampFontSize(config.get("dataGridFontSize", 12), 9, 24, 12),
+    sqlConfirmFontSize: getSqlConfirmFontSize(),
   };
+}
+
+export function getSqlConfirmFontSize(): number {
+  const config = vscode.workspace.getConfiguration("databaseWorkbench.table");
+  return clampFontSize(config.get("sqlConfirmFontSize", 15), 10, 32, 15);
 }
 
 function clampFontSize(value: unknown, min: number, max: number, fallback: number): number {

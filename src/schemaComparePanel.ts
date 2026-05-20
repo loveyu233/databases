@@ -3,7 +3,7 @@ import * as vscode from "vscode";
 import { DatabaseService } from "./database/clients";
 import { areTableSchemasEqual, buildSchemaSyncSql } from "./schemaSync";
 import { ConnectionStore } from "./storage";
-import { DbConnectionConfig, DbConnectionWithSecret, TableInfo, TableSummary } from "./types";
+import { DbConnectionConfig, DbConnectionWithSecret, getSqlConfirmFontSize, TableInfo, TableSummary } from "./types";
 
 type CompareInitMessage = {
   type: "init";
@@ -61,7 +61,7 @@ export class SchemaComparePanel {
   ) {
     this.panel.onDidDispose(() => this.dispose(), null, this.disposables);
     this.panel.webview.onDidReceiveMessage((message: CompareMessage) => this.handleMessage(message), null, this.disposables);
-    this.panel.webview.html = renderCompareHtml();
+    this.panel.webview.html = renderCompareHtml(getSqlConfirmFontSize());
   }
 
   static open(
@@ -654,7 +654,7 @@ function ensureSqlSemicolon(sql: string): string {
   return `${sql.trim().replace(/;\s*$/, "")};`;
 }
 
-function renderCompareHtml(): string {
+function renderCompareHtml(sqlConfirmFontSize = 15): string {
   const nonce = randomUUID().replace(/-/g, "");
   return String.raw`<!DOCTYPE html>
 <html lang="zh-CN">
@@ -768,7 +768,7 @@ function renderCompareHtml(): string {
 	    .sql-confirm-title { font-weight: 700; color: var(--fg); }
 	    .sql-confirm-subtitle { margin-top: 4px; color: var(--muted); font-size: 12px; }
 	    .sql-confirm-body { min-height: 0; padding: 14px 16px; overflow: hidden; }
-	    .sql-confirm-code { box-sizing: border-box; width: 100%; height: 100%; min-height: 0; margin: 0; padding: 12px; overflow: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--fg); white-space: pre; font-family: var(--vscode-editor-font-family); font-size: 12px; line-height: 1.6; overscroll-behavior: contain; }
+	    .sql-confirm-code { box-sizing: border-box; width: 100%; height: 100%; min-height: 0; margin: 0; padding: 12px; overflow: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--fg); white-space: pre; font-family: var(--vscode-editor-font-family); font-size: ${sqlConfirmFontSize}px; line-height: 1.6; overscroll-behavior: contain; }
 	    .sql-confirm-code .sql-token-keyword { color: #7dd3fc; font-weight: 700; }
 	    .sql-confirm-code .sql-token-string { color: #f9a8d4; }
 	    .sql-confirm-code .sql-token-number { color: #fbbf24; }

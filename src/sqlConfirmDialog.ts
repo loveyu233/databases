@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import * as vscode from "vscode";
+import { getSqlConfirmFontSize } from "./types";
 
 export type SqlConfirmOptions = {
   title: string;
@@ -37,6 +38,7 @@ function renderSqlConfirmHtml(options: SqlConfirmOptions): string {
   const title = escapeHtml(options.title || "确认执行 SQL");
   const sql = escapeHtml(options.sql || "");
   const confirmLabel = escapeHtml(options.confirmLabel || "确认执行");
+  const sqlConfirmFontSize = getSqlConfirmFontSize();
   return `<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -53,7 +55,7 @@ function renderSqlConfirmHtml(options: SqlConfirmOptions): string {
     .title { font-weight: 700; color: var(--fg); }
     .subtitle { margin-top: 4px; color: var(--muted); font-size: 12px; }
     .body { min-height: 0; padding: 14px 16px; overflow: hidden; }
-    pre { width: 100%; height: 100%; min-height: 0; margin: 0; padding: 12px; overflow: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--fg); white-space: pre; font-family: var(--mono); font-size: 12px; line-height: 1.6; overscroll-behavior: contain; }
+    pre { width: 100%; height: 100%; min-height: 0; margin: 0; padding: 12px; overflow: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--fg); white-space: pre; font-family: var(--mono); font-size: ${sqlConfirmFontSize}px; line-height: 1.6; overscroll-behavior: contain; }
     pre .sql-token-keyword { color: #7dd3fc; font-weight: 700; }
     pre .sql-token-string { color: #f9a8d4; }
     pre .sql-token-number { color: #fbbf24; }

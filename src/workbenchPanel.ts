@@ -3308,7 +3308,7 @@ export class DatabaseWorkbenchPanel {
       color: var(--fg);
       white-space: pre;
       font-family: var(--mono);
-      font-size: 12px;
+      font-size: var(--sql-confirm-font-size, 15px);
 	      line-height: 1.6;
 	      overscroll-behavior: contain;
 	    }
@@ -3696,7 +3696,7 @@ export class DatabaseWorkbenchPanel {
 	  <script nonce="${nonce}">
     const vscode = acquireVsCodeApi();
     let webviewPersistedState = typeof vscode.getState === "function" ? (vscode.getState() || {}) : {};
-	    const state = { database: "", connectionId: "", connectionName: "", connectionType: "mysql", queryConsole: false, connections: [], tables: [], selectedTable: "", currentTable: null, schemaEditor: null, defaultLimit: 30, tableDisplay: { showColumnComments: true, hiddenColumnCommentNames: ["id", "created_at", "updated_at", "deleted_at"], dataGridFontSize: 12 }, schemaCapabilities: { supportsNotEmptyStringCheck: false }, lastSql: "", currentResult: null, sortColumn: "", sortDirection: "asc", fieldColumns: [], selectedColumns: [], fieldSelectionInitialized: false, lastQueryMode: "preview", primaryKeys: [], columnTypes: {}, columnComments: {}, columnMeta: {}, pendingEdits: {}, quickInsert: { active: false, values: {} }, rowSelection: { selected: [], dragging: false, anchor: null, deleting: false }, importSource: { databases: [], tables: [], columns: [], mappings: [] }, redisDetail: { key: "", keyType: "", page: 1, pageSize: 30, totalRows: 0, totalPages: 1, columns: [], rows: [], search: "", fuzzySearch: false, sortDirection: "asc", memoryUsage: null, contextRowIndex: -1 }, operationLogs: [], selectedLogId: "", rollbackingLogId: "", rollbackError: null, logContextLogId: "", activeLogTagColor: "", logTagDraft: { logId: "", color: "blue" }, aiTimeline: [], aiActiveTimelineId: "", aiContinueParentId: "", aiContinueSourceId: "" };
+	    const state = { database: "", connectionId: "", connectionName: "", connectionType: "mysql", queryConsole: false, connections: [], tables: [], selectedTable: "", currentTable: null, schemaEditor: null, defaultLimit: 30, tableDisplay: { showColumnComments: true, hiddenColumnCommentNames: ["id", "created_at", "updated_at", "deleted_at"], dataGridFontSize: 12, sqlConfirmFontSize: 15 }, schemaCapabilities: { supportsNotEmptyStringCheck: false }, lastSql: "", currentResult: null, sortColumn: "", sortDirection: "asc", fieldColumns: [], selectedColumns: [], fieldSelectionInitialized: false, lastQueryMode: "preview", primaryKeys: [], columnTypes: {}, columnComments: {}, columnMeta: {}, pendingEdits: {}, quickInsert: { active: false, values: {} }, rowSelection: { selected: [], dragging: false, anchor: null, deleting: false }, importSource: { databases: [], tables: [], columns: [], mappings: [] }, redisDetail: { key: "", keyType: "", page: 1, pageSize: 30, totalRows: 0, totalPages: 1, columns: [], rows: [], search: "", fuzzySearch: false, sortDirection: "asc", memoryUsage: null, contextRowIndex: -1 }, operationLogs: [], selectedLogId: "", rollbackingLogId: "", rollbackError: null, logContextLogId: "", activeLogTagColor: "", logTagDraft: { logId: "", color: "blue" }, aiTimeline: [], aiActiveTimelineId: "", aiContinueParentId: "", aiContinueSourceId: "" };
     const $ = (selector) => document.querySelector(selector);
 	    const sqlInput = $("#sqlInput");
 	    const sqlHighlight = $("#sqlHighlight");
@@ -7485,17 +7485,20 @@ export class DatabaseWorkbenchPanel {
 
     function normalizeTableDisplayConfig(config) {
       const fontSize = Number(config?.dataGridFontSize);
+      const sqlConfirmFontSize = Number(config?.sqlConfirmFontSize);
       return {
         showColumnComments: config?.showColumnComments !== false,
         hiddenColumnCommentNames: Array.isArray(config?.hiddenColumnCommentNames)
           ? config.hiddenColumnCommentNames.map((name) => String(name).toLowerCase())
           : ["id", "created_at", "updated_at", "deleted_at"],
         dataGridFontSize: Number.isFinite(fontSize) ? Math.min(24, Math.max(9, Math.round(fontSize))) : 12,
+        sqlConfirmFontSize: Number.isFinite(sqlConfirmFontSize) ? Math.min(32, Math.max(10, Math.round(sqlConfirmFontSize))) : 15,
       };
     }
 
     function applyTableDisplayConfig() {
       document.documentElement.style.setProperty("--data-table-font-size", state.tableDisplay.dataGridFontSize + "px");
+      document.documentElement.style.setProperty("--sql-confirm-font-size", state.tableDisplay.sqlConfirmFontSize + "px");
     }
 
     function normalizeSchemaCapabilities(capabilities) {

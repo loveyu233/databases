@@ -617,6 +617,13 @@
           "minimum": 9,
           "maximum": 24,
           "description": "标签页数据表格字体大小，单位 px。修改后已打开的标签页会自动更新。"
+        },
+        "databaseWorkbench.table.sqlConfirmFontSize": {
+          "type": "number",
+          "default": 15,
+          "minimum": 10,
+          "maximum": 32,
+          "description": "SQL 确认类弹窗中 SQL 预览字体大小，单位 px。修改后已打开的表格标签页会自动更新。"
         }
       }
     },
