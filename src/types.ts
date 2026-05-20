@@ -297,6 +297,7 @@ export type PanelMessage =
         primaryValues: Record<string, unknown>;
         changes: Record<string, unknown>;
       }>;
+      confirmed?: boolean;
     }
   | { type: "generateSql"; prompt: string; tableNames?: string[] }
   | { type: "saveCompletionUsage"; completionUsage: Record<string, number> }
@@ -319,6 +320,7 @@ export type PanelToWebviewMessage =
   | { type: "schemaDraftApplied" }
   | { type: "schemaDraftError"; message: string }
   | { type: "schemaDraftPreview"; title: string; sql: string }
+  | { type: "updateCellsPreview"; title: string; sql: string; table: string; primaryKeys: string[]; updates: Array<{ primaryValues: Record<string, unknown>; changes: Record<string, unknown> }> }
   | { type: "openSchemaEditor"; mode: "editTable" | "createTable" }
   | { type: "generatedSql"; sql: string }
   | { type: "generatedCreateTableSql"; sql: string }

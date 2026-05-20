@@ -305,7 +305,7 @@ export class DatabaseWorkbenchPanel {
           await this.markOperationLog(message.logId, message.label, message.color);
           return;
         case "updateCells":
-          await this.updateCells(message.table, message.primaryKeys, message.updates);
+          await this.updateCells(message.table, message.primaryKeys, message.updates, message.confirmed === true);
           return;
         case "generateSql":
           await this.generateSql(message.prompt, message.tableNames);
@@ -1089,7 +1089,8 @@ export class DatabaseWorkbenchPanel {
   private async updateCells(
     table: string,
     primaryKeys: string[],
-    updates: Array<{ primaryValues: Record<string, unknown>; changes: Record<string, unknown> }>
+    updates: Array<{ primaryValues: Record<string, unknown>; changes: Record<string, unknown> }>,
+    confirmed: boolean
   ): Promise<void> {
     if (!table || primaryKeys.length === 0 || updates.length === 0) {
       throw new Error("缺少主键或修改内容，无法构造 UPDATE。");
@@ -1097,12 +1098,15 @@ export class DatabaseWorkbenchPanel {
 
     const statements = updates.map((update) => buildUpdateSql(this.connection.type, table, primaryKeys, update.primaryValues, update.changes));
     const sqlPreview = statements.join("\n");
-    const confirmed = await vscode.window.showWarningMessage(
-      "确认执行下面的 UPDATE 语句吗？",
-      { modal: true, detail: sqlPreview },
-      "确认执行"
-    );
-    if (confirmed !== "确认执行") {
+    if (!confirmed) {
+      this.panel.webview.postMessage({
+        type: "updateCellsPreview",
+        title: "确认执行下面的 UPDATE 语句吗？",
+        sql: sqlPreview,
+        table,
+        primaryKeys,
+        updates,
+      });
       return;
     }
 
@@ -3532,6 +3536,7 @@ export class DatabaseWorkbenchPanel {
     let activeEdit = null;
     let activeContextRowIndex = null;
     let pendingSchemaConfirmDraft = null;
+    let pendingUpdateConfirmPayload = null;
     let aiCreateTableLoadingTimer = null;
     let schemaErrorTimer = null;
     let statusLoadingTimer = null;
@@ -3716,6 +3721,7 @@ export class DatabaseWorkbenchPanel {
       if (message.type === "schemaDraftApplied") {
         state.schemaEditor = null;
         pendingSchemaConfirmDraft = null;
+        pendingUpdateConfirmPayload = null;
         closeSchemaConfirmDialog();
         closeSchemaEditor();
         setSchemaSubmitError("");
@@ -3725,6 +3731,11 @@ export class DatabaseWorkbenchPanel {
       if (message.type === "schemaDraftPreview") {
         openSchemaConfirmDialog(message.title || "确认执行 SQL", message.sql || "");
         setStatus("请确认即将执行的表结构 SQL。", false);
+        return;
+      }
+      if (message.type === "updateCellsPreview") {
+        openUpdateCellsConfirmDialog(message);
+        setStatus("请确认即将执行的 UPDATE SQL。", false);
         return;
       }
       if (message.type === "schemaDraftError") {
@@ -4995,19 +5006,44 @@ export class DatabaseWorkbenchPanel {
     function openSchemaConfirmDialog(title, sql) {
       if (!state.schemaEditor) return;
       pendingSchemaConfirmDraft = clonePlain(state.schemaEditor);
+      pendingUpdateConfirmPayload = null;
       schemaConfirmTitle.textContent = title || "确认执行 SQL";
       schemaConfirmSql.textContent = sql || "";
       schemaConfirmOverlay.classList.add("open");
       schemaConfirmSql.scrollTop = 0;
     }
 
+    function openUpdateCellsConfirmDialog(message) {
+      pendingSchemaConfirmDraft = null;
+      pendingUpdateConfirmPayload = {
+        table: message.table,
+        primaryKeys: message.primaryKeys || [],
+        updates: message.updates || [],
+      };
+      schemaConfirmTitle.textContent = message.title || "确认执行下面的 UPDATE 语句吗？";
+      schemaConfirmSql.textContent = message.sql || "";
+      schemaConfirmOverlay.classList.add("open");
+      schemaConfirmSql.scrollTop = 0;
+      schemaConfirmSql.scrollLeft = 0;
+    }
+
     function closeSchemaConfirmDialog() {
       schemaConfirmOverlay.classList.remove("open");
       schemaConfirmSql.textContent = "";
       pendingSchemaConfirmDraft = null;
+      pendingUpdateConfirmPayload = null;
     }
 
     function confirmSchemaDraftApply() {
+      if (pendingUpdateConfirmPayload) {
+        const payload = pendingUpdateConfirmPayload;
+        closeSchemaConfirmDialog();
+        setSchemaSubmitError("");
+        vscode.postMessage({ type: "updateCells", ...payload, confirmed: true });
+        setStatus("正在提交单元格修改...", false);
+        return;
+      }
+
       const draft = pendingSchemaConfirmDraft;
       if (!draft) {
         closeSchemaConfirmDialog();
