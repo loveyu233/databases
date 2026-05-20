@@ -2820,6 +2820,29 @@ export class DatabaseWorkbenchPanel {
     .tag-color-button:hover { background: var(--tag-color); transform: translateY(-1px); }
     .tag-color-button.active { box-shadow: 0 0 0 2px var(--panel-2), 0 0 0 4px var(--tag-color); }
     .log-tag-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 14px; border-top: 1px solid var(--line); }
+    .discard-refresh-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 145;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 22px;
+      background: rgba(0, 0, 0, .38);
+    }
+    .discard-refresh-overlay.open { display: flex; }
+    .discard-refresh-dialog {
+      width: min(460px, 92vw);
+      border: 1px solid var(--line);
+      border-radius: 13px;
+      overflow: hidden;
+      background: var(--panel-2);
+      box-shadow: 0 20px 56px rgba(0,0,0,.42);
+    }
+    .discard-refresh-head { padding: 14px 16px 8px; }
+    .discard-refresh-title { font-weight: 650; color: var(--fg); }
+    .discard-refresh-body { padding: 0 16px 16px; color: var(--muted); font-size: 13px; line-height: 1.7; }
+    .discard-refresh-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--line); background: rgba(255,255,255,.015); }
     .export-overlay {
       position: fixed;
       inset: 0;
@@ -3464,6 +3487,19 @@ export class DatabaseWorkbenchPanel {
     </div>
   </div>
 
+  <div class="discard-refresh-overlay" id="discardRefreshOverlay" role="dialog" aria-modal="true" aria-labelledby="discardRefreshTitle">
+    <div class="discard-refresh-dialog">
+      <div class="discard-refresh-head">
+        <div class="discard-refresh-title" id="discardRefreshTitle">确认刷新数据</div>
+      </div>
+      <div class="discard-refresh-body">刷新数据会丢失暂存的修改数据，是否确认？</div>
+      <div class="discard-refresh-actions">
+        <button class="secondary" id="cancelDiscardRefreshBtn">取消</button>
+        <button id="confirmDiscardRefreshBtn">确认</button>
+      </div>
+    </div>
+  </div>
+
 	  <script nonce="${nonce}">
     const vscode = acquireVsCodeApi();
     let webviewPersistedState = typeof vscode.getState === "function" ? (vscode.getState() || {}) : {};
@@ -3510,6 +3546,7 @@ export class DatabaseWorkbenchPanel {
     const logDetail = $("#logDetail");
     const logContextMenu = $("#logContextMenu");
     const logTagOverlay = $("#logTagOverlay");
+    const discardRefreshOverlay = $("#discardRefreshOverlay");
     const logTagInput = $("#logTagInput");
     const logTagColors = $("#logTagColors");
     const logTagFilterColors = $("#logTagFilterColors");
@@ -3788,6 +3825,11 @@ export class DatabaseWorkbenchPanel {
     vscode.postMessage({ type: "ready" });
 
     $("#refreshBtn").addEventListener("click", () => refreshData());
+    $("#cancelDiscardRefreshBtn").addEventListener("click", () => closeDiscardRefreshDialog());
+    $("#confirmDiscardRefreshBtn").addEventListener("click", () => confirmDiscardRefresh());
+    discardRefreshOverlay.addEventListener("click", (event) => {
+      if (event.target === discardRefreshOverlay) closeDiscardRefreshDialog();
+    });
     autoRefreshInput.addEventListener("input", () => {
       autoRefreshInput.value = sanitizeAutoRefreshValue(autoRefreshInput.value);
       updateAutoRefreshTimer();
@@ -4025,6 +4067,7 @@ export class DatabaseWorkbenchPanel {
         hideLogContextMenu();
         hideRedisDetailContextMenu();
         closeLogTagDialog();
+        closeDiscardRefreshDialog();
         closeRedisKeyDetail();
       }
     });
@@ -4871,7 +4914,7 @@ export class DatabaseWorkbenchPanel {
       }
       if (hasPendingEdits()) {
         if (!options.silent) {
-          setStatus("请先提交当前修改后再刷新数据。", true);
+          openDiscardRefreshDialog();
         }
         return;
       }
@@ -4888,6 +4931,20 @@ export class DatabaseWorkbenchPanel {
         limit: Number(limitInput.value || state.defaultLimit),
         page: 1,
       });
+    }
+
+    function openDiscardRefreshDialog() {
+      discardRefreshOverlay.classList.add("open");
+    }
+
+    function closeDiscardRefreshDialog() {
+      discardRefreshOverlay.classList.remove("open");
+    }
+
+    function confirmDiscardRefresh() {
+      closeDiscardRefreshDialog();
+      clearPendingEdits();
+      refreshData({ force: true });
     }
 
     function sanitizeAutoRefreshValue(value) {
