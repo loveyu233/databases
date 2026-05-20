@@ -14,10 +14,17 @@ export type TreeNode =
   | { kind: "database"; connection: DbConnectionConfig; database: string }
   | { kind: "table"; connection: DbConnectionConfig; database: string; table: string; comment?: string };
 
+export type ActiveTableHighlight = {
+  connectionId: string;
+  database: string;
+  table: string;
+};
+
 export class ConnectionsTreeProvider implements vscode.TreeDataProvider<TreeNode>, vscode.TreeDragAndDropController<TreeNode> {
   private readonly onDidChangeTreeDataEmitter = new vscode.EventEmitter<TreeNode | undefined | null | void>();
   readonly onDidChangeTreeData = this.onDidChangeTreeDataEmitter.event;
   private readonly connectionCounts = new Map<string, { selected: number; total: number }>();
+  private activeTableKey = "";
   readonly dragMimeTypes = [CONNECTION_DRAG_MIME];
   readonly dropMimeTypes = [CONNECTION_DRAG_MIME];
 
@@ -28,6 +35,15 @@ export class ConnectionsTreeProvider implements vscode.TreeDataProvider<TreeNode
 
   refresh(node?: TreeNode): void {
     this.onDidChangeTreeDataEmitter.fire(node);
+  }
+
+  setActiveTable(table?: ActiveTableHighlight): void {
+    const nextKey = table ? buildActiveTableKey(table.connectionId, table.database, table.table) : "";
+    if (nextKey === this.activeTableKey) {
+      return;
+    }
+    this.activeTableKey = nextKey;
+    this.refresh();
   }
 
   getTreeItem(node: TreeNode): vscode.TreeItem {
@@ -89,14 +105,24 @@ export class ConnectionsTreeProvider implements vscode.TreeDataProvider<TreeNode
       return item;
     }
 
-    const item = new vscode.TreeItem(node.table, vscode.TreeItemCollapsibleState.None);
     const pinned = this.isPinned(node);
+    const active = this.isActiveTable(node);
+    const item = new vscode.TreeItem(
+      active ? { label: node.table, highlights: [[0, node.table.length]] } : node.table,
+      vscode.TreeItemCollapsibleState.None
+    );
     item.description = `${pinned ? "置顶 · " : ""}${node.comment?.trim() || getTableDescription(node.connection.type)}`;
     item.tooltip = node.comment?.trim()
-      ? `${pinned ? "已置顶。\n" : ""}${node.table}\n${node.comment.trim()}`
-      : `${pinned ? "已置顶： " : ""}${node.table}`;
+      ? `${active ? "当前操作表。\n" : ""}${pinned ? "已置顶。\n" : ""}${node.table}\n${node.comment.trim()}`
+      : `${active ? "当前操作表。\n" : ""}${pinned ? "已置顶： " : ""}${node.table}`;
+    if (active) {
+      item.description = `${pinned ? "置顶 · " : ""}当前 · ${node.comment?.trim() || getTableDescription(node.connection.type)}`;
+    }
     item.contextValue = `databaseWorkbench.table.${node.connection.type}.${pinned ? "pinned" : "unpinned"}`;
-    item.iconPath = new vscode.ThemeIcon(node.connection.type === "redis" ? "symbol-key" : node.connection.type === "elasticsearch" ? "symbol-array" : "table");
+    item.iconPath = new vscode.ThemeIcon(
+      node.connection.type === "redis" ? "symbol-key" : node.connection.type === "elasticsearch" ? "symbol-array" : "table",
+      active ? new vscode.ThemeColor("list.highlightForeground") : undefined
+    );
     item.command = {
       command: "databaseWorkbench.openTable",
       title: "查看表信息",
@@ -242,6 +268,10 @@ export class ConnectionsTreeProvider implements vscode.TreeDataProvider<TreeNode
     return this.store.isPinnedNodeKey(getTreeNodePinKey(node));
   }
 
+  private isActiveTable(node: { kind: "table"; connection: DbConnectionConfig; database: string; table: string }): boolean {
+    return this.activeTableKey === buildActiveTableKey(node.connection.id, node.database, node.table);
+  }
+
   private sortPinnedFirst<T extends TreeNode>(nodes: T[]): T[] {
     return nodes
       .map((node, index) => ({ node, index, rank: this.store.getPinnedNodeRank(getTreeNodePinKey(node)) }))
@@ -306,6 +336,10 @@ export function getTreeNodePinKey(node: TreeNode): string {
     return `database:${node.connection.id}:${encodePinPart(node.kind === "database" ? node.database : "__filter__")}`;
   }
   return `table:${node.connection.id}:${encodePinPart(node.database)}:${encodePinPart(node.table)}`;
+}
+
+function buildActiveTableKey(connectionId: string, database: string, table: string): string {
+  return `${connectionId}\n${database}\n${table}`;
 }
 
 function isTreeNode(value: unknown): value is TreeNode {

@@ -29,6 +29,11 @@ type WorkbenchPanelOptions = {
   schemaEditorMode?: SchemaEditorMode;
   queryConsole?: boolean;
 };
+export type ActiveWorkbenchTable = {
+  connectionId: string;
+  database: string;
+  table: string;
+};
 type SqlPaginationPlan = {
   executableSql: string;
   baseSql?: string;
@@ -53,6 +58,9 @@ type SqlStatementSelection = {
 export class DatabaseWorkbenchPanel {
   private static readonly panels = new Map<string, DatabaseWorkbenchPanel>();
   private static readonly completionUsageStateKey = "databaseWorkbench.completionUsage";
+  private static readonly activeTableChangedEmitter = new vscode.EventEmitter<ActiveWorkbenchTable | undefined>();
+  static readonly onDidChangeActiveTable = DatabaseWorkbenchPanel.activeTableChangedEmitter.event;
+  private static activePanelKey = "";
 
   private readonly disposables: vscode.Disposable[] = [];
   private schema: TableInfo[] = [];
@@ -82,8 +90,10 @@ export class DatabaseWorkbenchPanel {
     this.createTablePanel = options?.schemaEditorMode === "createTable";
     this.selectedTable = initialTable;
     this.panel.onDidDispose(() => this.dispose(), null, this.disposables);
+    this.panel.onDidChangeViewState(() => this.updateActiveTableHighlight(), null, this.disposables);
     this.panel.webview.onDidReceiveMessage((message: PanelMessage) => this.handleMessage(message), null, this.disposables);
     this.panel.webview.html = this.renderHtml(this.panel.webview);
+    this.updateActiveTableHighlight();
   }
 
   static open(
@@ -200,9 +210,29 @@ export class DatabaseWorkbenchPanel {
 
   private dispose(): void {
     DatabaseWorkbenchPanel.panels.delete(this.panelKey);
+    if (DatabaseWorkbenchPanel.activePanelKey === this.panelKey) {
+      DatabaseWorkbenchPanel.activePanelKey = "";
+      DatabaseWorkbenchPanel.activeTableChangedEmitter.fire(undefined);
+    }
     while (this.disposables.length) {
       this.disposables.pop()?.dispose();
     }
+  }
+
+  private updateActiveTableHighlight(): void {
+    if (!this.panel.active) {
+      if (DatabaseWorkbenchPanel.activePanelKey === this.panelKey) {
+        DatabaseWorkbenchPanel.activePanelKey = "";
+        DatabaseWorkbenchPanel.activeTableChangedEmitter.fire(undefined);
+      }
+      return;
+    }
+
+    DatabaseWorkbenchPanel.activePanelKey = this.panelKey;
+    const activeTable = !this.queryConsole && !this.createTablePanel && this.selectedTable
+      ? { connectionId: this.connection.id, database: this.database, table: this.selectedTable }
+      : undefined;
+    DatabaseWorkbenchPanel.activeTableChangedEmitter.fire(activeTable);
   }
 
   private async refreshPanelData(): Promise<void> {
@@ -393,6 +423,7 @@ export class DatabaseWorkbenchPanel {
   private async selectTable(table: string, preview: boolean): Promise<void> {
     this.selectedTable = table;
     this.panel.title = `${table} · ${this.database}`;
+    this.updateActiveTableHighlight();
 
     if (this.schema.length === 0) {
       await this.postSelectedTable({ name: table, columns: [] });
@@ -405,6 +436,7 @@ export class DatabaseWorkbenchPanel {
     const tableInfo = this.findTable(table) ?? { name: table, columns: [] };
     this.selectedTable = tableInfo.name;
     this.panel.title = `${tableInfo.name} · ${this.database}`;
+    this.updateActiveTableHighlight();
 
     await this.postSelectedTable(tableInfo);
 
@@ -423,6 +455,7 @@ export class DatabaseWorkbenchPanel {
     if (mode === "createTable") {
       this.selectedTable = undefined;
       this.panel.title = `正在创建 · ${this.database}`;
+      this.updateActiveTableHighlight();
     }
     if (this.schemaLoaded) {
       this.flushSchemaEditorRequest();

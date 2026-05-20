@@ -42,6 +42,7 @@ export function activate(context: vscode.ExtensionContext): void {
     ...registerOfflineLicenseCommands(context),
     connectionsTreeView,
     vscode.window.registerFileDecorationProvider(groupDecorationProvider),
+    DatabaseWorkbenchPanel.onDidChangeActiveTable((table) => treeProvider.setActiveTable(table)),
     vscode.workspace.onDidChangeConfiguration((event) => {
       if (event.affectsConfiguration("databaseWorkbench.table")) {
         DatabaseWorkbenchPanel.refreshTableDisplayConfig();
