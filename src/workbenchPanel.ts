@@ -269,34 +269,34 @@ export class DatabaseWorkbenchPanel {
           this.panel.dispose();
           return;
         case "insertRow":
-          await this.insertRow(message.table, message.values);
+          await this.insertRow(message.table, message.values, message.confirmed === true);
           return;
         case "deleteRow":
-          await this.deleteRow(message.table, message.primaryKeys, message.primaryValues);
+          await this.deleteRow(message.table, message.primaryKeys, message.primaryValues, message.confirmed === true);
           return;
         case "deleteRows":
-          await this.deleteRows(message.table, message.primaryKeys, message.primaryValuesList);
+          await this.deleteRows(message.table, message.primaryKeys, message.primaryValuesList, message.confirmed === true);
           return;
         case "redisDeleteKeys":
-          await this.redisDeleteKeys(message.keys);
+          await this.redisDeleteKeys(message.keys, message.confirmed === true);
           return;
         case "redisUpdateKeys":
-          await this.redisUpdateKeys(message.updates);
+          await this.redisUpdateKeys(message.updates, message.confirmed === true);
           return;
         case "redisUpdateTtls":
-          await this.redisUpdateTtls(message.updates);
+          await this.redisUpdateTtls(message.updates, message.confirmed === true);
           return;
         case "redisInspectKey":
           await this.redisInspectKey(message.key, message.page, message.pageSize, message.search, message.fuzzySearch, message.sortDirection);
           return;
         case "redisDeleteMember":
-          await this.redisDeleteMember(message.key, message.keyType, message.row, message.page, message.pageSize, message.search, message.fuzzySearch, message.sortDirection);
+          await this.redisDeleteMember(message.key, message.keyType, message.row, message.page, message.pageSize, message.search, message.fuzzySearch, message.sortDirection, message.confirmed === true);
           return;
         case "loadOperationLogs":
           await this.loadOperationLogs(message.table);
           return;
         case "rollbackOperationLog":
-          await this.rollbackOperationLog(message.logId);
+          await this.rollbackOperationLog(message.logId, message.confirmed === true);
           return;
         case "analyzeOperationLogError":
           await this.analyzeOperationLogError(message.logId);
@@ -321,6 +321,23 @@ export class DatabaseWorkbenchPanel {
       }
       await this.postError("query", error);
     }
+  }
+
+  private postSqlConfirmPreview(
+    title: string,
+    sql: string,
+    action: PanelMessage,
+    status?: string,
+    cancelAction?: PanelMessage
+  ): void {
+    this.panel.webview.postMessage({
+      type: "sqlConfirmPreview",
+      title,
+      sql,
+      action,
+      status,
+      cancelAction,
+    });
   }
 
   private async loadSchema(force = false): Promise<void> {
@@ -884,12 +901,13 @@ export class DatabaseWorkbenchPanel {
       rowLimit,
       batchSize
     );
-    const confirmed = await vscode.window.showWarningMessage(
-      "确认执行下面的数据导入吗？导入会开启事务，任一批次失败会整体回滚。",
-      { modal: true, detail: sqlPreview },
-      "确认导入"
-    );
-    if (confirmed !== "确认导入") {
+    if (message.confirmed !== true) {
+      this.postSqlConfirmPreview(
+        "确认执行下面的数据导入吗？导入会开启事务，任一批次失败会整体回滚。",
+        sqlPreview,
+        { ...message, confirmed: true },
+        "请确认即将执行的数据导入 SQL。"
+      );
       return;
     }
 
@@ -1146,18 +1164,19 @@ export class DatabaseWorkbenchPanel {
     await this.previewTable(table);
   }
 
-  private async insertRow(table: string, values: Record<string, unknown>): Promise<void> {
+  private async insertRow(table: string, values: Record<string, unknown>, confirmed: boolean): Promise<void> {
     if (!table.trim()) {
       throw new Error("请先从左侧数据库树选择一张表。");
     }
 
     const statement = buildInsertSql(this.connection.type, table, values);
-    const confirmed = await vscode.window.showWarningMessage(
-      "确认执行下面的 INSERT 语句吗？",
-      { modal: true, detail: statement },
-      "确认执行"
-    );
-    if (confirmed !== "确认执行") {
+    if (!confirmed) {
+      this.postSqlConfirmPreview(
+        "确认执行下面的 INSERT 语句吗？",
+        statement,
+        { type: "insertRow", table, values, confirmed: true },
+        "请确认即将执行的 INSERT SQL。"
+      );
       return;
     }
 
@@ -1193,11 +1212,11 @@ export class DatabaseWorkbenchPanel {
     await this.previewTable(table);
   }
 
-  private async deleteRow(table: string, primaryKeys: string[], primaryValues: Record<string, unknown>): Promise<void> {
-    await this.deleteRows(table, primaryKeys, [primaryValues]);
+  private async deleteRow(table: string, primaryKeys: string[], primaryValues: Record<string, unknown>, confirmed: boolean): Promise<void> {
+    await this.deleteRows(table, primaryKeys, [primaryValues], confirmed);
   }
 
-  private async deleteRows(table: string, primaryKeys: string[], primaryValuesList: Array<Record<string, unknown>>): Promise<void> {
+  private async deleteRows(table: string, primaryKeys: string[], primaryValuesList: Array<Record<string, unknown>>, confirmed: boolean): Promise<void> {
     if (!table.trim() || primaryKeys.length === 0) {
       throw new Error("缺少表名或主键，无法构造 DELETE。");
     }
@@ -1206,13 +1225,13 @@ export class DatabaseWorkbenchPanel {
     }
 
     const statement = buildDeleteRowsSql(this.connection.type, table, primaryKeys, primaryValuesList);
-    const confirmed = await vscode.window.showWarningMessage(
-      primaryValuesList.length > 1 ? `确认删除选中的 ${primaryValuesList.length} 行数据吗？` : "确认执行下面的 DELETE 语句吗？",
-      { modal: true, detail: statement },
-      "确认执行"
-    );
-    if (confirmed !== "确认执行") {
-      this.panel.webview.postMessage({ type: "rowDeleteCanceled" });
+    if (!confirmed) {
+      this.postSqlConfirmPreview(
+        primaryValuesList.length > 1 ? `确认删除选中的 ${primaryValuesList.length} 行数据吗？` : "确认执行下面的 DELETE 语句吗？",
+        statement,
+        { type: "deleteRows", table, primaryKeys, primaryValuesList, confirmed: true },
+        "请确认即将执行的 DELETE SQL。"
+      );
       return;
     }
 
@@ -1248,7 +1267,7 @@ export class DatabaseWorkbenchPanel {
     await this.previewTable(table);
   }
 
-  private async redisDeleteKeys(keys: string[]): Promise<void> {
+  private async redisDeleteKeys(keys: string[], confirmed: boolean): Promise<void> {
     if (this.connection.type !== "redis") {
       throw new Error("当前连接不是 Redis。");
     }
@@ -1257,13 +1276,13 @@ export class DatabaseWorkbenchPanel {
       throw new Error("请选择要删除的 Redis Key。");
     }
     const commandPreview = `UNLINK ${safeKeys.join(" ")}`;
-    const confirmed = await vscode.window.showWarningMessage(
-      safeKeys.length > 1 ? `确认删除选中的 ${safeKeys.length} 个 Redis Key 吗？` : `确认删除 Redis Key「${safeKeys[0]}」吗？`,
-      { modal: true, detail: commandPreview },
-      "确认删除"
-    );
-    if (confirmed !== "确认删除") {
-      this.panel.webview.postMessage({ type: "rowDeleteCanceled" });
+    if (!confirmed) {
+      this.postSqlConfirmPreview(
+        safeKeys.length > 1 ? `确认删除选中的 ${safeKeys.length} 个 Redis Key 吗？` : `确认删除 Redis Key「${safeKeys[0]}」吗？`,
+        commandPreview,
+        { type: "redisDeleteKeys", keys: safeKeys, confirmed: true },
+        "请确认即将执行的 Redis 删除命令。"
+      );
       return;
     }
 
@@ -1275,7 +1294,7 @@ export class DatabaseWorkbenchPanel {
     this.panel.webview.postMessage({ type: "editsApplied" });
   }
 
-  private async redisUpdateKeys(updates: Array<{ key: string; value: string }>): Promise<void> {
+  private async redisUpdateKeys(updates: Array<{ key: string; value: string }>, confirmed: boolean): Promise<void> {
     if (this.connection.type !== "redis") {
       throw new Error("当前连接不是 Redis。");
     }
@@ -1286,12 +1305,13 @@ export class DatabaseWorkbenchPanel {
       throw new Error("没有可提交的 Redis Key 修改。");
     }
     const commandPreview = safeUpdates.map((item) => `SET ${item.key} ${item.value}`).join("\n");
-    const confirmed = await vscode.window.showWarningMessage(
-      safeUpdates.length > 1 ? `确认修改 ${safeUpdates.length} 个 Redis 字符串 Key 吗？` : `确认修改 Redis Key「${safeUpdates[0].key}」吗？`,
-      { modal: true, detail: commandPreview },
-      "确认执行"
-    );
-    if (confirmed !== "确认执行") {
+    if (!confirmed) {
+      this.postSqlConfirmPreview(
+        safeUpdates.length > 1 ? `确认修改 ${safeUpdates.length} 个 Redis 字符串 Key 吗？` : `确认修改 Redis Key「${safeUpdates[0].key}」吗？`,
+        commandPreview,
+        { type: "redisUpdateKeys", updates: safeUpdates, confirmed: true },
+        "请确认即将执行的 Redis SET 命令。"
+      );
       return;
     }
 
@@ -1304,7 +1324,7 @@ export class DatabaseWorkbenchPanel {
     this.panel.webview.postMessage({ type: "editsApplied" });
   }
 
-  private async redisUpdateTtls(updates: Array<{ key: string; ttl: string }>): Promise<void> {
+  private async redisUpdateTtls(updates: Array<{ key: string; ttl: string }>, confirmed: boolean): Promise<void> {
     if (this.connection.type !== "redis") {
       throw new Error("当前连接不是 Redis。");
     }
@@ -1318,12 +1338,13 @@ export class DatabaseWorkbenchPanel {
     const commandPreview = parsedUpdates
       .map((item) => item.parsed.seconds === null ? `PERSIST ${item.key}` : `EXPIRE ${item.key} ${item.parsed.seconds}`)
       .join("\n");
-    const confirmed = await vscode.window.showWarningMessage(
-      parsedUpdates.length > 1 ? `确认修改 ${parsedUpdates.length} 个 Redis Key 的过期时间吗？` : `确认修改 Redis Key「${parsedUpdates[0].key}」的过期时间吗？`,
-      { modal: true, detail: commandPreview },
-      "确认执行"
-    );
-    if (confirmed !== "确认执行") {
+    if (!confirmed) {
+      this.postSqlConfirmPreview(
+        parsedUpdates.length > 1 ? `确认修改 ${parsedUpdates.length} 个 Redis Key 的过期时间吗？` : `确认修改 Redis Key「${parsedUpdates[0].key}」的过期时间吗？`,
+        commandPreview,
+        { type: "redisUpdateTtls", updates: safeUpdates, confirmed: true },
+        "请确认即将执行的 Redis TTL 命令。"
+      );
       return;
     }
 
@@ -1376,7 +1397,8 @@ export class DatabaseWorkbenchPanel {
     pageSize: number,
     search = "",
     fuzzySearch = false,
-    sortDirection: "asc" | "desc" = "asc"
+    sortDirection: "asc" | "desc" = "asc",
+    confirmed = false
   ): Promise<void> {
     if (this.connection.type !== "redis") {
       throw new Error("当前连接不是 Redis。");
@@ -1387,12 +1409,13 @@ export class DatabaseWorkbenchPanel {
     }
     const safeType = String(keyType || "").toLowerCase();
     const commandPreview = this.buildRedisDeleteMemberPreview(safeKey, safeType, row);
-    const confirmed = await vscode.window.showWarningMessage(
-      `确认删除 Redis ${safeType || "Key"} 中的这个元素吗？`,
-      { modal: true, detail: commandPreview },
-      "确认删除"
-    );
-    if (confirmed !== "确认删除") {
+    if (!confirmed) {
+      this.postSqlConfirmPreview(
+        `确认删除 Redis ${safeType || "Key"} 中的这个元素吗？`,
+        commandPreview,
+        { type: "redisDeleteMember", key: safeKey, keyType: safeType, row, page, pageSize, search, fuzzySearch, sortDirection, confirmed: true },
+        "请确认即将执行的 Redis 删除元素命令。"
+      );
       return;
     }
 
@@ -1515,7 +1538,7 @@ export class DatabaseWorkbenchPanel {
     this.panel.webview.postMessage({ type: "operationLogs", logs });
   }
 
-  private async rollbackOperationLog(logId: string): Promise<void> {
+  private async rollbackOperationLog(logId: string, confirmed: boolean): Promise<void> {
     if (!await this.requireProFeature("logs", "操作日志回滚")) {
       return;
     }
@@ -1533,13 +1556,14 @@ export class DatabaseWorkbenchPanel {
     const connection = await this.requireConnection();
     await this.validateRollbackCurrentRows(connection, rollback, log);
     const sqlPreview = rollback.statements.join("\n");
-    const confirmed = await vscode.window.showWarningMessage(
-      "确认执行下面的回滚 SQL 吗？",
-      { modal: true, detail: sqlPreview },
-      "确认执行"
-    );
-    if (confirmed !== "确认执行") {
-      await this.loadOperationLogs(log.tableName);
+    if (!confirmed) {
+      this.postSqlConfirmPreview(
+        "确认执行下面的回滚 SQL 吗？",
+        sqlPreview,
+        { type: "rollbackOperationLog", logId, confirmed: true },
+        "请确认即将执行的日志回滚 SQL。",
+        { type: "loadOperationLogs", table: log.tableName }
+      );
       return;
     }
 
@@ -3096,26 +3120,27 @@ export class DatabaseWorkbenchPanel {
     }
     @keyframes dbw-spin { to { transform: rotate(360deg); } }
     .ai-create-table-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--line); }
-    .schema-confirm-overlay {
-      position: fixed;
-      inset: 0;
-      z-index: 130;
-      display: none;
-      align-items: stretch;
-      justify-content: center;
-      padding: 22px;
-      background: rgba(0, 0, 0, .46);
-      overflow: hidden;
-    }
-    .schema-confirm-overlay.open { display: flex; }
-    .schema-confirm-card {
-      width: min(860px, 94vw);
-      height: min(720px, calc(100vh - 44px));
-      max-height: calc(100vh - 44px);
-      align-self: center;
-      display: grid;
-      grid-template-rows: auto minmax(0, 1fr) auto;
-      min-height: 0;
+	    .schema-confirm-overlay {
+	      position: fixed;
+	      inset: 0;
+	      z-index: 130;
+	      display: none;
+	      align-items: center;
+	      justify-content: center;
+	      padding: clamp(12px, 3vw, 30px);
+	      background: rgba(0, 0, 0, .46);
+	      overflow: hidden;
+	    }
+	    .schema-confirm-overlay.open { display: flex; }
+	    .schema-confirm-card {
+	      width: min(1040px, calc(100vw - clamp(24px, 6vw, 60px)));
+	      max-width: calc(100vw - clamp(24px, 6vw, 60px));
+	      height: min(76vh, calc(100vh - clamp(24px, 6vw, 60px)));
+	      min-height: min(360px, calc(100vh - clamp(24px, 6vw, 60px)));
+	      max-height: calc(100vh - clamp(24px, 6vw, 60px));
+	      display: grid;
+	      grid-template-rows: auto minmax(0, 1fr) auto;
+	      min-width: 0;
       border: 1px solid var(--line);
       border-radius: 14px;
       overflow: hidden;
@@ -3134,11 +3159,12 @@ export class DatabaseWorkbenchPanel {
       padding: 14px 16px;
       overflow: hidden;
     }
-    .schema-confirm-sql {
-      width: 100%;
-      height: 100%;
-      min-height: 0;
-      max-height: none;
+	    .schema-confirm-sql {
+	      width: 100%;
+	      height: 100%;
+	      min-height: 0;
+	      max-height: none;
+	      box-sizing: border-box;
       margin: 0;
       padding: 12px;
       overflow: auto;
@@ -3572,9 +3598,11 @@ export class DatabaseWorkbenchPanel {
     const enumCurrentValue = $("#enumCurrentValue");
     const editError = $("#editError");
     let activeEdit = null;
-    let activeContextRowIndex = null;
-    let pendingSchemaConfirmDraft = null;
-    let pendingUpdateConfirmPayload = null;
+	    let activeContextRowIndex = null;
+	    let pendingSchemaConfirmDraft = null;
+	    let pendingUpdateConfirmPayload = null;
+	    let pendingSqlConfirmAction = null;
+	    let pendingSqlConfirmCancelAction = null;
     let aiCreateTableLoadingTimer = null;
     let schemaErrorTimer = null;
     let statusLoadingTimer = null;
@@ -3771,11 +3799,16 @@ export class DatabaseWorkbenchPanel {
         setStatus("请确认即将执行的表结构 SQL。", false);
         return;
       }
-      if (message.type === "updateCellsPreview") {
-        openUpdateCellsConfirmDialog(message);
-        setStatus("请确认即将执行的 UPDATE SQL。", false);
-        return;
-      }
+	      if (message.type === "updateCellsPreview") {
+	        openUpdateCellsConfirmDialog(message);
+	        setStatus("请确认即将执行的 UPDATE SQL。", false);
+	        return;
+	      }
+	      if (message.type === "sqlConfirmPreview") {
+	        openSqlActionConfirmDialog(message);
+	        setStatus(message.status || "请确认即将执行的 SQL。", false);
+	        return;
+	      }
       if (message.type === "schemaDraftError") {
         setAiCreateTableLoading(false);
         setSchemaSubmitError(message.message || "表结构修改提交失败。");
@@ -5118,54 +5151,101 @@ export class DatabaseWorkbenchPanel {
       }
     }
 
-    function openSchemaConfirmDialog(title, sql) {
-      if (!state.schemaEditor) return;
-      pendingSchemaConfirmDraft = clonePlain(state.schemaEditor);
-      pendingUpdateConfirmPayload = null;
-      schemaConfirmTitle.textContent = title || "确认执行 SQL";
-      schemaConfirmSql.textContent = formatConfirmSqlPreview(sql);
-      schemaConfirmOverlay.classList.add("open");
-      schemaConfirmSql.scrollTop = 0;
-      schemaConfirmSql.scrollLeft = 0;
+	    function openSchemaConfirmDialog(title, sql) {
+	      if (!state.schemaEditor) return;
+	      pendingSchemaConfirmDraft = clonePlain(state.schemaEditor);
+	      pendingUpdateConfirmPayload = null;
+	      pendingSqlConfirmAction = null;
+	      pendingSqlConfirmCancelAction = null;
+	      schemaConfirmTitle.textContent = title || "确认执行 SQL";
+	      schemaConfirmSql.textContent = formatConfirmSqlPreview(sql);
+	      schemaConfirmOverlay.classList.add("open");
+	      schemaConfirmSql.scrollTop = 0;
+	      schemaConfirmSql.scrollLeft = 0;
     }
 
-    function openUpdateCellsConfirmDialog(message) {
-      pendingSchemaConfirmDraft = null;
-      pendingUpdateConfirmPayload = {
-        table: message.table,
-        primaryKeys: message.primaryKeys || [],
-        updates: message.updates || [],
-      };
+	    function openUpdateCellsConfirmDialog(message) {
+	      pendingSchemaConfirmDraft = null;
+	      pendingSqlConfirmAction = null;
+	      pendingSqlConfirmCancelAction = null;
+	      pendingUpdateConfirmPayload = {
+	        table: message.table,
+	        primaryKeys: message.primaryKeys || [],
+	        updates: message.updates || [],
+	      };
       schemaConfirmTitle.textContent = message.title || "确认执行下面的 UPDATE 语句吗？";
       schemaConfirmSql.textContent = formatConfirmSqlPreview(message.sql);
       schemaConfirmOverlay.classList.add("open");
       schemaConfirmSql.scrollTop = 0;
-      schemaConfirmSql.scrollLeft = 0;
-    }
+	      schemaConfirmSql.scrollLeft = 0;
+	    }
 
-    function closeSchemaConfirmDialog() {
-      schemaConfirmOverlay.classList.remove("open");
-      schemaConfirmSql.textContent = "";
-      pendingSchemaConfirmDraft = null;
-      pendingUpdateConfirmPayload = null;
-    }
+	    function openSqlActionConfirmDialog(message) {
+	      pendingSchemaConfirmDraft = null;
+	      pendingUpdateConfirmPayload = null;
+	      pendingSqlConfirmAction = clonePlain(message.action || {});
+	      pendingSqlConfirmCancelAction = message.cancelAction ? clonePlain(message.cancelAction) : null;
+	      schemaConfirmTitle.textContent = message.title || "确认执行 SQL";
+	      schemaConfirmSql.textContent = formatConfirmSqlPreview(message.sql || "");
+	      schemaConfirmOverlay.classList.add("open");
+	      schemaConfirmSql.scrollTop = 0;
+	      schemaConfirmSql.scrollLeft = 0;
+	    }
 
-    function confirmSchemaDraftApply() {
-      if (pendingUpdateConfirmPayload) {
-        const payload = pendingUpdateConfirmPayload;
-        closeSchemaConfirmDialog();
-        setSchemaSubmitError("");
-        vscode.postMessage({ type: "updateCells", ...payload, confirmed: true });
-        setStatus("正在提交单元格修改...", false);
-        return;
+	    function closeSchemaConfirmDialog(skipCancelAction) {
+	      if (!skipCancelAction) {
+	        handleSchemaConfirmCancelAction();
+	      }
+	      schemaConfirmOverlay.classList.remove("open");
+	      schemaConfirmSql.textContent = "";
+	      pendingSchemaConfirmDraft = null;
+	      pendingUpdateConfirmPayload = null;
+	      pendingSqlConfirmAction = null;
+	      pendingSqlConfirmCancelAction = null;
+	    }
+
+	    function handleSchemaConfirmCancelAction() {
+	      if (pendingSqlConfirmCancelAction?.type) {
+	        vscode.postMessage(pendingSqlConfirmCancelAction);
+	      }
+	      const pendingType = pendingSqlConfirmAction?.type;
+	      if (pendingType === "deleteRow" || pendingType === "deleteRows" || pendingType === "redisDeleteKeys") {
+	        state.rowSelection.deleting = false;
+	        renderRowSelection();
+	      }
+	      if (pendingType === "rollbackOperationLog") {
+	        state.rollbackingLogId = "";
+	        renderOperationLogs();
+	      }
+	      if (pendingType) {
+	        setStatus("已取消执行。", false);
+	      }
+	    }
+
+	    function confirmSchemaDraftApply() {
+	      if (pendingSqlConfirmAction) {
+	        const action = pendingSqlConfirmAction;
+	        closeSchemaConfirmDialog(true);
+	        vscode.postMessage(action);
+	        setStatus("正在执行已确认的操作...", false);
+	        return;
+	      }
+
+	      if (pendingUpdateConfirmPayload) {
+	        const payload = pendingUpdateConfirmPayload;
+	        closeSchemaConfirmDialog(true);
+	        setSchemaSubmitError("");
+	        vscode.postMessage({ type: "updateCells", ...payload, confirmed: true });
+	        setStatus("正在提交单元格修改...", false);
+	        return;
       }
 
       const draft = pendingSchemaConfirmDraft;
-      if (!draft) {
-        closeSchemaConfirmDialog();
-        return;
-      }
-      closeSchemaConfirmDialog();
+	      if (!draft) {
+	        closeSchemaConfirmDialog(true);
+	        return;
+	      }
+	      closeSchemaConfirmDialog(true);
       setSchemaSubmitError("");
       vscode.postMessage({ type: "applySchemaDraft", draft, confirmed: true });
       setStatus("正在提交表结构修改...", false);

@@ -26,7 +26,7 @@ type CompareMessage =
   | { type: "loadTargetDatabases"; connectionId: string }
   | { type: "loadTargetTables"; connectionId: string; database: string }
   | { type: "compare"; sourceTable: string; targetConnectionId: string; targetDatabase: string; targetTable: string }
-  | { type: "executeSyncSql"; direction: "sourceToTarget" | "targetToSource"; sql: string; targetConnectionId: string; targetDatabase: string; table?: string }
+  | { type: "executeSyncSql"; direction: "sourceToTarget" | "targetToSource"; sql: string; targetConnectionId: string; targetDatabase: string; table?: string; confirmed?: boolean }
   | { type: "copyText"; text: string; successMessage?: string };
 
 const panels = new Map<string, SchemaComparePanel>();
@@ -352,14 +352,13 @@ export class SchemaComparePanel {
     this.assertCompatibleConnection(connection);
 
     const directionText = message.direction === "sourceToTarget" ? "目标库同步成源库" : "源库同步成目标库";
-    const preview = statements.join("\n\n").slice(0, 1800);
-    const confirmed = await vscode.window.showWarningMessage(
-      `确认执行 ${directionText}${message.table ? `（${message.table}）` : ""}？\n\n${preview}`,
-      { modal: true },
-      "确认执行"
-    );
-    if (confirmed !== "确认执行") {
-      this.post({ type: "executeResult", ok: false, message: "已取消执行。" });
+    if (message.confirmed !== true) {
+      this.post({
+        type: "sqlConfirmPreview",
+        title: `确认执行 ${directionText}${message.table ? `（${message.table}）` : ""}？`,
+        sql: statements.join("\n\n"),
+        action: { ...message, confirmed: true },
+      });
       return;
     }
 
@@ -758,11 +757,20 @@ function renderCompareHtml(): string {
     .compare-orbit { width: 38px; height: 38px; border-radius: 50%; border: 2px solid color-mix(in srgb, var(--accent) 20%, transparent); border-top-color: var(--accent); animation: compareSpin 1s linear infinite; }
     .compare-title { font-weight: 700; font-size: 13px; }
     .compare-message { color: var(--muted); font-size: 12px; margin-top: 3px; }
-    .compare-progress { height: 7px; border-radius: 999px; background: color-mix(in srgb, var(--accent) 18%, transparent); overflow: hidden; }
-    .compare-progress::after { content: ""; display: block; width: 34%; height: 100%; border-radius: inherit; background: linear-gradient(90deg, transparent, var(--accent), transparent); animation: compareSweep 1.25s ease-in-out infinite; }
-    @keyframes compareSpin { to { transform: rotate(360deg); } }
-    @keyframes compareSweep { 0% { transform: translateX(-120%); opacity: .35; } 50% { opacity: 1; } 100% { transform: translateX(260%); opacity: .35; } }
-    .empty { color: var(--muted); border: 1px dashed var(--line); border-radius: 10px; padding: 13px; margin: 8px; text-align: center; font-size: 12px; }
+	    .compare-progress { height: 7px; border-radius: 999px; background: color-mix(in srgb, var(--accent) 18%, transparent); overflow: hidden; }
+	    .compare-progress::after { content: ""; display: block; width: 34%; height: 100%; border-radius: inherit; background: linear-gradient(90deg, transparent, var(--accent), transparent); animation: compareSweep 1.25s ease-in-out infinite; }
+	    @keyframes compareSpin { to { transform: rotate(360deg); } }
+	    @keyframes compareSweep { 0% { transform: translateX(-120%); opacity: .35; } 50% { opacity: 1; } 100% { transform: translateX(260%); opacity: .35; } }
+	    .sql-confirm-overlay { position: fixed; inset: 0; z-index: 20; display: none; align-items: center; justify-content: center; padding: clamp(12px, 3vw, 30px); background: rgba(0,0,0,.46); overflow: hidden; }
+	    .sql-confirm-overlay.open { display: flex; }
+	    .sql-confirm-card { width: min(1040px, calc(100vw - clamp(24px, 6vw, 60px))); max-width: calc(100vw - clamp(24px, 6vw, 60px)); height: min(76vh, calc(100vh - clamp(24px, 6vw, 60px))); min-height: min(360px, calc(100vh - clamp(24px, 6vw, 60px))); max-height: calc(100vh - clamp(24px, 6vw, 60px)); display: grid; grid-template-rows: auto minmax(0, 1fr) auto; min-width: 0; border: 1px solid var(--line); border-radius: 14px; overflow: hidden; background: var(--card); box-shadow: 0 24px 70px rgba(0,0,0,.48); }
+	    .sql-confirm-head { padding: 14px 16px; border-bottom: 1px solid var(--line); background: linear-gradient(180deg, rgba(255,255,255,.035), transparent); }
+	    .sql-confirm-title { font-weight: 700; color: var(--fg); }
+	    .sql-confirm-subtitle { margin-top: 4px; color: var(--muted); font-size: 12px; }
+	    .sql-confirm-body { min-height: 0; padding: 14px 16px; overflow: hidden; }
+	    .sql-confirm-code { box-sizing: border-box; width: 100%; height: 100%; min-height: 0; margin: 0; padding: 12px; overflow: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--fg); white-space: pre; font-family: var(--vscode-editor-font-family); font-size: 12px; line-height: 1.6; overscroll-behavior: contain; }
+	    .sql-confirm-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--line); background: rgba(255,255,255,.015); }
+	    .empty { color: var(--muted); border: 1px dashed var(--line); border-radius: 10px; padding: 13px; margin: 8px; text-align: center; font-size: 12px; }
     @media (max-width: 1080px) {
       body { overflow: auto; }
       .shell { height: auto; min-height: 100vh; }
@@ -855,12 +863,25 @@ function renderCompareHtml(): string {
         </div>
       </section>
     </section>
-  </main>
+	  </main>
+	  <div class="sql-confirm-overlay" id="sqlConfirmOverlay" role="dialog" aria-modal="true" aria-labelledby="sqlConfirmTitle">
+	    <div class="sql-confirm-card">
+	      <div class="sql-confirm-head">
+	        <div class="sql-confirm-title" id="sqlConfirmTitle">确认执行 SQL</div>
+	        <div class="sql-confirm-subtitle">请检查即将执行的 SQL，内容较长时可以在下方区域滚动查看。</div>
+	      </div>
+	      <div class="sql-confirm-body"><pre class="sql-confirm-code" id="sqlConfirmCode"></pre></div>
+	      <div class="sql-confirm-actions">
+	        <button class="secondary" id="cancelSqlConfirmBtn">取消</button>
+	        <button id="confirmSqlConfirmBtn">确认执行</button>
+	      </div>
+	    </div>
+	  </div>
 
-  <script nonce="${nonce}">
+	  <script nonce="${nonce}">
     const vscode = acquireVsCodeApi();
     const ALL_TABLES_VALUE = "${ALL_TABLES_VALUE}";
-    const state = { init: null, last: null, tableFilter: "all", activeIndex: -1, pendingRefresh: null, mergeNextSingleResult: false, comparing: false, initWatchdogId: null };
+	    const state = { init: null, last: null, tableFilter: "all", activeIndex: -1, pendingRefresh: null, mergeNextSingleResult: false, comparing: false, initWatchdogId: null, pendingSqlAction: null };
     const $ = (selector) => document.querySelector(selector);
 
     function setStatus(message, kind) {
@@ -1188,13 +1209,46 @@ function renderCompareHtml(): string {
       const fullRefresh = (row.status === "sourceOnly" && direction === "targetToSource") || (row.status === "targetOnly" && direction === "sourceToTarget");
       return { sourceTable, targetTable, fullRefresh };
     }
-    function executeDirection(direction) {
-      const row = activeRow();
-      if (!row) return;
-      const sql = direction === "sourceToTarget" ? row.sourceToTargetSql : row.targetToSourceSql;
-      state.pendingRefresh = buildRefreshTarget(row, direction);
-      vscode.postMessage({ type: "executeSyncSql", direction, sql: sql || "", targetConnectionId: selected("#targetConnection"), targetDatabase: selected("#targetDatabase"), table: row.table });
-    }
+	    function executeDirection(direction) {
+	      const row = activeRow();
+	      if (!row) return;
+	      const sql = direction === "sourceToTarget" ? row.sourceToTargetSql : row.targetToSourceSql;
+	      state.pendingRefresh = buildRefreshTarget(row, direction);
+	      vscode.postMessage({ type: "executeSyncSql", direction, sql: sql || "", targetConnectionId: selected("#targetConnection"), targetDatabase: selected("#targetDatabase"), table: row.table });
+	    }
+	    function openSqlConfirm(message) {
+	      state.pendingSqlAction = message.action || null;
+	      $("#sqlConfirmTitle").textContent = message.title || "确认执行 SQL";
+	      const code = $("#sqlConfirmCode");
+	      code.textContent = formatSqlPreview(message.sql || "");
+	      $("#sqlConfirmOverlay").classList.add("open");
+	      code.scrollTop = 0;
+	      code.scrollLeft = 0;
+	    }
+	    function closeSqlConfirm(canceled) {
+	      $("#sqlConfirmOverlay").classList.remove("open");
+	      $("#sqlConfirmCode").textContent = "";
+	      if (canceled) {
+	        state.pendingRefresh = null;
+	        setStatus("已取消执行。", "");
+	      }
+	      state.pendingSqlAction = null;
+	    }
+	    function confirmSqlAction() {
+	      const action = state.pendingSqlAction;
+	      closeSqlConfirm(false);
+	      if (action && action.type) {
+	        vscode.postMessage(action);
+	        setStatus("正在执行已确认的 SQL...", "");
+	      }
+	    }
+	    function formatSqlPreview(sql) {
+	      return String(sql || "")
+	        .replace(/\\r\\n/g, "\\n")
+	        .replace(/;\\s*/g, ";\\n")
+	        .replace(/\\b(ALTER|CREATE|DROP|INSERT|UPDATE|DELETE|SELECT|FROM|WHERE|SET|VALUES|ADD|MODIFY|CHANGE|RENAME|CONSTRAINT|PRIMARY KEY|FOREIGN KEY|REFERENCES|DEFAULT|COMMENT)\\b/gi, (match) => match.toUpperCase())
+	        .trim();
+	    }
     $("#targetConnection").addEventListener("change", loadTargetDatabases);
     $("#targetDatabase").addEventListener("change", loadTargetTables);
     $("#sourceTable").addEventListener("change", () => {
@@ -1219,8 +1273,13 @@ function renderCompareHtml(): string {
       renderTableCompare();
       renderSelectedDetail();
     });
-    $("#execSourceToTarget").addEventListener("click", () => executeDirection("sourceToTarget"));
-    $("#execTargetToSource").addEventListener("click", () => executeDirection("targetToSource"));
+	    $("#execSourceToTarget").addEventListener("click", () => executeDirection("sourceToTarget"));
+	    $("#execTargetToSource").addEventListener("click", () => executeDirection("targetToSource"));
+	    $("#cancelSqlConfirmBtn").addEventListener("click", () => closeSqlConfirm(true));
+	    $("#confirmSqlConfirmBtn").addEventListener("click", () => confirmSqlAction());
+	    $("#sqlConfirmOverlay").addEventListener("click", (event) => {
+	      if (event.target === $("#sqlConfirmOverlay")) closeSqlConfirm(true);
+	    });
     $("#refreshBtn").addEventListener("click", () => {
       state.init = null;
       setStatus("正在重新读取...", "");
@@ -1261,8 +1320,11 @@ function renderCompareHtml(): string {
           $("#compareMessage").textContent = message.message || "正在逐表对比结构...";
         }
       }
-      if (message.type === "compareResult") renderResult(message);
-      if (message.type === "executeResult") {
+	      if (message.type === "compareResult") renderResult(message);
+	      if (message.type === "sqlConfirmPreview") {
+	        openSqlConfirm(message);
+	      }
+	      if (message.type === "executeResult") {
         if (message.ok && state.pendingRefresh) {
           const refresh = state.pendingRefresh;
           state.pendingRefresh = null;

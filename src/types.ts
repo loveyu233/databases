@@ -271,22 +271,22 @@ export type PanelMessage =
   | { type: "loadImportSourceDatabases"; connectionId: string }
   | { type: "loadImportSourceTables"; connectionId: string; database: string }
   | { type: "loadImportSourceSchema"; connectionId: string; database: string; table: string }
-  | { type: "importTableData"; sourceConnectionId: string; sourceDatabase: string; sourceTable: string; targetTable: string; mappings: Array<{ source: string; target: string }>; rowLimit: number; batchSize: number }
+  | { type: "importTableData"; sourceConnectionId: string; sourceDatabase: string; sourceTable: string; targetTable: string; mappings: Array<{ source: string; target: string }>; rowLimit: number; batchSize: number; confirmed?: boolean }
   | { type: "copySchemaDraftSql"; draft: Record<string, unknown> }
   | { type: "previewSchemaDraftSql"; draft: Record<string, unknown> }
   | { type: "applySchemaDraft"; draft: Record<string, unknown>; confirmed?: boolean }
   | { type: "generateCreateTableDraft"; prompt: string }
   | { type: "closeCreateTablePanel" }
-  | { type: "insertRow"; table: string; values: Record<string, unknown> }
-  | { type: "deleteRow"; table: string; primaryKeys: string[]; primaryValues: Record<string, unknown> }
-  | { type: "deleteRows"; table: string; primaryKeys: string[]; primaryValuesList: Array<Record<string, unknown>> }
-  | { type: "redisDeleteKeys"; keys: string[] }
-  | { type: "redisUpdateKeys"; updates: Array<{ key: string; value: string }> }
-  | { type: "redisUpdateTtls"; updates: Array<{ key: string; ttl: string }> }
+  | { type: "insertRow"; table: string; values: Record<string, unknown>; confirmed?: boolean }
+  | { type: "deleteRow"; table: string; primaryKeys: string[]; primaryValues: Record<string, unknown>; confirmed?: boolean }
+  | { type: "deleteRows"; table: string; primaryKeys: string[]; primaryValuesList: Array<Record<string, unknown>>; confirmed?: boolean }
+  | { type: "redisDeleteKeys"; keys: string[]; confirmed?: boolean }
+  | { type: "redisUpdateKeys"; updates: Array<{ key: string; value: string }>; confirmed?: boolean }
+  | { type: "redisUpdateTtls"; updates: Array<{ key: string; ttl: string }>; confirmed?: boolean }
   | { type: "redisInspectKey"; key: string; page: number; pageSize: number; search?: string; fuzzySearch?: boolean; sortDirection?: "asc" | "desc" }
-  | { type: "redisDeleteMember"; key: string; keyType: string; row: Record<string, unknown>; page: number; pageSize: number; search?: string; fuzzySearch?: boolean; sortDirection?: "asc" | "desc" }
+  | { type: "redisDeleteMember"; key: string; keyType: string; row: Record<string, unknown>; page: number; pageSize: number; search?: string; fuzzySearch?: boolean; sortDirection?: "asc" | "desc"; confirmed?: boolean }
   | { type: "loadOperationLogs"; table: string }
-  | { type: "rollbackOperationLog"; logId: string }
+  | { type: "rollbackOperationLog"; logId: string; confirmed?: boolean }
   | { type: "analyzeOperationLogError"; logId: string }
   | { type: "markOperationLog"; logId: string; label: string; color: string }
   | {
@@ -321,6 +321,7 @@ export type PanelToWebviewMessage =
   | { type: "schemaDraftError"; message: string }
   | { type: "schemaDraftPreview"; title: string; sql: string }
   | { type: "updateCellsPreview"; title: string; sql: string; table: string; primaryKeys: string[]; updates: Array<{ primaryValues: Record<string, unknown>; changes: Record<string, unknown> }> }
+  | { type: "sqlConfirmPreview"; title: string; sql: string; action: PanelMessage; status?: string; cancelAction?: PanelMessage }
   | { type: "openSchemaEditor"; mode: "editTable" | "createTable" }
   | { type: "generatedSql"; sql: string }
   | { type: "generatedCreateTableSql"; sql: string }

@@ -5,6 +5,7 @@ import { testAiConnection } from "./ai";
 import { DatabaseService } from "./database/clients";
 import { registerOfflineLicenseCommands, requireProFeature } from "./license/offlineLicense";
 import { SchemaComparePanel } from "./schemaComparePanel";
+import { showSqlConfirmDialog } from "./sqlConfirmDialog";
 import { ConnectionStore, normalizeConnectionGroupColor } from "./storage";
 import { asConnectionNode, asDatabaseFilterNode, asDatabaseNode, asGroupNode, asTableNode, ConnectionGroupDecorationProvider, ConnectionsTreeProvider, getTreeNodePinKey, TreeNode } from "./tree";
 import { AI_PROVIDER_PRESETS, ConnectionGroup, ConnectionGroupColor, DatabaseType, DbConnectionConfig, getAiConfig, getAiProviderPreset } from "./types";
@@ -1460,12 +1461,10 @@ async function editDatabase(
   }
 
   const sql = `ALTER DATABASE ${quoteIdentifier(node.connection.type, node.database)} RENAME TO ${quoteIdentifier(node.connection.type, nextName)};`;
-  const confirmed = await vscode.window.showWarningMessage(
-    "确认执行下面的数据库修改 SQL 吗？",
-    { modal: true, detail: sql },
-    "确认执行"
-  );
-  if (confirmed !== "确认执行") {
+  if (!await showSqlConfirmDialog({
+    title: "确认执行下面的数据库修改 SQL 吗？",
+    sql,
+  })) {
     return;
   }
 
@@ -1488,12 +1487,11 @@ async function deleteDatabase(
   }
 
   const sql = `DROP DATABASE ${quoteIdentifier(node.connection.type, node.database)};`;
-  const confirmed = await vscode.window.showWarningMessage(
-    `确定删除数据库「${node.database}」吗？这个操作不可恢复。`,
-    { modal: true, detail: sql },
-    "确认删除"
-  );
-  if (confirmed !== "确认删除") {
+  if (!await showSqlConfirmDialog({
+    title: `确定删除数据库「${node.database}」吗？这个操作不可恢复。`,
+    sql,
+    confirmLabel: "确认删除",
+  })) {
     return;
   }
 
@@ -1641,12 +1639,11 @@ async function deleteTable(
   }
 
   const sql = `DROP TABLE ${quoteIdentifier(node.connection.type, node.table)};`;
-  const confirmed = await vscode.window.showWarningMessage(
-    `确定删除表「${node.table}」吗？这个操作不可恢复。`,
-    { modal: true, detail: sql },
-    "确认删除"
-  );
-  if (confirmed !== "确认删除") {
+  if (!await showSqlConfirmDialog({
+    title: `确定删除表「${node.table}」吗？这个操作不可恢复。`,
+    sql,
+    confirmLabel: "确认删除",
+  })) {
     return;
   }
 
@@ -1709,12 +1706,11 @@ async function submitCreateResource(
   }
 
   const plan = buildCreateResourcePlan(connection.type, payload);
-  const confirmed = await vscode.window.showWarningMessage(
-    `确认创建${plan.targetLabel}「${plan.name}」吗？`,
-    { modal: true, detail: plan.sql },
-    "确认创建"
-  );
-  if (confirmed !== "确认创建") {
+  if (!await showSqlConfirmDialog({
+    title: `确认创建${plan.targetLabel}「${plan.name}」吗？`,
+    sql: plan.sql,
+    confirmLabel: "确认创建",
+  })) {
     panel.webview.postMessage({ type: "createResourceStatus", ok: false, message: "已取消创建。" });
     return;
   }
