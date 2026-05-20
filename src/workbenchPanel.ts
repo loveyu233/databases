@@ -2859,29 +2859,36 @@ export class DatabaseWorkbenchPanel {
     .tag-color-button:hover { background: var(--tag-color); transform: translateY(-1px); }
     .tag-color-button.active { box-shadow: 0 0 0 2px var(--panel-2), 0 0 0 4px var(--tag-color); }
     .log-tag-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 14px; border-top: 1px solid var(--line); }
-    .discard-refresh-overlay {
-      position: fixed;
-      inset: 0;
-      z-index: 145;
-      display: none;
+	    .discard-refresh-overlay,
+	    .quick-refresh-overlay {
+	      position: fixed;
+	      inset: 0;
+	      z-index: 145;
+	      display: none;
       align-items: center;
       justify-content: center;
       padding: 22px;
-      background: rgba(0, 0, 0, .38);
-    }
-    .discard-refresh-overlay.open { display: flex; }
-    .discard-refresh-dialog {
-      width: min(460px, 92vw);
-      border: 1px solid var(--line);
-      border-radius: 13px;
+	      background: rgba(0, 0, 0, .38);
+	    }
+	    .discard-refresh-overlay.open,
+	    .quick-refresh-overlay.open { display: flex; }
+	    .discard-refresh-dialog,
+	    .quick-refresh-dialog {
+	      width: min(460px, 92vw);
+	      border: 1px solid var(--line);
+	      border-radius: 13px;
       overflow: hidden;
-      background: var(--panel-2);
-      box-shadow: 0 20px 56px rgba(0,0,0,.42);
-    }
-    .discard-refresh-head { padding: 14px 16px 8px; }
-    .discard-refresh-title { font-weight: 650; color: var(--fg); }
-    .discard-refresh-body { padding: 0 16px 16px; color: var(--muted); font-size: 13px; line-height: 1.7; }
-    .discard-refresh-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--line); background: rgba(255,255,255,.015); }
+	      background: var(--panel-2);
+	      box-shadow: 0 20px 56px rgba(0,0,0,.42);
+	    }
+	    .discard-refresh-head,
+	    .quick-refresh-head { padding: 14px 16px 8px; }
+	    .discard-refresh-title,
+	    .quick-refresh-title { font-weight: 650; color: var(--fg); }
+	    .discard-refresh-body,
+	    .quick-refresh-body { padding: 0 16px 16px; color: var(--muted); font-size: 13px; line-height: 1.7; }
+	    .discard-refresh-actions,
+	    .quick-refresh-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--line); background: rgba(255,255,255,.015); }
     .export-overlay {
       position: fixed;
       inset: 0;
@@ -3542,18 +3549,31 @@ export class DatabaseWorkbenchPanel {
     </div>
   </div>
 
-  <div class="discard-refresh-overlay" id="discardRefreshOverlay" role="dialog" aria-modal="true" aria-labelledby="discardRefreshTitle">
-    <div class="discard-refresh-dialog">
-      <div class="discard-refresh-head">
-        <div class="discard-refresh-title" id="discardRefreshTitle">确认刷新数据</div>
-      </div>
+	  <div class="discard-refresh-overlay" id="discardRefreshOverlay" role="dialog" aria-modal="true" aria-labelledby="discardRefreshTitle">
+	    <div class="discard-refresh-dialog">
+	      <div class="discard-refresh-head">
+	        <div class="discard-refresh-title" id="discardRefreshTitle">确认刷新数据</div>
+	      </div>
       <div class="discard-refresh-body">刷新数据会丢失暂存的修改数据，是否确认？</div>
       <div class="discard-refresh-actions">
         <button class="secondary" id="cancelDiscardRefreshBtn">取消</button>
         <button id="confirmDiscardRefreshBtn">确认</button>
       </div>
-    </div>
-  </div>
+	    </div>
+	  </div>
+
+	  <div class="quick-refresh-overlay" id="quickRefreshOverlay" role="dialog" aria-modal="true" aria-labelledby="quickRefreshTitle">
+	    <div class="quick-refresh-dialog">
+	      <div class="quick-refresh-head">
+	        <div class="quick-refresh-title" id="quickRefreshTitle">确认刷新数据</div>
+	      </div>
+	      <div class="quick-refresh-body">检测到快速条件中有内容，是否按照快速条件的内容进行刷新数据？</div>
+	      <div class="quick-refresh-actions">
+	        <button class="secondary" id="refreshWithoutQuickBtn">否</button>
+	        <button id="refreshWithQuickBtn">是</button>
+	      </div>
+	    </div>
+	  </div>
 
 	  <script nonce="${nonce}">
     const vscode = acquireVsCodeApi();
@@ -3598,10 +3618,11 @@ export class DatabaseWorkbenchPanel {
     const redisDetailContextMenu = $("#redisDetailContextMenu");
     const logOverlay = $("#logOverlay");
     const logList = $("#logList");
-    const logDetail = $("#logDetail");
-    const logContextMenu = $("#logContextMenu");
-    const logTagOverlay = $("#logTagOverlay");
-    const discardRefreshOverlay = $("#discardRefreshOverlay");
+	    const logDetail = $("#logDetail");
+	    const logContextMenu = $("#logContextMenu");
+	    const logTagOverlay = $("#logTagOverlay");
+	    const discardRefreshOverlay = $("#discardRefreshOverlay");
+	    const quickRefreshOverlay = $("#quickRefreshOverlay");
     const logTagInput = $("#logTagInput");
     const logTagColors = $("#logTagColors");
     const logTagFilterColors = $("#logTagFilterColors");
@@ -3635,9 +3656,10 @@ export class DatabaseWorkbenchPanel {
     let aiCreateTableLoadingTimer = null;
     let schemaErrorTimer = null;
     let statusLoadingTimer = null;
-    let autoRefreshTimer = null;
-    let autoRefreshWaiting = false;
-    let preserveSqlInputOnNextResult = false;
+	    let autoRefreshTimer = null;
+	    let autoRefreshWaiting = false;
+	    let pendingDiscardRefreshOptions = null;
+	    let preserveSqlInputOnNextResult = false;
     let activeCompletion = null;
     let pendingAiTimelineId = "";
     let completionUsage = normalizeCompletionUsage(webviewPersistedState.completionUsage);
@@ -3886,12 +3908,17 @@ export class DatabaseWorkbenchPanel {
     // 尽早通知扩展侧初始化，避免后续非关键交互绑定异常导致表页一直停留在静态占位态。
     vscode.postMessage({ type: "ready" });
 
-    $("#refreshBtn").addEventListener("click", () => refreshData());
-    $("#cancelDiscardRefreshBtn").addEventListener("click", () => closeDiscardRefreshDialog());
-    $("#confirmDiscardRefreshBtn").addEventListener("click", () => confirmDiscardRefresh());
-    discardRefreshOverlay.addEventListener("click", (event) => {
-      if (event.target === discardRefreshOverlay) closeDiscardRefreshDialog();
-    });
+	    $("#refreshBtn").addEventListener("click", () => refreshData({ confirmQuickWhere: true }));
+	    $("#cancelDiscardRefreshBtn").addEventListener("click", () => closeDiscardRefreshDialog());
+	    $("#confirmDiscardRefreshBtn").addEventListener("click", () => confirmDiscardRefresh());
+	    $("#refreshWithoutQuickBtn").addEventListener("click", () => confirmQuickRefresh(false));
+	    $("#refreshWithQuickBtn").addEventListener("click", () => confirmQuickRefresh(true));
+	    discardRefreshOverlay.addEventListener("click", (event) => {
+	      if (event.target === discardRefreshOverlay) closeDiscardRefreshDialog();
+	    });
+	    quickRefreshOverlay.addEventListener("click", (event) => {
+	      if (event.target === quickRefreshOverlay) closeQuickRefreshDialog();
+	    });
     autoRefreshInput.addEventListener("input", () => {
       autoRefreshInput.value = sanitizeAutoRefreshValue(autoRefreshInput.value);
       updateAutoRefreshTimer();
@@ -5202,42 +5229,63 @@ export class DatabaseWorkbenchPanel {
         }
         return;
       }
-      if (hasPendingEdits()) {
-        if (!options.silent) {
-          openDiscardRefreshDialog();
-        }
-        return;
-      }
+	      if (hasPendingEdits()) {
+	        if (!options.silent) {
+	          openDiscardRefreshDialog(options);
+	        }
+	        return;
+	      }
 	      const quickWhere = whereInput.value;
 	      const hasQuickWhere = quickWhere.trim().length > 0;
-	      state.lastQueryMode = hasQuickWhere ? "quick" : "preview";
+	      if (hasQuickWhere && options.confirmQuickWhere && options.useQuickWhere === undefined) {
+	        openQuickRefreshDialog();
+	        return;
+	      }
+	      const useQuickWhere = hasQuickWhere && options.useQuickWhere !== false;
+	      state.lastQueryMode = useQuickWhere ? "quick" : "preview";
 	      state.sortColumn = "";
 	      state.sortDirection = "asc";
 	      if (options.auto) {
 	        autoRefreshWaiting = true;
 	      }
-      vscode.postMessage({
+	      vscode.postMessage({
 	        type: "quickQuery",
 	        table: getQuickQueryTarget(),
-	        where: hasQuickWhere ? quickWhere : "",
+	        where: useQuickWhere ? quickWhere : "",
 	        limit: Number(limitInput.value || state.defaultLimit),
 	        page: 1,
 	      });
-    }
+	    }
 
-    function openDiscardRefreshDialog() {
-      discardRefreshOverlay.classList.add("open");
-    }
+	    function openDiscardRefreshDialog(options = {}) {
+	      pendingDiscardRefreshOptions = { ...options };
+	      discardRefreshOverlay.classList.add("open");
+	    }
 
-    function closeDiscardRefreshDialog() {
-      discardRefreshOverlay.classList.remove("open");
-    }
+	    function closeDiscardRefreshDialog() {
+	      discardRefreshOverlay.classList.remove("open");
+	      pendingDiscardRefreshOptions = null;
+	    }
 
-    function confirmDiscardRefresh() {
-      closeDiscardRefreshDialog();
-      clearPendingEdits();
-      refreshData({ force: true });
-    }
+	    function confirmDiscardRefresh() {
+	      const options = pendingDiscardRefreshOptions || {};
+	      closeDiscardRefreshDialog();
+	      clearPendingEdits();
+	      refreshData({ ...options, force: true });
+	    }
+
+	    function openQuickRefreshDialog() {
+	      quickRefreshOverlay.classList.add("open");
+	    }
+
+	    function closeQuickRefreshDialog() {
+	      quickRefreshOverlay.classList.remove("open");
+	    }
+
+	    function confirmQuickRefresh(useQuickWhere) {
+	      closeQuickRefreshDialog();
+	      refreshData({ useQuickWhere, confirmQuickWhere: false });
+	    }
 
     function sanitizeAutoRefreshValue(value) {
       const digits = String(value || "").replace(/\\D/g, "");
