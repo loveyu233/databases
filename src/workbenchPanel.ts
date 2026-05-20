@@ -4966,19 +4966,21 @@ export class DatabaseWorkbenchPanel {
         }
         return;
       }
-      state.lastQueryMode = "preview";
-      state.sortColumn = "";
-      state.sortDirection = "asc";
-      if (options.auto) {
-        autoRefreshWaiting = true;
-      }
+	      const quickWhere = whereInput.value;
+	      const hasQuickWhere = quickWhere.trim().length > 0;
+	      state.lastQueryMode = hasQuickWhere ? "quick" : "preview";
+	      state.sortColumn = "";
+	      state.sortDirection = "asc";
+	      if (options.auto) {
+	        autoRefreshWaiting = true;
+	      }
       vscode.postMessage({
-        type: "quickQuery",
-        table: getQuickQueryTarget(),
-        where: "",
-        limit: Number(limitInput.value || state.defaultLimit),
-        page: 1,
-      });
+	        type: "quickQuery",
+	        table: getQuickQueryTarget(),
+	        where: hasQuickWhere ? quickWhere : "",
+	        limit: Number(limitInput.value || state.defaultLimit),
+	        page: 1,
+	      });
     }
 
     function openDiscardRefreshDialog() {
