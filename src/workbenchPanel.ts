@@ -3190,10 +3190,24 @@ export class DatabaseWorkbenchPanel {
       white-space: pre;
       font-family: var(--mono);
       font-size: 12px;
-      line-height: 1.6;
-      overscroll-behavior: contain;
-    }
-    .schema-confirm-actions {
+	      line-height: 1.6;
+	      overscroll-behavior: contain;
+	    }
+	    .schema-confirm-sql .sql-token-keyword { color: #7dd3fc; font-weight: 700; }
+	    .schema-confirm-sql .sql-token-string { color: #f9a8d4; }
+	    .schema-confirm-sql .sql-token-number { color: #fbbf24; }
+	    .schema-confirm-sql .sql-token-comment { color: var(--muted); font-style: italic; }
+	    .schema-confirm-sql .sql-token-field { color: #c4b5fd; }
+	    .schema-confirm-sql .sql-token-table { font-weight: 750; border-radius: 4px; padding: 0 2px; }
+	    .schema-confirm-sql .sql-token-table-0, .schema-confirm-sql .sql-token-field-0 { color: #34d399; background: rgba(52, 211, 153, .12); }
+	    .schema-confirm-sql .sql-token-table-1, .schema-confirm-sql .sql-token-field-1 { color: #60a5fa; background: rgba(96, 165, 250, .12); }
+	    .schema-confirm-sql .sql-token-table-2, .schema-confirm-sql .sql-token-field-2 { color: #f472b6; background: rgba(244, 114, 182, .12); }
+	    .schema-confirm-sql .sql-token-table-3, .schema-confirm-sql .sql-token-field-3 { color: #fbbf24; background: rgba(251, 191, 36, .12); }
+	    .schema-confirm-sql .sql-token-table-4, .schema-confirm-sql .sql-token-field-4 { color: #a78bfa; background: rgba(167, 139, 250, .12); }
+	    .schema-confirm-sql .sql-token-table-5, .schema-confirm-sql .sql-token-field-5 { color: #fb7185; background: rgba(251, 113, 133, .12); }
+	    .schema-confirm-sql .sql-token-table-6, .schema-confirm-sql .sql-token-field-6 { color: #2dd4bf; background: rgba(45, 212, 191, .12); }
+	    .schema-confirm-sql .sql-token-table-7, .schema-confirm-sql .sql-token-field-7 { color: #c084fc; background: rgba(192, 132, 252, .12); }
+	    .schema-confirm-actions {
       display: flex;
       justify-content: flex-end;
       gap: 8px;
@@ -4190,12 +4204,240 @@ export class DatabaseWorkbenchPanel {
       return restoreSqlLiterals(formatted, protectedSql.literals);
     }
 
-    function formatConfirmSqlPreview(sql) {
-      const formatted = formatSqlText(sql);
-      return expandJsonSqlLiterals(formatted);
-    }
+	    function formatConfirmSqlPreview(sql) {
+	      const formatted = formatSqlText(sql);
+	      return expandJsonSqlLiterals(formatted);
+	    }
 
-    function expandJsonSqlLiterals(sql) {
+	    function renderHighlightedConfirmSql(sql) {
+	      const tokens = tokenizeConfirmSql(sql);
+	      const tableStyles = collectConfirmSqlTableStyles(tokens);
+	      let html = "";
+	      for (let index = 0; index < tokens.length; index += 1) {
+	        const token = tokens[index];
+	        if (token.type === "space" || token.type === "symbol") {
+	          html += escapeHtml(token.value);
+	          continue;
+	        }
+	        const normalized = normalizeSqlIdentifier(token.value);
+	        const upper = normalized.toUpperCase();
+	        if (token.type === "comment") {
+	          html += wrapConfirmSqlToken(token.value, "sql-token-comment");
+	        } else if (token.type === "string") {
+	          html += wrapConfirmSqlToken(token.value, "sql-token-string");
+	        } else if (token.type === "number") {
+	          html += wrapConfirmSqlToken(token.value, "sql-token-number");
+	        } else if (isConfirmSqlKeyword(upper)) {
+	          html += wrapConfirmSqlToken(token.value, "sql-token-keyword");
+	        } else if (tableStyles.has(normalized.toLowerCase())) {
+	          html += wrapConfirmSqlToken(token.value, "sql-token-table " + tableStyles.get(normalized.toLowerCase()));
+	        } else if (token.type === "identifier" || token.type === "word") {
+	          const ownerStyle = getConfirmSqlFieldOwnerStyle(tokens, index, tableStyles);
+	          html += wrapConfirmSqlToken(token.value, ownerStyle ? "sql-token-field " + ownerStyle.replace("sql-token-table", "sql-token-field") : "sql-token-field");
+	        } else {
+	          html += escapeHtml(token.value);
+	        }
+	      }
+	      return html;
+	    }
+
+	    function wrapConfirmSqlToken(value, className) {
+	      return '<span class="' + className + '">' + escapeHtml(value) + '</span>';
+	    }
+
+	    function tokenizeConfirmSql(sql) {
+	      const text = String(sql || "");
+	      const tokens = [];
+	      for (let index = 0; index < text.length; index += 1) {
+	        const char = text[index];
+	        if (/\\s/.test(char)) {
+	          let value = char;
+	          while (index + 1 < text.length && /\\s/.test(text[index + 1])) value += text[++index];
+	          tokens.push({ type: "space", value });
+	          continue;
+	        }
+	        if (char === "-" && text[index + 1] === "-") {
+	          let value = char + text[++index];
+	          while (index + 1 < text.length && text[index + 1] !== "\\n") value += text[++index];
+	          tokens.push({ type: "comment", value });
+	          continue;
+	        }
+	        if (char === "/" && text[index + 1] === "*") {
+	          let value = char + text[++index];
+	          while (index + 1 < text.length) {
+	            const next = text[++index];
+	            value += next;
+	            if (next === "/" && text[index - 1] === "*") break;
+	          }
+	          tokens.push({ type: "comment", value });
+	          continue;
+	        }
+	        if (char === "'") {
+	          let value = char;
+	          while (index + 1 < text.length) {
+	            const next = text[++index];
+	            value += next;
+	            if (next === "\\\\" && index + 1 < text.length) {
+	              value += text[++index];
+	              continue;
+	            }
+	            if (next === "'" && text[index + 1] === "'") {
+	              value += text[++index];
+	              continue;
+	            }
+	            if (next === "'") break;
+	          }
+	          tokens.push({ type: "string", value });
+	          continue;
+	        }
+	        if (char === '"' || char === String.fromCharCode(96)) {
+	          const quote = char;
+	          let value = char;
+	          while (index + 1 < text.length) {
+	            const next = text[++index];
+	            value += next;
+	            if (next === quote) break;
+	          }
+	          tokens.push({ type: "identifier", value });
+	          continue;
+	        }
+	        if (/[0-9]/.test(char)) {
+	          let value = char;
+	          while (index + 1 < text.length && /[0-9.]/.test(text[index + 1])) value += text[++index];
+	          tokens.push({ type: "number", value });
+	          continue;
+	        }
+	        if (isSqlIdentifierStart(char)) {
+	          let value = char;
+	          while (index + 1 < text.length && isSqlIdentifierPart(text[index + 1])) value += text[++index];
+	          tokens.push({ type: "word", value });
+	          continue;
+	        }
+	        tokens.push({ type: "symbol", value: char });
+	      }
+	      return tokens;
+	    }
+
+	    function collectConfirmSqlTableStyles(tokens) {
+	      const tableStyles = new Map();
+	      const names = [];
+	      const significant = tokens.map((token, index) => ({ token, index })).filter((item) => item.token.type !== "space" && item.token.type !== "comment");
+	      const addTable = (name) => {
+	        const normalized = normalizeSqlIdentifier(name).toLowerCase();
+	        if (!normalized || isConfirmSqlKeyword(normalized.toUpperCase())) return "";
+	        if (tableStyles.has(normalized)) return tableStyles.get(normalized);
+	        const style = "sql-token-table-" + (names.length % 8);
+	        tableStyles.set(normalized, style);
+	        names.push(normalized);
+	        return style;
+	      };
+	      let expectTable = false;
+	      let inFromList = false;
+	      for (let pos = 0; pos < significant.length; pos += 1) {
+	        const current = significant[pos].token;
+	        const normalized = normalizeSqlIdentifier(current.value);
+	        const upper = normalized.toUpperCase();
+	        if (inFromList && isSqlClauseBoundary(upper)) {
+	          inFromList = false;
+	        }
+	        if (["FROM", "JOIN", "UPDATE", "INTO"].includes(upper) || (upper === "TABLE" && shouldSqlTableKeywordExpectName(significant, pos))) {
+	          expectTable = true;
+	          inFromList = upper === "FROM";
+	          continue;
+	        }
+	        if (expectTable && isSqlNameToken(current)) {
+	          const qualified = readQualifiedSqlName(significant, pos);
+	          const style = addTable(qualified.name);
+	          addConfirmSqlAliasStyle(significant, qualified.endPos + 1, style, tableStyles);
+	          pos = qualified.endPos;
+	          expectTable = false;
+	          continue;
+	        }
+	        if (inFromList && current.value === ",") {
+	          expectTable = true;
+	        }
+	      }
+	      return tableStyles;
+	    }
+
+	    function addConfirmSqlAliasStyle(significant, pos, style, tableStyles) {
+	      if (!style || pos >= significant.length) return;
+	      let aliasPos = pos;
+	      const maybeAs = normalizeSqlIdentifier(significant[aliasPos]?.token?.value || "").toUpperCase();
+	      if (maybeAs === "AS") aliasPos += 1;
+	      const alias = significant[aliasPos]?.token;
+	      const aliasName = normalizeSqlIdentifier(alias?.value || "");
+	      const aliasUpper = aliasName.toUpperCase();
+	      if (!isSqlNameToken(alias) || isConfirmSqlKeyword(aliasUpper) || isSqlClauseBoundary(aliasUpper)) return;
+	      tableStyles.set(aliasName.toLowerCase(), style);
+	}
+
+	    function getConfirmSqlFieldOwnerStyle(tokens, index, tableStyles) {
+	      const prevDot = findSignificantSqlToken(tokens, index, -1);
+	      if (!prevDot || prevDot.value !== ".") return "";
+	      const owner = findSignificantSqlToken(tokens, prevDot.index, -1);
+	      if (!owner) return "";
+	      return tableStyles.get(normalizeSqlIdentifier(owner.value).toLowerCase()) || "";
+	    }
+
+	    function readQualifiedSqlName(significant, pos) {
+	      let name = significant[pos].token.value;
+	      let endPos = pos;
+	      while (endPos + 2 < significant.length && significant[endPos + 1].token.value === "." && isSqlNameToken(significant[endPos + 2].token)) {
+	        endPos += 2;
+	        name = significant[endPos].token.value;
+	      }
+	      return { name, endPos };
+	    }
+
+	    function shouldSqlTableKeywordExpectName(significant, pos) {
+	      const prev = significant[pos - 1]?.token;
+	      const upper = normalizeSqlIdentifier(prev?.value || "").toUpperCase();
+	      return ["CREATE", "ALTER", "DROP", "TRUNCATE", "RENAME", "DESCRIBE", "DESC"].includes(upper);
+	    }
+
+	    function findSignificantSqlToken(tokens, start, direction) {
+	      for (let index = start + direction; index >= 0 && index < tokens.length; index += direction) {
+	        if (tokens[index].type !== "space" && tokens[index].type !== "comment") return { ...tokens[index], index };
+	      }
+	      return null;
+	    }
+
+	    function isSqlClauseBoundary(upper) {
+	      return ["WHERE", "GROUP", "ORDER", "HAVING", "LIMIT", "OFFSET", "SET", "VALUES", "RETURNING", "ON", "USING"].includes(upper);
+	    }
+
+	    function isSqlNameToken(token) {
+	      return token && (token.type === "word" || token.type === "identifier");
+	    }
+
+	    function normalizeSqlIdentifier(value) {
+	      const text = String(value || "").trim();
+	      if ((text.startsWith(String.fromCharCode(96)) && text.endsWith(String.fromCharCode(96))) || (text.startsWith('"') && text.endsWith('"'))) {
+	        return text.slice(1, -1);
+	      }
+	      return text;
+	    }
+
+	    function isSqlIdentifierStart(char) {
+	      return /[A-Za-z_$]/.test(char) || char.charCodeAt(0) > 127;
+	    }
+
+	    function isSqlIdentifierPart(char) {
+	      return /[A-Za-z0-9_$]/.test(char) || char.charCodeAt(0) > 127;
+	    }
+
+	    function isConfirmSqlKeyword(upper) {
+	      return [
+	        "ADD", "AFTER", "ALTER", "AND", "AS", "ASC", "BEGIN", "BETWEEN", "BY", "CASCADE", "CASE", "CHANGE", "CHECK", "COLLATE", "COLUMN", "COMMENT", "COMMIT",
+	        "CONSTRAINT", "CREATE", "DATABASE", "DEFAULT", "DELETE", "DESC", "DISTINCT", "DROP", "ELSE", "END", "ENGINE", "EXISTS", "EXPIRE", "FOREIGN", "FROM",
+	        "GROUP", "HAVING", "IF", "IN", "INDEX", "INNER", "INSERT", "INTO", "IS", "JOIN", "KEY", "LEFT", "LIKE", "LIMIT", "MODIFY", "NOT", "NULL", "ON", "OR",
+	        "ORDER", "OUTER", "PERSIST", "PRIMARY", "REFERENCES", "RENAME", "RETURNING", "RIGHT", "SELECT", "SET", "TABLE", "THEN", "TO", "TRUNCATE", "UNION",
+	        "UNIQUE", "UNLINK", "UPDATE", "USING", "VALUES", "WHEN", "WHERE"
+	      ].includes(upper);
+	    }
+
+	    function expandJsonSqlLiterals(sql) {
       const text = String(sql || "");
       let result = "";
       for (let index = 0; index < text.length; index += 1) {
@@ -5175,7 +5417,7 @@ export class DatabaseWorkbenchPanel {
 	      pendingSqlConfirmAction = null;
 	      pendingSqlConfirmCancelAction = null;
 	      schemaConfirmTitle.textContent = title || "确认执行 SQL";
-	      schemaConfirmSql.textContent = formatConfirmSqlPreview(sql);
+		      schemaConfirmSql.innerHTML = renderHighlightedConfirmSql(formatConfirmSqlPreview(sql));
 	      schemaConfirmOverlay.classList.add("open");
 	      schemaConfirmSql.scrollTop = 0;
 	      schemaConfirmSql.scrollLeft = 0;
@@ -5192,7 +5434,7 @@ export class DatabaseWorkbenchPanel {
 	        refreshQuery: message.refreshQuery || null,
 	      };
       schemaConfirmTitle.textContent = message.title || "确认执行下面的 UPDATE 语句吗？";
-      schemaConfirmSql.textContent = formatConfirmSqlPreview(message.sql);
+	      schemaConfirmSql.innerHTML = renderHighlightedConfirmSql(formatConfirmSqlPreview(message.sql));
       schemaConfirmOverlay.classList.add("open");
       schemaConfirmSql.scrollTop = 0;
 	      schemaConfirmSql.scrollLeft = 0;
@@ -5204,7 +5446,7 @@ export class DatabaseWorkbenchPanel {
 	      pendingSqlConfirmAction = clonePlain(message.action || {});
 	      pendingSqlConfirmCancelAction = message.cancelAction ? clonePlain(message.cancelAction) : null;
 	      schemaConfirmTitle.textContent = message.title || "确认执行 SQL";
-	      schemaConfirmSql.textContent = formatConfirmSqlPreview(message.sql || "");
+		      schemaConfirmSql.innerHTML = renderHighlightedConfirmSql(formatConfirmSqlPreview(message.sql || ""));
 	      schemaConfirmOverlay.classList.add("open");
 	      schemaConfirmSql.scrollTop = 0;
 	      schemaConfirmSql.scrollLeft = 0;
@@ -5215,7 +5457,7 @@ export class DatabaseWorkbenchPanel {
 	        handleSchemaConfirmCancelAction();
 	      }
 	      schemaConfirmOverlay.classList.remove("open");
-	      schemaConfirmSql.textContent = "";
+	      schemaConfirmSql.innerHTML = "";
 	      pendingSchemaConfirmDraft = null;
 	      pendingUpdateConfirmPayload = null;
 	      pendingSqlConfirmAction = null;

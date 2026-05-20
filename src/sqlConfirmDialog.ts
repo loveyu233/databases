@@ -54,6 +54,20 @@ function renderSqlConfirmHtml(options: SqlConfirmOptions): string {
     .subtitle { margin-top: 4px; color: var(--muted); font-size: 12px; }
     .body { min-height: 0; padding: 14px 16px; overflow: hidden; }
     pre { width: 100%; height: 100%; min-height: 0; margin: 0; padding: 12px; overflow: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--fg); white-space: pre; font-family: var(--mono); font-size: 12px; line-height: 1.6; overscroll-behavior: contain; }
+    pre .sql-token-keyword { color: #7dd3fc; font-weight: 700; }
+    pre .sql-token-string { color: #f9a8d4; }
+    pre .sql-token-number { color: #fbbf24; }
+    pre .sql-token-comment { color: var(--muted); font-style: italic; }
+    pre .sql-token-field { color: #c4b5fd; }
+    pre .sql-token-table { font-weight: 750; border-radius: 4px; padding: 0 2px; }
+    pre .sql-token-table-0, pre .sql-token-field-0 { color: #34d399; background: rgba(52, 211, 153, .12); }
+    pre .sql-token-table-1, pre .sql-token-field-1 { color: #60a5fa; background: rgba(96, 165, 250, .12); }
+    pre .sql-token-table-2, pre .sql-token-field-2 { color: #f472b6; background: rgba(244, 114, 182, .12); }
+    pre .sql-token-table-3, pre .sql-token-field-3 { color: #fbbf24; background: rgba(251, 191, 36, .12); }
+    pre .sql-token-table-4, pre .sql-token-field-4 { color: #a78bfa; background: rgba(167, 139, 250, .12); }
+    pre .sql-token-table-5, pre .sql-token-field-5 { color: #fb7185; background: rgba(251, 113, 133, .12); }
+    pre .sql-token-table-6, pre .sql-token-field-6 { color: #2dd4bf; background: rgba(45, 212, 191, .12); }
+    pre .sql-token-table-7, pre .sql-token-field-7 { color: #c084fc; background: rgba(192, 132, 252, .12); }
     .actions { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--line); background: rgba(255,255,255,.015); }
     button { border: 0; border-radius: 8px; padding: 7px 14px; cursor: pointer; color: var(--button-fg); background: var(--button); }
     button:hover { background: var(--button-hover); }
@@ -84,7 +98,189 @@ function renderSqlConfirmHtml(options: SqlConfirmOptions): string {
         .trim();
     }
     const sql = document.getElementById("sql");
-    sql.textContent = formatSql(sql.textContent);
+    sql.innerHTML = renderHighlightedConfirmSql(formatSql(sql.textContent));
+    function renderHighlightedConfirmSql(sqlText) {
+      const tokens = tokenizeConfirmSql(sqlText);
+      const tableStyles = collectConfirmSqlTableStyles(tokens);
+      let html = "";
+      for (let index = 0; index < tokens.length; index += 1) {
+        const token = tokens[index];
+        if (token.type === "space" || token.type === "symbol") {
+          html += escapeHtml(token.value);
+          continue;
+        }
+        const normalized = normalizeSqlIdentifier(token.value);
+        const upper = normalized.toUpperCase();
+        if (token.type === "comment") html += wrapConfirmSqlToken(token.value, "sql-token-comment");
+        else if (token.type === "string") html += wrapConfirmSqlToken(token.value, "sql-token-string");
+        else if (token.type === "number") html += wrapConfirmSqlToken(token.value, "sql-token-number");
+        else if (isConfirmSqlKeyword(upper)) html += wrapConfirmSqlToken(token.value, "sql-token-keyword");
+        else if (tableStyles.has(normalized.toLowerCase())) html += wrapConfirmSqlToken(token.value, "sql-token-table " + tableStyles.get(normalized.toLowerCase()));
+        else if (token.type === "identifier" || token.type === "word") {
+          const ownerStyle = getConfirmSqlFieldOwnerStyle(tokens, index, tableStyles);
+          html += wrapConfirmSqlToken(token.value, ownerStyle ? "sql-token-field " + ownerStyle.replace("sql-token-table", "sql-token-field") : "sql-token-field");
+        } else html += escapeHtml(token.value);
+      }
+      return html;
+    }
+    function wrapConfirmSqlToken(value, className) {
+      return '<span class="' + className + '">' + escapeHtml(value) + '</span>';
+    }
+    function tokenizeConfirmSql(sqlText) {
+      const text = String(sqlText || "");
+      const tokens = [];
+      for (let index = 0; index < text.length; index += 1) {
+        const char = text[index];
+        if (/\\s/.test(char)) {
+          let value = char;
+          while (index + 1 < text.length && /\\s/.test(text[index + 1])) value += text[++index];
+          tokens.push({ type: "space", value });
+        } else if (char === "-" && text[index + 1] === "-") {
+          let value = char + text[++index];
+          while (index + 1 < text.length && text[index + 1] !== "\\n") value += text[++index];
+          tokens.push({ type: "comment", value });
+        } else if (char === "/" && text[index + 1] === "*") {
+          let value = char + text[++index];
+          while (index + 1 < text.length) {
+            const next = text[++index];
+            value += next;
+            if (next === "/" && text[index - 1] === "*") break;
+          }
+          tokens.push({ type: "comment", value });
+        } else if (char === "'") {
+          let value = char;
+          while (index + 1 < text.length) {
+            const next = text[++index];
+            value += next;
+            if (next === "\\\\" && index + 1 < text.length) value += text[++index];
+            else if (next === "'" && text[index + 1] === "'") value += text[++index];
+            else if (next === "'") break;
+          }
+          tokens.push({ type: "string", value });
+        } else if (char === '"' || char === String.fromCharCode(96)) {
+          const quote = char;
+          let value = char;
+          while (index + 1 < text.length) {
+            const next = text[++index];
+            value += next;
+            if (next === quote) break;
+          }
+          tokens.push({ type: "identifier", value });
+        } else if (/[0-9]/.test(char)) {
+          let value = char;
+          while (index + 1 < text.length && /[0-9.]/.test(text[index + 1])) value += text[++index];
+          tokens.push({ type: "number", value });
+        } else if (isSqlIdentifierStart(char)) {
+          let value = char;
+          while (index + 1 < text.length && isSqlIdentifierPart(text[index + 1])) value += text[++index];
+          tokens.push({ type: "word", value });
+        } else {
+          tokens.push({ type: "symbol", value: char });
+        }
+      }
+      return tokens;
+    }
+    function collectConfirmSqlTableStyles(tokens) {
+      const tableStyles = new Map();
+      const names = [];
+      const significant = tokens.map((token, index) => ({ token, index })).filter((item) => item.token.type !== "space" && item.token.type !== "comment");
+      const addTable = (name) => {
+        const normalized = normalizeSqlIdentifier(name).toLowerCase();
+        if (!normalized || isConfirmSqlKeyword(normalized.toUpperCase())) return "";
+        if (tableStyles.has(normalized)) return tableStyles.get(normalized);
+        const style = "sql-token-table-" + (names.length % 8);
+        tableStyles.set(normalized, style);
+        names.push(normalized);
+        return style;
+      };
+      let expectTable = false;
+      let inFromList = false;
+      for (let pos = 0; pos < significant.length; pos += 1) {
+        const current = significant[pos].token;
+        const upper = normalizeSqlIdentifier(current.value).toUpperCase();
+        if (inFromList && isSqlClauseBoundary(upper)) inFromList = false;
+        if (["FROM", "JOIN", "UPDATE", "INTO"].includes(upper) || (upper === "TABLE" && shouldSqlTableKeywordExpectName(significant, pos))) {
+          expectTable = true;
+          inFromList = upper === "FROM";
+          continue;
+        }
+        if (expectTable && isSqlNameToken(current)) {
+          const qualified = readQualifiedSqlName(significant, pos);
+          const style = addTable(qualified.name);
+          addConfirmSqlAliasStyle(significant, qualified.endPos + 1, style, tableStyles);
+          pos = qualified.endPos;
+          expectTable = false;
+          continue;
+        }
+        if (inFromList && current.value === ",") expectTable = true;
+      }
+      return tableStyles;
+    }
+    function addConfirmSqlAliasStyle(significant, pos, style, tableStyles) {
+      if (!style || pos >= significant.length) return;
+      let aliasPos = pos;
+      const maybeAs = normalizeSqlIdentifier(significant[aliasPos]?.token?.value || "").toUpperCase();
+      if (maybeAs === "AS") aliasPos += 1;
+      const alias = significant[aliasPos]?.token;
+      const aliasName = normalizeSqlIdentifier(alias?.value || "");
+      const aliasUpper = aliasName.toUpperCase();
+      if (!isSqlNameToken(alias) || isConfirmSqlKeyword(aliasUpper) || isSqlClauseBoundary(aliasUpper)) return;
+      tableStyles.set(aliasName.toLowerCase(), style);
+    }
+
+    function getConfirmSqlFieldOwnerStyle(tokens, index, tableStyles) {
+      const prevDot = findSignificantSqlToken(tokens, index, -1);
+      if (!prevDot || prevDot.value !== ".") return "";
+      const owner = findSignificantSqlToken(tokens, prevDot.index, -1);
+      return owner ? tableStyles.get(normalizeSqlIdentifier(owner.value).toLowerCase()) || "" : "";
+    }
+    function readQualifiedSqlName(significant, pos) {
+      let name = significant[pos].token.value;
+      let endPos = pos;
+      while (endPos + 2 < significant.length && significant[endPos + 1].token.value === "." && isSqlNameToken(significant[endPos + 2].token)) {
+        endPos += 2;
+        name = significant[endPos].token.value;
+      }
+      return { name, endPos };
+    }
+    function shouldSqlTableKeywordExpectName(significant, pos) {
+      const upper = normalizeSqlIdentifier(significant[pos - 1]?.token?.value || "").toUpperCase();
+      return ["CREATE", "ALTER", "DROP", "TRUNCATE", "RENAME", "DESCRIBE", "DESC"].includes(upper);
+    }
+    function findSignificantSqlToken(tokens, start, direction) {
+      for (let index = start + direction; index >= 0 && index < tokens.length; index += direction) {
+        if (tokens[index].type !== "space" && tokens[index].type !== "comment") return { ...tokens[index], index };
+      }
+      return null;
+    }
+    function isSqlClauseBoundary(upper) {
+      return ["WHERE", "GROUP", "ORDER", "HAVING", "LIMIT", "OFFSET", "SET", "VALUES", "RETURNING", "ON", "USING"].includes(upper);
+    }
+    function isSqlNameToken(token) {
+      return token && (token.type === "word" || token.type === "identifier");
+    }
+    function normalizeSqlIdentifier(value) {
+      const text = String(value || "").trim();
+      if ((text.startsWith(String.fromCharCode(96)) && text.endsWith(String.fromCharCode(96))) || (text.startsWith('"') && text.endsWith('"'))) return text.slice(1, -1);
+      return text;
+    }
+    function isSqlIdentifierStart(char) {
+      return /[A-Za-z_$]/.test(char) || char.charCodeAt(0) > 127;
+    }
+    function isSqlIdentifierPart(char) {
+      return /[A-Za-z0-9_$]/.test(char) || char.charCodeAt(0) > 127;
+    }
+    function isConfirmSqlKeyword(upper) {
+      return ["ADD","AFTER","ALTER","AND","AS","ASC","BEGIN","BETWEEN","BY","CASCADE","CASE","CHANGE","CHECK","COLLATE","COLUMN","COMMENT","COMMIT","CONSTRAINT","CREATE","DATABASE","DEFAULT","DELETE","DESC","DISTINCT","DROP","ELSE","END","ENGINE","EXISTS","FOREIGN","FROM","GROUP","HAVING","IF","IN","INDEX","INNER","INSERT","INTO","IS","JOIN","KEY","LEFT","LIKE","LIMIT","MODIFY","NOT","NULL","ON","OR","ORDER","OUTER","PRIMARY","REFERENCES","RENAME","RETURNING","RIGHT","SELECT","SET","TABLE","THEN","TO","TRUNCATE","UNION","UNIQUE","UPDATE","USING","VALUES","WHEN","WHERE"].includes(upper);
+    }
+    function escapeHtml(value) {
+      return String(value == null ? "" : value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
     document.getElementById("cancel").addEventListener("click", () => vscode.postMessage({ type: "cancel" }));
     document.getElementById("confirm").addEventListener("click", () => vscode.postMessage({ type: "confirm" }));
   </script>
