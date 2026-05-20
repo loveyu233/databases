@@ -3127,6 +3127,7 @@ export class DatabaseWorkbenchPanel {
       font-family: var(--mono);
       font-size: 12px;
       line-height: 1.6;
+      overscroll-behavior: contain;
     }
     .schema-confirm-actions {
       display: flex;
@@ -4098,6 +4099,63 @@ export class DatabaseWorkbenchPanel {
       return restoreSqlLiterals(formatted, protectedSql.literals);
     }
 
+    function formatConfirmSqlPreview(sql) {
+      const formatted = formatSqlText(sql);
+      return expandJsonSqlLiterals(formatted);
+    }
+
+    function expandJsonSqlLiterals(sql) {
+      const text = String(sql || "");
+      let result = "";
+      for (let index = 0; index < text.length; index += 1) {
+        const quote = text[index];
+        if (quote !== "'") {
+          result += quote;
+          continue;
+        }
+
+        let literal = quote;
+        index += 1;
+        while (index < text.length) {
+          const char = text[index];
+          literal += char;
+          if (char === "\\" && index + 1 < text.length) {
+            index += 1;
+            literal += text[index];
+            continue;
+          }
+          if (char === "'") {
+            if (text[index + 1] === "'") {
+              index += 1;
+              literal += text[index];
+              continue;
+            }
+            break;
+          }
+          index += 1;
+        }
+        result += formatSqlLiteralForConfirm(literal);
+      }
+      return result;
+    }
+
+    function formatSqlLiteralForConfirm(literal) {
+      if (literal.length < 160 || literal[0] !== "'" || literal[literal.length - 1] !== "'") {
+        return literal;
+      }
+      const raw = literal.slice(1, -1).replace(/''/g, "'");
+      const trimmed = raw.trim();
+      if (!/^[\\[{]/.test(trimmed)) {
+        return literal;
+      }
+      try {
+        const formattedJson = JSON.stringify(JSON.parse(trimmed), null, 2);
+        return "'\\n" + formattedJson + "\\n'";
+      } catch {
+        return literal;
+      }
+    }
+
     function formatElasticRequestText(value) {
       const text = String(value || "").trim();
       if (!text) return "";
@@ -5008,9 +5066,10 @@ export class DatabaseWorkbenchPanel {
       pendingSchemaConfirmDraft = clonePlain(state.schemaEditor);
       pendingUpdateConfirmPayload = null;
       schemaConfirmTitle.textContent = title || "确认执行 SQL";
-      schemaConfirmSql.textContent = sql || "";
+      schemaConfirmSql.textContent = formatConfirmSqlPreview(sql);
       schemaConfirmOverlay.classList.add("open");
       schemaConfirmSql.scrollTop = 0;
+      schemaConfirmSql.scrollLeft = 0;
     }
 
     function openUpdateCellsConfirmDialog(message) {
@@ -5021,7 +5080,7 @@ export class DatabaseWorkbenchPanel {
         updates: message.updates || [],
       };
       schemaConfirmTitle.textContent = message.title || "确认执行下面的 UPDATE 语句吗？";
-      schemaConfirmSql.textContent = message.sql || "";
+      schemaConfirmSql.textContent = formatConfirmSqlPreview(message.sql);
       schemaConfirmOverlay.classList.add("open");
       schemaConfirmSql.scrollTop = 0;
       schemaConfirmSql.scrollLeft = 0;
