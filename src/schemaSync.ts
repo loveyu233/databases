@@ -442,7 +442,10 @@ function parseMysqlOnUpdate(extra: string): string {
 
 function quoteIdentifier(dialect: SqlDialect, identifier: string): string {
   if (dialect === "postgres") {
-    return `"${identifier.replace(/"/g, "\"\"")}"`;
+    return identifier
+      .split(".")
+      .map((part) => `"${part.replace(/"/g, "\"\"")}"`)
+      .join(".");
   }
   return `\`${identifier.replace(/`/g, "``")}\``;
 }

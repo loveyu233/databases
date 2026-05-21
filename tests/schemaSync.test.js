@@ -272,3 +272,19 @@ run("PostgreSQL CURRENT_TIMESTAMP 与 now() 不误判为相同", () => {
   const sql = sqlOf("postgres", source, target);
   assertContains(sql, "ALTER TABLE \"articles\" ALTER COLUMN \"created_at\" SET DEFAULT now();", "PostgreSQL 表达式默认值应精确同步");
 });
+
+run("PostgreSQL 非 public schema 表名会按 schema 分段引用", () => {
+  const source = postgresTable({
+    name: "type_lab.primitive_types",
+    comment: "类型测试表",
+    foreignKeys: [{ name: "fk_type_lab_ref", columns: ["id"], referenceTable: "type_lab.catalog_composite_types", referenceColumns: ["id"] }],
+  });
+  const target = postgresTable({
+    name: "type_lab.primitive_types",
+    comment: "",
+    foreignKeys: [],
+  });
+  const sql = sqlOf("postgres", source, target);
+  assertContains(sql, "COMMENT ON TABLE \"type_lab\".\"primitive_types\" IS '类型测试表';", "非 public 表应使用 schema 限定名");
+  assertContains(sql, "REFERENCES \"type_lab\".\"catalog_composite_types\" (\"id\")", "非 public 引用表应使用 schema 限定名");
+});

@@ -602,19 +602,16 @@ class PostgresClient implements DbClient {
   }
 
   async listTables(): Promise<string[]> {
-    const result = await this.client.query<{ table_name: string }>(
-      "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE' ORDER BY table_name"
-    );
-    return result.rows.map((row) => row.table_name);
+    return (await this.listTableSummaries()).map((item) => item.name);
   }
 
   async listTableSummaries(): Promise<TableSummary[]> {
     const result = await this.client.query<{ table_name: string; table_comment: string | null }>(
-      `SELECT t.table_name,
+      `SELECT CASE WHEN t.table_schema = 'public' THEN t.table_name ELSE t.table_schema || '.' || t.table_name END AS table_name,
               obj_description(format('%I.%I', t.table_schema, t.table_name)::regclass::oid, 'pg_class') AS table_comment
        FROM information_schema.tables t
-       WHERE t.table_schema = 'public' AND t.table_type = 'BASE TABLE'
-       ORDER BY t.table_name`
+       WHERE t.table_schema NOT IN ('pg_catalog', 'information_schema') AND t.table_schema NOT LIKE 'pg_toast%' AND t.table_schema NOT LIKE 'pg_temp_%' AND t.table_type = 'BASE TABLE'
+       ORDER BY t.table_schema, t.table_name`
     );
     return result.rows.map((row) => ({
       name: row.table_name,
@@ -635,7 +632,7 @@ class PostgresClient implements DbClient {
       table_comment: string | null;
       is_identity: boolean;
     }>(
-      `SELECT c.relname AS table_name,
+      `SELECT CASE WHEN n.nspname = 'public' THEN c.relname ELSE n.nspname || '.' || c.relname END AS table_name,
               a.attname AS column_name,
               pg_catalog.format_type(a.atttypid, a.atttypmod) AS data_type,
               a.attnotnull AS not_null,
@@ -654,7 +651,9 @@ class PostgresClient implements DbClient {
          FROM pg_constraint
          WHERE contype = 'p'
        ) pk ON pk.conrelid = c.oid AND pk.attnum = a.attnum
-       WHERE n.nspname = 'public'
+       WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
+         AND n.nspname NOT LIKE 'pg_toast%'
+         AND n.nspname NOT LIKE 'pg_temp_%'
          AND c.relkind IN ('r', 'p')
          AND a.attnum > 0
          AND NOT a.attisdropped
@@ -666,7 +665,7 @@ class PostgresClient implements DbClient {
       is_unique: boolean;
       column_name: string | null;
     }>(
-      `SELECT t.relname AS table_name,
+      `SELECT CASE WHEN n.nspname = 'public' THEN t.relname ELSE n.nspname || '.' || t.relname END AS table_name,
               i.relname AS index_name,
               ix.indisunique AS is_unique,
               a.attname AS column_name
@@ -676,7 +675,7 @@ class PostgresClient implements DbClient {
        JOIN pg_class i ON i.oid = ix.indexrelid
        JOIN unnest(ix.indkey) WITH ORDINALITY AS ord(attnum, seq) ON ord.attnum > 0
        LEFT JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = ord.attnum
-       WHERE n.nspname = 'public' AND ix.indisprimary = false
+       WHERE n.nspname NOT IN ('pg_catalog', 'information_schema') AND n.nspname NOT LIKE 'pg_toast%' AND n.nspname NOT LIKE 'pg_temp_%' AND ix.indisprimary = false
        ORDER BY t.relname, i.relname, ord.seq`
     );
     const foreignKeyRows = await this.client.query<{
@@ -688,10 +687,10 @@ class PostgresClient implements DbClient {
       update_rule: string;
       delete_rule: string;
     }>(
-      `SELECT t.relname AS table_name,
+      `SELECT CASE WHEN n.nspname = 'public' THEN t.relname ELSE n.nspname || '.' || t.relname END AS table_name,
               con.conname AS constraint_name,
               a.attname AS column_name,
-              rt.relname AS referenced_table_name,
+              CASE WHEN rn.nspname = 'public' THEN rt.relname ELSE rn.nspname || '.' || rt.relname END AS referenced_table_name,
               ra.attname AS referenced_column_name,
               CASE con.confupdtype WHEN 'a' THEN 'NO ACTION' WHEN 'r' THEN 'RESTRICT' WHEN 'c' THEN 'CASCADE' WHEN 'n' THEN 'SET NULL' WHEN 'd' THEN 'SET DEFAULT' ELSE '' END AS update_rule,
               CASE con.confdeltype WHEN 'a' THEN 'NO ACTION' WHEN 'r' THEN 'RESTRICT' WHEN 'c' THEN 'CASCADE' WHEN 'n' THEN 'SET NULL' WHEN 'd' THEN 'SET DEFAULT' ELSE '' END AS delete_rule
@@ -699,11 +698,12 @@ class PostgresClient implements DbClient {
        JOIN pg_class t ON t.oid = con.conrelid
        JOIN pg_namespace n ON n.oid = t.relnamespace
        JOIN pg_class rt ON rt.oid = con.confrelid
+       JOIN pg_namespace rn ON rn.oid = rt.relnamespace
        JOIN unnest(con.conkey) WITH ORDINALITY AS ck(attnum, seq) ON true
        JOIN unnest(con.confkey) WITH ORDINALITY AS fk(attnum, seq) ON fk.seq = ck.seq
        JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = ck.attnum
        JOIN pg_attribute ra ON ra.attrelid = rt.oid AND ra.attnum = fk.attnum
-       WHERE n.nspname = 'public' AND con.contype = 'f'
+       WHERE n.nspname NOT IN ('pg_catalog', 'information_schema') AND n.nspname NOT LIKE 'pg_toast%' AND n.nspname NOT LIKE 'pg_temp_%' AND con.contype = 'f'
        ORDER BY t.relname, con.conname, ck.seq`
     );
     const checkRows = await this.client.query<{
@@ -711,13 +711,13 @@ class PostgresClient implements DbClient {
       constraint_name: string;
       expression: string;
     }>(
-      `SELECT t.relname AS table_name,
+      `SELECT CASE WHEN n.nspname = 'public' THEN t.relname ELSE n.nspname || '.' || t.relname END AS table_name,
               con.conname AS constraint_name,
               regexp_replace(pg_get_constraintdef(con.oid), '^CHECK \\((.*)\\)$', '\\1') AS expression
        FROM pg_constraint con
        JOIN pg_class t ON t.oid = con.conrelid
        JOIN pg_namespace n ON n.oid = t.relnamespace
-       WHERE n.nspname = 'public' AND con.contype = 'c'
+       WHERE n.nspname NOT IN ('pg_catalog', 'information_schema') AND n.nspname NOT LIKE 'pg_toast%' AND n.nspname NOT LIKE 'pg_temp_%' AND con.contype = 'c'
        ORDER BY t.relname, con.conname`
     );
     const triggerRows = await this.client.query<{
@@ -727,13 +727,13 @@ class PostgresClient implements DbClient {
       event: string;
       statement: string;
     }>(
-      `SELECT event_object_table AS table_name,
+      `SELECT CASE WHEN event_object_schema = 'public' THEN event_object_table ELSE event_object_schema || '.' || event_object_table END AS table_name,
               trigger_name,
               action_timing AS timing,
               event_manipulation AS event,
               action_statement AS statement
        FROM information_schema.triggers
-       WHERE trigger_schema = 'public'
+       WHERE trigger_schema NOT IN ('pg_catalog', 'information_schema') AND trigger_schema NOT LIKE 'pg_toast%' AND trigger_schema NOT LIKE 'pg_temp_%'
        ORDER BY event_object_table, trigger_name`
     );
 
@@ -878,12 +878,20 @@ class PostgresClient implements DbClient {
   }
 
   quoteIdentifier(identifier: string): string {
-    return `"${identifier.replace(/"/g, "\"\"")}"`;
+    return quotePostgresIdentifier(identifier);
   }
 
   async dispose(): Promise<void> {
     await this.client.end();
   }
+}
+
+
+function quotePostgresIdentifier(identifier: string): string {
+  return identifier
+    .split(".")
+    .map((part) => `"${part.replace(/"/g, "\"\"")}"`)
+    .join(".");
 }
 
 const REDIS_SCAN_BATCH_SIZE = 200;

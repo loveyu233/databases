@@ -11741,7 +11741,10 @@ function quoteIdentifier(type: DbConnectionConfig["type"], identifier: string): 
     return identifier;
   }
 
-  return `"${identifier.replace(/"/g, "\"\"")}"`;
+  return identifier
+    .split(".")
+    .map((part) => `"${part.replace(/"/g, "\"\"")}"`)
+    .join(".");
 }
 
 function toSqlLiteral(value: unknown): string {
