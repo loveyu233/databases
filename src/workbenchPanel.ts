@@ -2081,6 +2081,11 @@ export class DatabaseWorkbenchPanel {
 	      line-height: 1.45;
 	      white-space: pre;
 	      overflow-wrap: normal;
+	      font-weight: 400;
+	      letter-spacing: normal;
+	      font-variant-ligatures: none;
+	      font-kerning: none;
+	      tab-size: 2;
 	    }
 	    .quick-sql-highlight {
 	      width: 100%;
@@ -2088,6 +2093,15 @@ export class DatabaseWorkbenchPanel {
 	    .quick-sql-highlight .field {
 	      width: 100%;
 	      box-sizing: border-box;
+	      display: block;
+	      resize: none;
+	      overflow: hidden;
+	    }
+	    .quick-sql-highlight .sql-highlight-code .sql-token-keyword,
+	    .quick-sql-highlight .sql-highlight-code .sql-token-table {
+	      font-weight: 400;
+	      border-radius: 0;
+	      padding: 0;
 	    }
 	    .editor-sql-highlight textarea {
 	      background: transparent;
@@ -3421,7 +3435,7 @@ export class DatabaseWorkbenchPanel {
 	    <section class="quick">
 	      <div class="sql-highlight-wrap quick-sql-highlight">
 	        <pre class="sql-highlight-code" id="whereHighlight" aria-hidden="true"></pre>
-	        <input class="field" id="whereInput" placeholder="快速条件：例如 status = 'paid' AND id > 100" />
+	        <textarea class="field" id="whereInput" rows="1" wrap="off" spellcheck="false" placeholder="快速条件：例如 status = 'paid' AND id > 100"></textarea>
 	      </div>
 	      <input class="field" id="limitInput" type="number" max="5000" value="30" title="限制行数；输入负数表示查询全部" />
 	      <button id="quickBtn">查询</button>
