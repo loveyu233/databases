@@ -3664,7 +3664,7 @@ export class DatabaseWorkbenchPanel {
       <div class="enum-editor" id="enumEditor">
         <div class="enum-editor-head">
           <span>当前值：<strong class="enum-current" id="enumCurrentValue"></strong></span>
-          <span>点击下方枚举值进行选择</span>
+          <span id="enumOptionHint">点击下方枚举值进行选择</span>
         </div>
         <div class="enum-options" id="enumOptions"></div>
       </div>
@@ -3815,6 +3815,7 @@ export class DatabaseWorkbenchPanel {
     const enumEditor = $("#enumEditor");
     const enumOptions = $("#enumOptions");
     const enumCurrentValue = $("#enumCurrentValue");
+    const enumOptionHint = $("#enumOptionHint");
     const editError = $("#editError");
     let activeEdit = null;
 	    let activeContextRowIndex = null;
@@ -8841,7 +8842,9 @@ export class DatabaseWorkbenchPanel {
       const columnType = state.columnTypes[column] || "";
       const nullable = isNullableColumn(column);
       const enumValues = getEnumValues(column);
-      const enumLike = enumValues.length > 0;
+      const booleanLike = isBooleanColumn(column);
+      const optionValues = booleanLike ? [true, false] : enumValues;
+      const enumLike = optionValues.length > 0;
       const pendingValue = state.pendingEdits[editKey]?.newValue;
       const sourceValue = pendingValue !== undefined ? pendingValue : row[column];
       if (state.connectionType === "redis" && column === "value" && isTruncatedRedisPreview(sourceValue)) {
@@ -8852,7 +8855,8 @@ export class DatabaseWorkbenchPanel {
       const redisJsonLike = isRedisJsonValueColumn(column, sourceValue);
       const jsonLike = isJsonColumn(column) || redisJsonLike;
       const initialValue = redisTtlEdit ? getRedisTtlEditableValue(sourceValue) : toEditableValue(sourceValue, temporalKind, jsonLike);
-      activeEdit = { rowIndex, column, temporalKind, jsonLike, redisTtlEdit, enumLike, enumValues, enumSelected: initialValue, nullable, nullSelected: false };
+      const selectedOptionValue = booleanLike ? normalizeBooleanOptionValue(initialValue) ?? initialValue : initialValue;
+      activeEdit = { rowIndex, column, temporalKind, jsonLike, redisTtlEdit, enumLike, booleanLike, enumValues: optionValues, enumSelected: selectedOptionValue, nullable, nullSelected: false };
       $("#editDialogTitle").textContent = redisTtlEdit ? "设置过期时间" : state.connectionType === "redis" ? "编辑" : "编辑字段值";
       $("#editDialogMeta").textContent = buildEditFieldMeta(column, row);
       editShortcuts.classList.toggle("visible", Boolean(temporalKind || jsonLike || nullable || redisTtlEdit));
@@ -8879,7 +8883,7 @@ export class DatabaseWorkbenchPanel {
       clearEditError();
       if (enumLike) {
         clearJsonHighlight();
-        renderEnumEditor(enumValues, toEditableValue(row[column]), initialValue);
+        renderEnumEditor(optionValues, sourceValue, selectedOptionValue);
       } else {
         cellEditor.value = initialValue;
         cellEditor.placeholder = redisTtlEdit ? "例如 10、1s、1m、1h、1d" : "";
@@ -8903,10 +8907,13 @@ export class DatabaseWorkbenchPanel {
       const jsonLike = isJsonColumn(column);
       const nullable = isNullableColumn(column);
       const enumValues = getEnumValues(column);
-      const enumLike = enumValues.length > 0;
+      const booleanLike = isBooleanColumn(column);
+      const optionValues = booleanLike ? [true, false] : enumValues;
+      const enumLike = optionValues.length > 0;
       const hasValue = Object.prototype.hasOwnProperty.call(state.quickInsert.values, column);
       const initialValue = hasValue ? toEditableValue(state.quickInsert.values[column], temporalKind, jsonLike) : "";
-      activeEdit = { mode: "insert", rowIndex: -1, column, temporalKind, jsonLike, enumLike, enumValues, enumSelected: initialValue, nullable, nullSelected: false };
+      const selectedOptionValue = booleanLike ? normalizeBooleanOptionValue(initialValue) ?? initialValue : initialValue;
+      activeEdit = { mode: "insert", rowIndex: -1, column, temporalKind, jsonLike, enumLike, booleanLike, enumValues: optionValues, enumSelected: selectedOptionValue, nullable, nullSelected: false };
       $("#editDialogTitle").textContent = "填写新增字段";
       $("#editDialogMeta").textContent = buildEditFieldMeta(column, null, { insert: true });
       editShortcuts.classList.toggle("visible", Boolean(temporalKind || jsonLike || nullable));
@@ -8929,7 +8936,7 @@ export class DatabaseWorkbenchPanel {
       clearEditError();
       if (enumLike) {
         clearJsonHighlight();
-        renderEnumEditor(enumValues, hasValue ? toEditableValue(state.quickInsert.values[column]) : "auto", initialValue);
+        renderEnumEditor(optionValues, hasValue ? state.quickInsert.values[column] : "auto", selectedOptionValue);
       } else {
         cellEditor.value = initialValue;
         updateJsonHighlight();
@@ -8947,9 +8954,9 @@ export class DatabaseWorkbenchPanel {
 
     function commitDialogEdit(shouldSubmit) {
       if (!activeEdit || !state.currentResult) return;
-      const { rowIndex, column, temporalKind, jsonLike, enumLike, redisTtlEdit } = activeEdit;
+      const { rowIndex, column, temporalKind, jsonLike, enumLike, booleanLike, redisTtlEdit } = activeEdit;
       if (activeEdit.mode === "insert") {
-        commitInsertDialogEdit(column, temporalKind, jsonLike, enumLike, shouldSubmit);
+        commitInsertDialogEdit(column, temporalKind, jsonLike, enumLike, booleanLike, shouldSubmit);
         return;
       }
       const row = state.currentResult.rows[rowIndex];
@@ -8958,6 +8965,11 @@ export class DatabaseWorkbenchPanel {
       let comparableOldValue = row[column] === null || row[column] === undefined ? null : oldValue;
       let comparableNewValue = newValue;
       const editKey = buildEditKey(rowIndex, column);
+      if (booleanLike && newValue !== null) {
+        newValue = normalizeBooleanOptionValue(newValue) ?? newValue;
+        comparableNewValue = newValue;
+        comparableOldValue = normalizeBooleanOptionValue(row[column]) ?? comparableOldValue;
+      }
       if (redisTtlEdit) {
         newValue = String(newValue ?? "").trim();
         if (!newValue) {
@@ -8990,8 +9002,11 @@ export class DatabaseWorkbenchPanel {
       }
     }
 
-    function commitInsertDialogEdit(column, temporalKind, jsonLike, enumLike, shouldSubmit) {
+    function commitInsertDialogEdit(column, temporalKind, jsonLike, enumLike, booleanLike, shouldSubmit) {
       let newValue = activeEdit.nullSelected ? null : (enumLike ? activeEdit.enumSelected : cellEditor.value);
+      if (booleanLike && newValue !== null) {
+        newValue = normalizeBooleanOptionValue(newValue) ?? newValue;
+      }
       if (jsonLike && newValue !== null) {
         const compactNewValue = compactJsonText(newValue);
         if (compactNewValue === undefined) return;
@@ -9732,6 +9747,23 @@ export class DatabaseWorkbenchPanel {
       return state.columnMeta[column]?.nullable === true;
     }
 
+    function isBooleanColumn(column) {
+      const type = String(state.columnTypes[column] || "").trim().toLowerCase().replace(/\s+/g, " ");
+      return /^(boolean|bool)\b/.test(type) || /^tinyint\s*\(\s*1\s*\)(?:\s+unsigned)?$/.test(type);
+    }
+
+    function normalizeBooleanOptionValue(value) {
+      if (typeof value === "boolean") return value;
+      if (typeof value === "number") {
+        if (value === 1) return true;
+        if (value === 0) return false;
+      }
+      const text = String(value ?? "").trim().toLowerCase();
+      if (["true", "t", "1", "yes", "y", "on"].includes(text)) return true;
+      if (["false", "f", "0", "no", "n", "off"].includes(text)) return false;
+      return undefined;
+    }
+
     function getEnumValues(column) {
       const values = state.columnMeta[column]?.enumValues;
       if (Array.isArray(values) && values.length) {
@@ -9776,15 +9808,18 @@ export class DatabaseWorkbenchPanel {
     }
 
     function renderEnumEditor(values, currentValue, selectedValue) {
-      enumCurrentValue.textContent = currentValue || "空值";
+      const booleanOptions = values.every((value) => typeof value === "boolean");
+      enumOptionHint.textContent = booleanOptions ? "点击下方布尔值进行选择" : "点击下方枚举值进行选择";
+      enumCurrentValue.textContent = formatEditorOptionLabel(currentValue);
       enumOptions.innerHTML = values.map((value, index) => {
-        const current = value === currentValue;
-        const selected = value === selectedValue;
+        const current = isSameEditorOptionValue(value, currentValue);
+        const selected = isSameEditorOptionValue(value, selectedValue);
         const className = "enum-option" + (current ? " current" : "") + (selected ? " selected" : "");
         const titleParts = [];
         if (current) titleParts.push("当前值");
         if (selected) titleParts.push("已选中");
-        return '<button class="' + className + '" data-enum-index="' + index + '" title="' + escapeHtml(titleParts.join(" / ") || value) + '">' + escapeHtml(value) + '</button>';
+        const label = formatEditorOptionLabel(value);
+        return '<button class="' + className + '" data-enum-index="' + index + '" title="' + escapeHtml(titleParts.join(" / ") || label) + '">' + escapeHtml(label) + '</button>';
       }).join("");
       enumOptions.querySelectorAll(".enum-option").forEach((button) => {
         button.addEventListener("click", () => {
@@ -9796,6 +9831,20 @@ export class DatabaseWorkbenchPanel {
           renderEnumEditor(values, currentValue, value);
         });
       });
+    }
+
+    function formatEditorOptionLabel(value) {
+      if (value === null || value === undefined || value === "") return "空值";
+      if (typeof value === "boolean") return value ? "true" : "false";
+      return String(value);
+    }
+
+    function isSameEditorOptionValue(optionValue, value) {
+      if (typeof optionValue === "boolean") {
+        const normalized = normalizeBooleanOptionValue(value);
+        return normalized !== undefined && normalized === optionValue;
+      }
+      return String(optionValue) === String(value);
     }
 
     function getNowButtonText(kind) {
