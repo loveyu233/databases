@@ -867,7 +867,15 @@ class PostgresClient implements DbClient {
       }
     }
 
-    const statements = [`CREATE TABLE ${this.quoteIdentifier(table)} (\n${columnLines.join(",\n")}\n);`];
+    const enumTypeStatements: string[] = [];
+    for (const column of tableInfo.columns) {
+      if (!column.enumValues?.length) continue;
+      const statement = `CREATE TYPE ${this.quoteIdentifier(column.type)} AS ENUM (${column.enumValues.map(toPostgresSqlLiteral).join(", ")});`;
+      if (!enumTypeStatements.includes(statement)) {
+        enumTypeStatements.push(statement);
+      }
+    }
+    const statements = [...enumTypeStatements, `CREATE TABLE ${this.quoteIdentifier(table)} (\n${columnLines.join(",\n")}\n);`];
     if (tableInfo.comment) {
       statements.push(`COMMENT ON TABLE ${this.quoteIdentifier(table)} IS ${toPostgresSqlLiteral(tableInfo.comment)};`);
     }

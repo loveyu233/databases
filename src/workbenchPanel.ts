@@ -3847,7 +3847,11 @@ export class DatabaseWorkbenchPanel {
     ];
     const mysqlDataTypes = [
       "bigint unsigned", "int unsigned", "tinyint", "boolean", "varchar(255)", "varchar(128)", "char(36)", "text",
-      "longtext", "json", "datetime", "timestamp", "date", "time", "decimal(10,2)", "double", "float"
+      "longtext", "json", "datetime", "timestamp", "date", "time", "decimal(10,2)", "double", "float", "enum('active','disabled')"
+    ];
+    const postgresDataTypes = [
+      "bigint", "integer", "smallint", "boolean", "text", "varchar(255)", "uuid", "jsonb", "timestamp", "timestamptz",
+      "date", "time", "numeric(10,2)", "double precision", "real", "enum('active','disabled')"
     ];
     const mysqlDefaultValues = ["NULL", "CURRENT_TIMESTAMP", "CURRENT_DATE", "CURRENT_TIME", "0", "1", "''"];
     const postgresKeywords = [
@@ -4928,7 +4932,7 @@ export class DatabaseWorkbenchPanel {
           ? [...getTableCompletions({ quote: false, kind: "ES Index" }), ...getCurrentColumnCompletions(input.value).map((item) => ({ ...item, kind: "ES 字段" }))]
           : buildElasticCompletionItems(input.value, mode);
       } else if (mode === "schema-type") {
-        items = mysqlDataTypes.map((value) => completionItem(value, value, "类型"));
+        items = (state.connectionType === "postgres" ? postgresDataTypes : mysqlDataTypes).map((value) => completionItem(value, value, "类型"));
       } else if (mode === "schema-default") {
         items = [...mysqlDefaultValues, "JSON_OBJECT()", "JSON_ARRAY()", "UUID()"].map((value) => completionItem(value, value, "默认值"));
       } else if (mode === "schema-table") {
@@ -11547,7 +11551,8 @@ function buildPostgresSchemaDraftSql(originalTable: TableInfo, draft: Record<str
     const originalColumnName = asString(column.originalName) || asString(column.name);
     const originalColumn = originalByName.get(originalColumnName);
     if (!originalColumn || column.isNew === true) {
-      statements.push(`ALTER TABLE ${quoteIdentifier("postgres", workingTable)} ADD COLUMN ${buildPostgresColumnDefinitionFromDraft(column)};`);
+      pushPostgresEnumTypeStatement(statements, workingTable, asString(column.name), asString(column.type));
+      statements.push(`ALTER TABLE ${quoteIdentifier("postgres", workingTable)} ADD COLUMN ${buildPostgresColumnDefinitionFromDraft(column, workingTable)};`);
       const comment = asString(column.comment);
       if (comment) {
         statements.push(`COMMENT ON COLUMN ${quoteIdentifier("postgres", workingTable)}.${quoteIdentifier("postgres", asString(column.name))} IS ${toSqlLiteral(comment)};`);
@@ -11561,16 +11566,24 @@ function buildPostgresSchemaDraftSql(originalTable: TableInfo, draft: Record<str
       statements.push(`ALTER TABLE ${quoteIdentifier("postgres", workingTable)} RENAME COLUMN ${quoteIdentifier("postgres", originalColumnName)} TO ${quoteIdentifier("postgres", nextColumnName)};`);
       currentColumnName = nextColumnName;
     }
-    if (asString(column.type) !== originalColumn.type) {
-      statements.push(`ALTER TABLE ${quoteIdentifier("postgres", workingTable)} ALTER COLUMN ${quoteIdentifier("postgres", currentColumnName)} TYPE ${asString(column.type) || "text"};`);
+    const originalDefault = originalColumn.defaultValue === null || originalColumn.defaultValue === undefined ? "" : String(originalColumn.defaultValue);
+    const nextDefault = asString(column.defaultValue);
+    let droppedDefaultForTypeChange = false;
+    if (normalizePostgresColumnType(workingTable, currentColumnName, asString(column.type)) !== normalizePostgresColumnType(workingTable, currentColumnName, originalColumn.type)) {
+      const typePlan = resolvePostgresColumnType(workingTable, currentColumnName, asString(column.type));
+      pushUniqueStatement(statements, typePlan.createTypeSql);
+      if (typePlan.inlineEnum && originalDefault) {
+        statements.push(`ALTER TABLE ${quoteIdentifier("postgres", workingTable)} ALTER COLUMN ${quoteIdentifier("postgres", currentColumnName)} DROP DEFAULT;`);
+        droppedDefaultForTypeChange = true;
+      }
+      const usingSql = typePlan.inlineEnum ? ` USING ${quoteIdentifier("postgres", currentColumnName)}::text::${typePlan.typeSql}` : "";
+      statements.push(`ALTER TABLE ${quoteIdentifier("postgres", workingTable)} ALTER COLUMN ${quoteIdentifier("postgres", currentColumnName)} TYPE ${typePlan.typeSql}${usingSql};`);
     }
     if ((column.notNull === true) !== !originalColumn.nullable) {
       statements.push(`ALTER TABLE ${quoteIdentifier("postgres", workingTable)} ALTER COLUMN ${quoteIdentifier("postgres", currentColumnName)} ${column.notNull === true ? "SET" : "DROP"} NOT NULL;`);
     }
     const originalAutoIncrement = /auto_increment/i.test(originalColumn.extra || "") || isPostgresGeneratedDefault(originalColumn.defaultValue);
     const nextAutoIncrement = column.autoIncrement === true;
-    const originalDefault = originalColumn.defaultValue === null || originalColumn.defaultValue === undefined ? "" : String(originalColumn.defaultValue);
-    const nextDefault = asString(column.defaultValue);
     const originalDefaultIsSerial = isPostgresGeneratedDefault(originalDefault);
     if (originalAutoIncrement && !nextAutoIncrement) {
       if (originalDefaultIsSerial && nextDefault === originalDefault) {
@@ -11586,8 +11599,12 @@ function buildPostgresSchemaDraftSql(originalTable: TableInfo, draft: Record<str
         statements.push(`ALTER TABLE ${quoteIdentifier("postgres", workingTable)} ALTER COLUMN ${quoteIdentifier("postgres", currentColumnName)} DROP DEFAULT;`);
       }
       statements.push(`ALTER TABLE ${quoteIdentifier("postgres", workingTable)} ALTER COLUMN ${quoteIdentifier("postgres", currentColumnName)} ADD GENERATED BY DEFAULT AS IDENTITY;`);
-    } else if (!nextAutoIncrement && nextDefault !== originalDefault) {
-      statements.push(`ALTER TABLE ${quoteIdentifier("postgres", workingTable)} ALTER COLUMN ${quoteIdentifier("postgres", currentColumnName)} ${nextDefault ? `SET DEFAULT ${formatPostgresDefault(nextDefault)}` : "DROP DEFAULT"};`);
+    } else if (!nextAutoIncrement) {
+      if (nextDefault && (droppedDefaultForTypeChange || nextDefault !== originalDefault)) {
+        statements.push(`ALTER TABLE ${quoteIdentifier("postgres", workingTable)} ALTER COLUMN ${quoteIdentifier("postgres", currentColumnName)} SET DEFAULT ${formatPostgresDefault(nextDefault)};`);
+      } else if (!nextDefault && !droppedDefaultForTypeChange && nextDefault !== originalDefault) {
+        statements.push(`ALTER TABLE ${quoteIdentifier("postgres", workingTable)} ALTER COLUMN ${quoteIdentifier("postgres", currentColumnName)} DROP DEFAULT;`);
+      }
     }
     if (asString(column.comment) !== (originalColumn.comment ?? "")) {
       const comment = asString(column.comment);
@@ -11641,7 +11658,11 @@ function buildPostgresCreateTableDraftSql(draft: Record<string, unknown>): strin
   if (!columns.length) {
     throw new Error("新建表至少需要一个列。");
   }
-  const lines = columns.map((column) => `  ${buildPostgresColumnDefinitionFromDraft(column)}`);
+  const enumTypeStatements: string[] = [];
+  for (const column of columns) {
+    pushPostgresEnumTypeStatement(enumTypeStatements, tableName, asString(column.name), asString(column.type));
+  }
+  const lines = columns.map((column) => `  ${buildPostgresColumnDefinitionFromDraft(column, tableName)}`);
   const validColumns = new Set(columns.map((column) => asString(column.name)).filter(Boolean));
   const normalizeColumns = (value: unknown) => asArray(value).map(String).filter((column) => column && validColumns.has(column));
 
@@ -11667,7 +11688,7 @@ function buildPostgresCreateTableDraftSql(draft: Record<string, unknown>): strin
     lines.push(`  CONSTRAINT ${quoteIdentifier("postgres", asString(checkDraft.name) || "chk_new")} CHECK (${expression})`);
   }
 
-  const statements = [`CREATE TABLE ${quoteIdentifier("postgres", tableName)} (\n${lines.join(",\n")}\n);`];
+  const statements = [...enumTypeStatements, `CREATE TABLE ${quoteIdentifier("postgres", tableName)} (\n${lines.join(",\n")}\n);`];
   const tableComment = asString(draftTable.comment);
   if (tableComment) {
     statements.push(`COMMENT ON TABLE ${quoteIdentifier("postgres", tableName)} IS ${toSqlLiteral(tableComment)};`);
@@ -11697,13 +11718,13 @@ function buildPostgresCreateTableDraftSql(draft: Record<string, unknown>): strin
   return statements;
 }
 
-function buildPostgresColumnDefinitionFromDraft(column: Record<string, unknown>): string {
+function buildPostgresColumnDefinitionFromDraft(column: Record<string, unknown>, tableName = ""): string {
   const name = asString(column.name);
   if (!name) {
     throw new Error("列名称不能为空。");
   }
-  const type = asString(column.type) || "text";
-  let sql = `${quoteIdentifier("postgres", name)} ${type}`;
+  const typePlan = resolvePostgresColumnType(tableName, name, asString(column.type));
+  let sql = `${quoteIdentifier("postgres", name)} ${typePlan.typeSql}`;
   if (column.autoIncrement === true) {
     sql += " GENERATED BY DEFAULT AS IDENTITY";
   }
@@ -11713,6 +11734,150 @@ function buildPostgresColumnDefinitionFromDraft(column: Record<string, unknown>)
     sql += ` DEFAULT ${formatPostgresDefault(defaultValue)}`;
   }
   return sql;
+}
+
+function resolvePostgresColumnType(table: string, column: string, rawType: string): {
+  typeSql: string;
+  actualType: string;
+  createTypeSql?: string;
+  inlineEnum: boolean;
+} {
+  const type = String(rawType || "").trim() || "text";
+  const enumValues = parseInlineEnumType(type);
+  if (!enumValues) {
+    return { typeSql: type, actualType: type, inlineEnum: false };
+  }
+  const enumType = buildPostgresEnumTypeName(table, column);
+  return {
+    typeSql: quoteIdentifier("postgres", enumType),
+    actualType: enumType,
+    createTypeSql: `CREATE TYPE ${quoteIdentifier("postgres", enumType)} AS ENUM (${enumValues.map(toSqlLiteral).join(", ")});`,
+    inlineEnum: true,
+  };
+}
+
+function pushPostgresEnumTypeStatement(statements: string[], table: string, column: string, rawType: string): void {
+  pushUniqueStatement(statements, resolvePostgresColumnType(table, column, rawType).createTypeSql);
+}
+
+function pushUniqueStatement(statements: string[], statement: string | undefined): void {
+  if (statement && !statements.includes(statement)) {
+    statements.push(statement);
+  }
+}
+
+function normalizePostgresColumnType(table: string, column: string, rawType: string): string {
+  return normalizeQualifiedIdentifier(resolvePostgresColumnType(table, column, rawType).actualType);
+}
+
+function normalizeQualifiedIdentifier(value: string): string {
+  return String(value || "")
+    .split(".")
+    .map((part) => part.trim().replace(/^"|"$/g, "").replace(/""/g, '"').toLowerCase())
+    .join(".");
+}
+
+function buildPostgresEnumTypeName(table: string, column: string): string {
+  const parts = String(table || "").split(".");
+  const tableName = parts.pop() || "table";
+  const schema = parts.join(".");
+  const typeName = shortenPostgresIdentifier(`${toPostgresIdentifierPart(tableName)}_${toPostgresIdentifierPart(column)}_enum`);
+  return schema ? `${schema}.${typeName}` : typeName;
+}
+
+function toPostgresIdentifierPart(value: string): string {
+  const text = String(value || "")
+    .trim()
+    .replace(/^"|"$/g, "")
+    .replace(/""/g, '"')
+    .replace(/[^A-Za-z0-9_]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .toLowerCase();
+  const safe = text || "field";
+  return /^[0-9]/.test(safe) ? `_${safe}` : safe;
+}
+
+function shortenPostgresIdentifier(value: string): string {
+  if (Buffer.byteLength(value, "utf8") <= 63) {
+    return value;
+  }
+  const suffix = `_${hashIdentifier(value)}`;
+  let head = value;
+  while (head.length > 1 && Buffer.byteLength(`${head}${suffix}`, "utf8") > 63) {
+    head = head.slice(0, -1);
+  }
+  return `${head.replace(/_+$/g, "")}${suffix}`;
+}
+
+function hashIdentifier(value: string): string {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = ((hash << 5) - hash + value.charCodeAt(index)) | 0;
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
+}
+
+function parseInlineEnumType(rawType: string): string[] | undefined {
+  const match = String(rawType || "").trim().match(/^enum\s*\(([\s\S]*)\)$/i);
+  if (!match) {
+    return undefined;
+  }
+  const values = parseSqlStringList(match[1]);
+  if (!values.length) {
+    throw new Error("PostgreSQL enum 类型至少需要一个枚举值。");
+  }
+  return values;
+}
+
+function parseSqlStringList(value: string): string[] {
+  const values: string[] = [];
+  let index = 0;
+  const text = String(value || "");
+  const skipWhitespace = () => {
+    while (/\s/.test(text[index] || "")) index += 1;
+  };
+  while (index < text.length) {
+    skipWhitespace();
+    const quote = text[index];
+    if (quote !== "'" && quote !== '"') {
+      throw new Error("PostgreSQL enum 类型值需要使用引号，例如 enum('active','disabled')。");
+    }
+    index += 1;
+    let current = "";
+    let closed = false;
+    while (index < text.length) {
+      const char = text[index];
+      const next = text[index + 1];
+      if (char === "\\" && next) {
+        current += next;
+        index += 2;
+        continue;
+      }
+      if (char === quote) {
+        if (next === quote) {
+          current += quote;
+          index += 2;
+          continue;
+        }
+        index += 1;
+        closed = true;
+        break;
+      }
+      current += char;
+      index += 1;
+    }
+    if (!closed) {
+      throw new Error("PostgreSQL enum 类型值缺少结束引号。");
+    }
+    values.push(current);
+    skipWhitespace();
+    if (index >= text.length) break;
+    if (text[index] !== ",") {
+      throw new Error("PostgreSQL enum 类型值格式错误，请使用 enum('active','disabled')。");
+    }
+    index += 1;
+  }
+  return values;
 }
 
 function buildPostgresForeignKeySql(table: string, fkDraft: Record<string, unknown>): string {

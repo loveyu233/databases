@@ -288,3 +288,57 @@ run("PostgreSQL 非 public schema 表名会按 schema 分段引用", () => {
   assertContains(sql, "COMMENT ON TABLE \"type_lab\".\"primitive_types\" IS '类型测试表';", "非 public 表应使用 schema 限定名");
   assertContains(sql, "REFERENCES \"type_lab\".\"catalog_composite_types\" (\"id\")", "非 public 引用表应使用 schema 限定名");
 });
+
+run("PostgreSQL 可以用 MySQL enum 写法新增枚举字段", () => {
+  const source = postgresTable({
+    columns: [
+      column("id", "bigint", { nullable: false, key: "PRI", defaultValue: "nextval('articles_id_seq'::regclass)" }),
+      column("status", "enum('draft','published')", { nullable: false, defaultValue: "draft", comment: "状态" }),
+    ],
+    indexes: [],
+    foreignKeys: [],
+    checks: [],
+    triggers: [],
+  });
+  const target = postgresTable({
+    columns: [
+      column("id", "bigint", { nullable: false, key: "PRI", defaultValue: "nextval('articles_id_seq'::regclass)" }),
+    ],
+    indexes: [],
+    foreignKeys: [],
+    checks: [],
+    triggers: [],
+  });
+  const sql = sqlOf("postgres", source, target);
+  assertContains(sql, "CREATE TYPE \"articles_status_enum\" AS ENUM ('draft', 'published');", "应先创建表字段专属 enum 类型");
+  assertContains(sql, "ALTER TABLE \"articles\" ADD COLUMN \"status\" \"articles_status_enum\" NOT NULL DEFAULT 'draft';", "新增字段应使用生成出来的 enum 类型");
+  assertContains(sql, "COMMENT ON COLUMN \"articles\".\"status\" IS '状态';", "新增枚举字段仍应写入字段注释");
+});
+
+run("PostgreSQL 修改字段为 MySQL enum 写法时会生成类型并使用 USING 转换", () => {
+  const source = postgresTable({
+    columns: [
+      column("id", "bigint", { nullable: false, key: "PRI", defaultValue: "nextval('articles_id_seq'::regclass)" }),
+      column("status", "enum('draft','published')", { nullable: false, defaultValue: "draft" }),
+    ],
+    indexes: [],
+    foreignKeys: [],
+    checks: [],
+    triggers: [],
+  });
+  const target = postgresTable({
+    columns: [
+      column("id", "bigint", { nullable: false, key: "PRI", defaultValue: "nextval('articles_id_seq'::regclass)" }),
+      column("status", "text", { nullable: false, defaultValue: "draft" }),
+    ],
+    indexes: [],
+    foreignKeys: [],
+    checks: [],
+    triggers: [],
+  });
+  const sql = sqlOf("postgres", source, target);
+  assertContains(sql, "CREATE TYPE \"articles_status_enum\" AS ENUM ('draft', 'published');", "修改字段类型前应创建 enum 类型");
+  assertContains(sql, "ALTER TABLE \"articles\" ALTER COLUMN \"status\" DROP DEFAULT;", "有默认值时应先移除默认值避免类型转换失败");
+  assertContains(sql, "ALTER TABLE \"articles\" ALTER COLUMN \"status\" TYPE \"articles_status_enum\" USING \"status\"::text::\"articles_status_enum\";", "修改字段应显式使用 text 到 enum 的转换");
+  assertContains(sql, "ALTER TABLE \"articles\" ALTER COLUMN \"status\" SET DEFAULT 'draft';", "类型转换后应恢复默认值");
+});
