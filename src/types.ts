@@ -50,6 +50,7 @@ export type TableColumn = {
   extra?: string;
   charset?: string;
   collation?: string;
+  enumValues?: string[];
 };
 
 export type TableSummary = {

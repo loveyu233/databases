@@ -736,16 +736,43 @@ class PostgresClient implements DbClient {
        WHERE trigger_schema NOT IN ('pg_catalog', 'information_schema') AND trigger_schema NOT LIKE 'pg_toast%' AND trigger_schema NOT LIKE 'pg_temp_%'
        ORDER BY event_object_table, trigger_name`
     );
+    const enumRows = await this.client.query<{
+      table_name: string;
+      column_name: string;
+      enum_values: unknown;
+    }>(
+      `SELECT CASE WHEN n.nspname = 'public' THEN c.relname ELSE n.nspname || '.' || c.relname END AS table_name,
+              a.attname AS column_name,
+              json_agg(e.enumlabel ORDER BY e.enumsortorder) AS enum_values
+       FROM pg_class c
+       JOIN pg_namespace n ON n.oid = c.relnamespace
+       JOIN pg_attribute a ON a.attrelid = c.oid
+       JOIN pg_type typ ON typ.oid = a.atttypid
+       JOIN pg_enum e ON e.enumtypid = typ.oid
+       WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
+         AND n.nspname NOT LIKE 'pg_toast%'
+         AND n.nspname NOT LIKE 'pg_temp_%'
+         AND c.relkind IN ('r', 'p')
+         AND a.attnum > 0
+         AND NOT a.attisdropped
+       GROUP BY n.nspname, c.relname, a.attname, a.attnum
+       ORDER BY n.nspname, c.relname, a.attnum`
+    );
 
     const byTable = new Map<string, TableColumn[]>();
     const tableComments = new Map<string, string>();
     const primaryKeyNames = new Map<string, string>();
+    const enumValuesByColumn = new Map(enumRows.rows.map((row) => [
+      `${row.table_name}\u0000${row.column_name}`,
+      normalizePostgresEnumValues(row.enum_values),
+    ]));
     for (const row of result.rows) {
       const columns = byTable.get(row.table_name) ?? [];
       tableComments.set(row.table_name, row.table_comment ?? "");
       if (row.primary_key_name) {
         primaryKeyNames.set(row.table_name, row.primary_key_name);
       }
+      const enumValues = enumValuesByColumn.get(`${row.table_name}\u0000${row.column_name}`) || [];
       columns.push({
         name: row.column_name,
         type: row.data_type,
@@ -754,6 +781,7 @@ class PostgresClient implements DbClient {
         defaultValue: row.column_default,
         comment: row.column_comment ?? "",
         extra: row.is_identity || isPostgresGeneratedDefault(row.column_default) ? "auto_increment" : "",
+        enumValues: enumValues.length ? enumValues : undefined,
       });
       byTable.set(row.table_name, columns);
     }
@@ -892,6 +920,23 @@ function quotePostgresIdentifier(identifier: string): string {
     .split(".")
     .map((part) => `"${part.replace(/"/g, "\"\"")}"`)
     .join(".");
+}
+
+function normalizePostgresEnumValues(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item));
+  }
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed)) {
+        return parsed.map((item) => String(item));
+      }
+    } catch {
+      return [];
+    }
+  }
+  return [];
 }
 
 const REDIS_SCAN_BATCH_SIZE = 200;

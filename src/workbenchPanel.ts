@@ -9713,6 +9713,10 @@ export class DatabaseWorkbenchPanel {
     }
 
     function getEnumValues(column) {
+      const values = state.columnMeta[column]?.enumValues;
+      if (Array.isArray(values) && values.length) {
+        return values.map((value) => String(value));
+      }
       const type = String(state.columnTypes[column] || "");
       const match = type.match(/^enum\\((.*)\\)$/i);
       return match ? parseSqlStringList(match[1]) : [];
