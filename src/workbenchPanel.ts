@@ -2649,7 +2649,7 @@ export class DatabaseWorkbenchPanel {
     }
     .edit-dialog-head { padding: 12px 14px; border-bottom: 1px solid var(--line); }
     .edit-dialog-title { font-weight: 650; color: var(--fg); }
-    .edit-dialog-meta { margin-top: 4px; color: var(--muted); font-family: var(--mono); font-size: 12px; }
+    .edit-dialog-meta { margin-top: 4px; color: var(--muted); font-family: var(--mono); font-size: 12px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
     .edit-shortcuts {
       display: none;
       align-items: center;
@@ -7564,6 +7564,10 @@ export class DatabaseWorkbenchPanel {
       return String(state.columnComments[column] || "").trim();
     }
 
+    function getColumnComment(column) {
+      return String(state.columnComments[column] || "").trim();
+    }
+
     function renderResult(queryResult) {
       state.currentResult = queryResult;
       state.sortColumn = queryResult.pagination?.sortColumn || "";
@@ -8850,7 +8854,7 @@ export class DatabaseWorkbenchPanel {
       const initialValue = redisTtlEdit ? getRedisTtlEditableValue(sourceValue) : toEditableValue(sourceValue, temporalKind, jsonLike);
       activeEdit = { rowIndex, column, temporalKind, jsonLike, redisTtlEdit, enumLike, enumValues, enumSelected: initialValue, nullable, nullSelected: false };
       $("#editDialogTitle").textContent = redisTtlEdit ? "设置过期时间" : state.connectionType === "redis" ? "编辑" : "编辑字段值";
-      $("#editDialogMeta").textContent = state.connectionType === "redis" ? "key = " + row.key : state.selectedTable + "." + column + " · " + buildPrimaryKeyMeta(row);
+      $("#editDialogMeta").textContent = buildEditFieldMeta(column, row);
       editShortcuts.classList.toggle("visible", Boolean(temporalKind || jsonLike || nullable || redisTtlEdit));
       $("#fillNowBtn").classList.toggle("hidden", !temporalKind);
       $("#formatJsonBtn").classList.toggle("hidden", !jsonLike);
@@ -8904,7 +8908,7 @@ export class DatabaseWorkbenchPanel {
       const initialValue = hasValue ? toEditableValue(state.quickInsert.values[column], temporalKind, jsonLike) : "";
       activeEdit = { mode: "insert", rowIndex: -1, column, temporalKind, jsonLike, enumLike, enumValues, enumSelected: initialValue, nullable, nullSelected: false };
       $("#editDialogTitle").textContent = "填写新增字段";
-      $("#editDialogMeta").textContent = state.selectedTable + "." + column + (isAutoManagedColumn(column) ? " · 留空使用 auto" : " · 新增行");
+      $("#editDialogMeta").textContent = buildEditFieldMeta(column, null, { insert: true });
       editShortcuts.classList.toggle("visible", Boolean(temporalKind || jsonLike || nullable));
       $("#fillNowBtn").classList.toggle("hidden", !temporalKind);
       $("#formatJsonBtn").classList.toggle("hidden", !jsonLike);
@@ -9375,6 +9379,22 @@ export class DatabaseWorkbenchPanel {
 
     function buildPrimaryKeyMeta(row) {
       return state.primaryKeys.map((primaryKey) => primaryKey + " = " + formatValue(row[primaryKey])).join("，");
+    }
+
+    function buildEditFieldMeta(column, row, options = {}) {
+      const fieldName = state.connectionType === "redis" ? column : (state.selectedTable ? state.selectedTable + "." + column : column);
+      const comment = getColumnComment(column);
+      const parts = ["字段：" + fieldName];
+      if (comment) parts.push("注释：" + comment);
+      if (options.insert) {
+        parts.push(isAutoManagedColumn(column) ? "留空使用 auto" : "新增行");
+      } else if (state.connectionType === "redis" && row) {
+        parts.push("key = " + row.key);
+      } else if (row) {
+        const primaryKeyMeta = buildPrimaryKeyMeta(row);
+        if (primaryKeyMeta) parts.push(primaryKeyMeta);
+      }
+      return parts.join(" · ");
     }
 
     function buildEditKey(rowIndex, column) {
