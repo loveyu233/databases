@@ -8842,11 +8842,11 @@ export class DatabaseWorkbenchPanel {
       const columnType = state.columnTypes[column] || "";
       const nullable = isNullableColumn(column);
       const enumValues = getEnumValues(column);
-      const booleanLike = isBooleanColumn(column);
-      const optionValues = booleanLike ? [true, false] : enumValues;
-      const enumLike = optionValues.length > 0;
       const pendingValue = state.pendingEdits[editKey]?.newValue;
       const sourceValue = pendingValue !== undefined ? pendingValue : row[column];
+      const booleanLike = isBooleanColumn(column, sourceValue);
+      const optionValues = booleanLike ? [true, false] : enumValues;
+      const enumLike = optionValues.length > 0;
       if (state.connectionType === "redis" && column === "value" && isTruncatedRedisPreview(sourceValue)) {
         setStatus("当前 Redis 值只是安全预览，已截断；请使用 GETRANGE 查看片段，避免误覆盖完整大值。", true);
         return;
@@ -9747,9 +9747,23 @@ export class DatabaseWorkbenchPanel {
       return state.columnMeta[column]?.nullable === true;
     }
 
-    function isBooleanColumn(column) {
-      const type = String(state.columnTypes[column] || "").trim().toLowerCase().replace(/\s+/g, " ");
+    function isBooleanColumn(column, sampleValue) {
+      if (typeof sampleValue === "boolean") return true;
+      const type = getColumnType(column).trim().toLowerCase().replace(/\s+/g, " ");
       return /^(boolean|bool)\b/.test(type) || /^tinyint\s*\(\s*1\s*\)(?:\s+unsigned)?$/.test(type);
+    }
+
+    function getColumnType(column) {
+      const directType = state.columnTypes[column] || state.columnMeta[column]?.type;
+      if (directType) return String(directType);
+      const tableNames = [state.selectedTable, state.currentResult?.pagination?.table].filter(Boolean);
+      for (const tableName of tableNames) {
+        const table = state.tables.find((item) => item.name === tableName);
+        const meta = table?.columns?.find((item) => item.name === column);
+        if (meta?.type) return String(meta.type);
+      }
+      const currentMeta = state.currentTable?.columns?.find((item) => item.name === column);
+      return currentMeta?.type ? String(currentMeta.type) : "";
     }
 
     function normalizeBooleanOptionValue(value) {
