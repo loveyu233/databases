@@ -112,6 +112,15 @@ const createSql = createWorkbench().buildSchemaDraftStatements(createDraft).stat
 assert.ok(createSql.includes("CREATE TYPE \"devices_status_enum\" AS ENUM ('active', 'disabled');"), "创建表前应生成 PG enum 类型");
 assert.ok(createSql.includes("\"status\" \"devices_status_enum\" NOT NULL DEFAULT 'active'"), "创建表字段应替换为生成的 enum 类型");
 
+const schemaCreateDraft = {
+  ...createDraft,
+  table: { schema: "type_lab", name: "devices", comment: "" },
+};
+const schemaCreateSql = createWorkbench().buildSchemaDraftStatements(schemaCreateDraft).statements.join("\n");
+assert.ok(schemaCreateSql.includes("CREATE TYPE \"type_lab\".\"devices_status_enum\" AS ENUM ('active', 'disabled');"), "指定 schema 建表时 enum 类型应创建到同一 schema");
+assert.ok(schemaCreateSql.includes("CREATE TABLE \"type_lab\".\"devices\""), "指定 schema 建表时应生成 schema 限定表名");
+assert.ok(schemaCreateSql.includes("\"status\" \"type_lab\".\"devices_status_enum\" NOT NULL DEFAULT 'active'"), "指定 schema 建表时字段应引用同 schema 的 enum 类型");
+
 const editWorkbench = createWorkbench("devices");
 editWorkbench.schema = [{
   name: "devices",

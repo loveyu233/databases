@@ -7,7 +7,7 @@ import { registerOfflineLicenseCommands, requireProFeature } from "./license/off
 import { SchemaComparePanel } from "./schemaComparePanel";
 import { showSqlConfirmDialog } from "./sqlConfirmDialog";
 import { ConnectionStore, normalizeConnectionGroupColor } from "./storage";
-import { ActiveTreeSelection, asConnectionNode, asDatabaseFilterNode, asDatabaseNode, asGroupNode, asTableNode, ConnectionGroupDecorationProvider, ConnectionsTreeProvider, getTreeNodePinKey, TreeNode } from "./tree";
+import { ActiveTreeSelection, asConnectionNode, asDatabaseFilterNode, asDatabaseNode, asGroupNode, asSchemaNode, asTableNode, ConnectionGroupDecorationProvider, ConnectionsTreeProvider, getTreeNodePinKey, TreeNode } from "./tree";
 import { AI_PROVIDER_PRESETS, ConnectionGroup, ConnectionGroupColor, DatabaseType, DbConnectionConfig, getAiConfig, getAiProviderPreset } from "./types";
 import { DatabaseWorkbenchPanel } from "./workbenchPanel";
 
@@ -129,7 +129,7 @@ export function activate(context: vscode.ExtensionContext): void {
     })),
     vscode.commands.registerCommand("databaseWorkbench.addTable", (node) => runSafely("添加表失败", async () => {
       await addTable(context, store, databaseService, node);
-      treeProvider.refresh(asDatabaseNode(node));
+      treeProvider.refresh(asSchemaNode(node) ?? asDatabaseNode(node) ?? undefined);
     })),
     vscode.commands.registerCommand("databaseWorkbench.copyDatabaseSchema", (node) => runSafely("复制表结构失败", async () => {
       await copyDatabaseSchema(store, databaseService, node);
@@ -145,7 +145,7 @@ export function activate(context: vscode.ExtensionContext): void {
     })),
     vscode.commands.registerCommand("databaseWorkbench.deleteTable", (node) => runSafely("删除表失败", async () => {
       await deleteTable(store, databaseService, asTableNode(node));
-      treeProvider.refresh(asDatabaseNode(node) ?? undefined);
+      treeProvider.refresh();
     }))
   );
 }
@@ -195,6 +195,14 @@ async function refreshTreeNode(
     treeProvider.refresh(databaseNode);
     await DatabaseWorkbenchPanel.refreshOpenDatabase(databaseNode.connection.id, databaseNode.database);
     vscode.window.setStatusBarMessage(`Database Workbench: 已刷新 ${databaseNode.database}。`, 2000);
+    return;
+  }
+
+  const schemaNode = asSchemaNode(node);
+  if (schemaNode) {
+    treeProvider.refresh(schemaNode);
+    await DatabaseWorkbenchPanel.refreshOpenDatabase(schemaNode.connection.id, schemaNode.database);
+    vscode.window.setStatusBarMessage(`Database Workbench: 已刷新 ${schemaNode.database}.${schemaNode.schema}。`, 2000);
     return;
   }
 
@@ -386,6 +394,7 @@ function getTreeNodeLabel(node: TreeNode): string {
   if (node.kind === "group") return `分组「${node.group.name}」`;
   if (node.kind === "connection") return `连接「${node.connection.name}」`;
   if (node.kind === "database") return `${node.connection.type === "elasticsearch" ? "索引空间" : "数据库"}「${node.database}」`;
+  if (node.kind === "schema") return `Schema「${node.schema}」`;
   if (node.kind === "table") return `${node.connection.type === "elasticsearch" ? "索引" : "表"}「${node.table}」`;
   return "节点";
 }
@@ -1539,7 +1548,8 @@ async function addTable(
   databaseService: DatabaseService,
   node: unknown
 ): Promise<void> {
-  const databaseNode = asDatabaseNode(node);
+  const schemaNode = asSchemaNode(node);
+  const databaseNode = schemaNode ?? asDatabaseNode(node);
   if (!databaseNode) {
     throw new Error("没有拿到数据库节点信息，请刷新左侧数据库树后重试。");
   }
@@ -1550,6 +1560,7 @@ async function addTable(
 
   DatabaseWorkbenchPanel.open(context, store, databaseService, databaseNode.connection, databaseNode.database, undefined, {
     schemaEditorMode: "createTable",
+    defaultSchema: schemaNode?.schema ?? (databaseNode.connection.type === "postgres" ? "public" : undefined),
   });
 }
 
@@ -1618,7 +1629,7 @@ async function openQueryConsole(
   databaseService: DatabaseService,
   node: unknown
 ): Promise<void> {
-  const databaseNode = asDatabaseNode(node);
+  const databaseNode = asSchemaNode(node) ?? asDatabaseNode(node);
   if (!databaseNode) {
     throw new Error("没有拿到数据库节点信息，请刷新左侧数据库树后重试。");
   }

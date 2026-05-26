@@ -274,7 +274,7 @@
       "view/item/context": [
         {
           "command": "databaseWorkbench.refreshNode",
-          "when": "view == databaseWorkbench.connections && viewItem =~ /databaseWorkbench\\.(connection|database|table)\\./",
+          "when": "view == databaseWorkbench.connections && viewItem =~ /databaseWorkbench\\.(connection|database|schema|table)\\./",
           "group": "navigation@0"
         },
         {
@@ -319,12 +319,12 @@
         },
         {
           "command": "databaseWorkbench.addTable",
-          "when": "view == databaseWorkbench.connections && viewItem =~ /databaseWorkbench\\.database\\.(mysql|postgres)/",
+          "when": "view == databaseWorkbench.connections && viewItem =~ /databaseWorkbench\\.(database\\.(mysql|postgres)|schema\\.postgres)/",
           "group": "1_manage@3"
         },
         {
           "command": "databaseWorkbench.openQueryConsole",
-          "when": "view == databaseWorkbench.connections && viewItem =~ /databaseWorkbench\\.database\\.(mysql|postgres)/",
+          "when": "view == databaseWorkbench.connections && viewItem =~ /databaseWorkbench\\.(database\\.(mysql|postgres)|schema\\.postgres)/",
           "group": "1_manage@4"
         },
         {
@@ -694,7 +694,7 @@
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "test:schema-sync": "npm run compile && node tests/schemaSync.test.js && node tests/schemaCompareWebview.test.js && node tests/workbenchPanelPostgresEnum.test.js && node tests/workbenchPanelRelationQuery.test.js && node tests/workbenchSqlConfirmFormat.test.js",
+    "test:schema-sync": "npm run compile && node tests/schemaSync.test.js && node tests/schemaCompareWebview.test.js && node tests/workbenchPanelPostgresEnum.test.js && node tests/treePostgresSchema.test.js && node tests/workbenchPanelRelationQuery.test.js && node tests/workbenchSqlConfirmFormat.test.js",
     "package": "vsce package --allow-missing-repository"
   },
   "dependencies": {

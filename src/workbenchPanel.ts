@@ -32,6 +32,7 @@ type WorkbenchPanelOptions = {
   queryConsoleTitle?: string;
   initialSql?: string;
   autoRunInitialSql?: boolean;
+  defaultSchema?: string;
 };
 export type ActiveWorkbenchTreeSelection =
   | { kind: "database"; connectionId: string; database: string }
@@ -72,6 +73,7 @@ export class DatabaseWorkbenchPanel {
   private readonly queryConsole: boolean;
   private pendingInitialSql = "";
   private readonly autoRunInitialSql: boolean;
+  private readonly defaultSchema: string;
   private schemaCapabilities: SchemaCapabilities = { supportsNotEmptyStringCheck: false };
   private lastQueryErrorSql = "";
   private panelKey: string;
@@ -93,6 +95,7 @@ export class DatabaseWorkbenchPanel {
     this.queryConsole = options?.queryConsole === true;
     this.pendingInitialSql = String(options?.initialSql || "");
     this.autoRunInitialSql = options?.autoRunInitialSql === true;
+    this.defaultSchema = String(options?.defaultSchema || (connection.type === "postgres" ? "public" : ""));
     this.createTablePanel = options?.schemaEditorMode === "createTable";
     this.selectedTable = initialTable;
     this.panel.onDidDispose(() => this.dispose(), null, this.disposables);
@@ -112,7 +115,7 @@ export class DatabaseWorkbenchPanel {
     options?: WorkbenchPanelOptions
   ): DatabaseWorkbenchPanel {
     const isCreateTablePanel = options?.schemaEditorMode === "createTable";
-    const key = DatabaseWorkbenchPanel.buildPanelKey(connection, database, table, isCreateTablePanel, options?.queryConsole === true, options?.queryConsoleKeySuffix);
+    const key = DatabaseWorkbenchPanel.buildPanelKey(connection, database, table, isCreateTablePanel, options?.queryConsole === true, options?.queryConsoleKeySuffix, options?.defaultSchema);
     const existing = DatabaseWorkbenchPanel.panels.get(key);
     if (existing) {
       existing.panel.reveal(vscode.ViewColumn.One);
@@ -132,7 +135,7 @@ export class DatabaseWorkbenchPanel {
     const title = options?.queryConsole
       ? options.queryConsoleTitle || `查询控制台 · ${database}`
       : isCreateTablePanel
-      ? `正在创建 · ${database}`
+      ? `正在创建 · ${options?.defaultSchema ? `${options.defaultSchema} · ` : ""}${database}`
       : table ? `${table} · ${database}` : `${connection.name} / ${database}`;
     const panel = vscode.window.createWebviewPanel(
       "databaseWorkbench.query",
@@ -205,13 +208,14 @@ export class DatabaseWorkbenchPanel {
     table: string | undefined,
     isCreateTablePanel: boolean,
     isQueryConsole: boolean,
-    queryConsoleKeySuffix = ""
+    queryConsoleKeySuffix = "",
+    defaultSchema = ""
   ): string {
     if (isQueryConsole) {
       return JSON.stringify([connection.id, database, "query_console", queryConsoleKeySuffix]);
     }
     if (isCreateTablePanel) {
-      return JSON.stringify([connection.id, database, "__create_table__"]);
+      return JSON.stringify([connection.id, database, "__create_table__", defaultSchema || ""]);
     }
     return table
       ? JSON.stringify([connection.id, database, "table", table])
@@ -431,6 +435,7 @@ export class DatabaseWorkbenchPanel {
       schemaCapabilities: this.schemaCapabilities,
       completionUsage: this.getCompletionUsage(),
       queryConsole: this.queryConsole,
+      defaultSchema: this.defaultSchema,
       connections: this.store.getAll()
         .filter((connection) => connection.type === "mysql")
         .map((connection) => ({
@@ -1114,7 +1119,7 @@ export class DatabaseWorkbenchPanel {
     let logId: string | undefined;
     try {
       const connection = await this.requireConnection();
-      const logTableName = getDraftTableName(draft) || originalTableName || "";
+      const logTableName = getDraftTableName(draft, this.connection.type) || originalTableName || "";
       logId = await this.createPendingOperationLog({
         connection: this.connection,
         database: this.database,
@@ -1146,7 +1151,7 @@ export class DatabaseWorkbenchPanel {
       return;
     }
 
-    const nextTableName = getDraftTableName(draft) || originalTableName;
+    const nextTableName = getDraftTableName(draft, this.connection.type) || originalTableName;
     this.selectedTable = nextTableName;
     await this.loadSchema(true);
     const afterTable = nextTableName ? this.findTable(nextTableName) : undefined;
@@ -1824,7 +1829,15 @@ export class DatabaseWorkbenchPanel {
   }
 
   private findTable(table: string): TableInfo | undefined {
-    return this.schema.find((item) => item.name === table);
+    const exact = this.schema.find((item) => item.name === table);
+    if (exact || this.connection.type !== "postgres") {
+      return exact;
+    }
+    return this.schema.find((item) => {
+      const schema = getPostgresTableSchemaName(item);
+      const displayName = item.displayName || getPostgresQualifiedNameBase(item.name);
+      return (schema === "public" && displayName === table) || `${schema}.${displayName}` === table;
+    });
   }
 
   private getPrimaryKeys(table: string): string[] {
@@ -3876,7 +3889,7 @@ export class DatabaseWorkbenchPanel {
 	  <script nonce="${nonce}">
     const vscode = acquireVsCodeApi();
     let webviewPersistedState = typeof vscode.getState === "function" ? (vscode.getState() || {}) : {};
-	    const state = { database: "", connectionId: "", connectionName: "", connectionType: "mysql", queryConsole: false, connections: [], tables: [], selectedTable: "", currentTable: null, schemaEditor: null, defaultLimit: 30, tableDisplay: { showColumnComments: true, hiddenColumnCommentNames: ["id", "created_at", "updated_at", "deleted_at"], dataGridFontSize: 12, sqlConfirmFontSize: 15 }, schemaCapabilities: { supportsNotEmptyStringCheck: false }, lastSql: "", currentResult: null, sortColumn: "", sortDirection: "asc", fieldColumns: [], selectedColumns: [], fieldSelectionInitialized: false, lastQueryMode: "preview", primaryKeys: [], columnTypes: {}, columnComments: {}, columnMeta: {}, pendingEdits: {}, quickInsert: { active: false, values: {} }, rowSelection: { selected: [], dragging: false, anchor: null, deleting: false }, quickFieldQuery: { rowIndexes: [], column: "" }, relationQuery: { rowIndexes: [], sourceColumn: "", targetTable: "", targetColumn: "" }, importSource: { databases: [], tables: [], columns: [], mappings: [] }, redisDetail: { key: "", keyType: "", page: 1, pageSize: 30, totalRows: 0, totalPages: 1, columns: [], rows: [], search: "", fuzzySearch: false, sortDirection: "asc", memoryUsage: null, contextRowIndex: -1 }, operationLogs: [], selectedLogId: "", rollbackingLogId: "", rollbackError: null, logContextLogId: "", activeLogTagColor: "", logTagDraft: { logId: "", color: "blue" }, aiTimeline: [], aiActiveTimelineId: "", aiContinueParentId: "", aiContinueSourceId: "" };
+	    const state = { database: "", connectionId: "", connectionName: "", connectionType: "mysql", queryConsole: false, defaultSchema: "", connections: [], tables: [], selectedTable: "", currentTable: null, schemaEditor: null, defaultLimit: 30, tableDisplay: { showColumnComments: true, hiddenColumnCommentNames: ["id", "created_at", "updated_at", "deleted_at"], dataGridFontSize: 12, sqlConfirmFontSize: 15 }, schemaCapabilities: { supportsNotEmptyStringCheck: false }, lastSql: "", currentResult: null, sortColumn: "", sortDirection: "asc", fieldColumns: [], selectedColumns: [], fieldSelectionInitialized: false, lastQueryMode: "preview", primaryKeys: [], columnTypes: {}, columnComments: {}, columnMeta: {}, pendingEdits: {}, quickInsert: { active: false, values: {} }, rowSelection: { selected: [], dragging: false, anchor: null, deleting: false }, quickFieldQuery: { rowIndexes: [], column: "" }, relationQuery: { rowIndexes: [], sourceColumn: "", targetTable: "", targetColumn: "" }, importSource: { databases: [], tables: [], columns: [], mappings: [] }, redisDetail: { key: "", keyType: "", page: 1, pageSize: 30, totalRows: 0, totalPages: 1, columns: [], rows: [], search: "", fuzzySearch: false, sortDirection: "asc", memoryUsage: null, contextRowIndex: -1 }, operationLogs: [], selectedLogId: "", rollbackingLogId: "", rollbackError: null, logContextLogId: "", activeLogTagColor: "", logTagDraft: { logId: "", color: "blue" }, aiTimeline: [], aiActiveTimelineId: "", aiContinueParentId: "", aiContinueSourceId: "" };
     const $ = (selector) => document.querySelector(selector);
 	    const sqlInput = $("#sqlInput");
 	    const sqlHighlight = $("#sqlHighlight");
@@ -4030,6 +4043,7 @@ export class DatabaseWorkbenchPanel {
 	        state.connectionName = message.connectionName;
 	        state.connectionType = message.connectionType || "mysql";
 	        state.queryConsole = message.queryConsole === true;
+	        state.defaultSchema = message.defaultSchema || (state.connectionType === "postgres" ? "public" : "");
 	        state.connections = message.connections || [];
 	        state.tables = message.tables || [];
         state.selectedTable = message.selectedTable || state.selectedTable;
@@ -5476,7 +5490,11 @@ export class DatabaseWorkbenchPanel {
 
     function findSchemaTable(name) {
       const target = String(name || "").toLowerCase();
-      return (state.tables || []).find((table) => table.name.toLowerCase() === target) || null;
+      return (state.tables || []).find((table) => {
+        if (String(table.name || "").toLowerCase() === target) return true;
+        if (state.connectionType !== "postgres") return false;
+        return getPostgresTableSchemaName(table) === "public" && getTableDisplayName(table).toLowerCase() === target;
+      }) || null;
     }
 
     function findTableTagAtCursor(text, cursor) {
@@ -6132,7 +6150,7 @@ export class DatabaseWorkbenchPanel {
         ? table.indexes.map((index) => ({ name: index.name, originalName: index.name, unique: Boolean(index.unique), columns: index.columns || [] }))
         : indexColumns.map((column) => ({ name: "idx_" + table.name + "_" + column.name, originalName: "idx_" + table.name + "_" + column.name, unique: column.key === "UNI", columns: [column.name] }));
       return {
-        table: { name: table.name, comment: table.comment || "" },
+        table: { name: table.name, schema: table.schema || "", comment: table.comment || "" },
         columns,
         keys: primaryColumns.length ? [{ name: primaryKeyName, originalName: primaryKeyName, primary: true, columns: primaryColumns }] : [],
         foreignKeys: (table.foreignKeys || []).map((foreignKey) => ({ ...foreignKey, originalName: foreignKey.name })),
@@ -6147,9 +6165,13 @@ export class DatabaseWorkbenchPanel {
     }
 
     function createNewTableSchemaEditorState() {
+      const schema = state.connectionType === "postgres" ? (state.defaultSchema || "public") : "";
+      const tableName = uniqueTableName("new_table", schema);
       return {
         mode: "createTable",
-        table: { name: uniqueTableName("new_table"), comment: "" },
+        table: state.connectionType === "postgres"
+          ? { schema, name: tableName, comment: "" }
+          : { name: tableName, comment: "" },
         columns: [
           {
             name: "id",
@@ -6216,7 +6238,7 @@ export class DatabaseWorkbenchPanel {
             key: "",
           },
         ],
-        keys: [{ name: state.connectionType === "postgres" ? "new_table_pkey" : "PRIMARY", originalName: "", isNew: true, primary: true, columns: ["id"] }],
+        keys: [{ name: state.connectionType === "postgres" ? tableName + "_pkey" : "PRIMARY", originalName: "", isNew: true, primary: true, columns: ["id"] }],
         foreignKeys: [],
         indexes: [],
         checks: [],
@@ -6240,7 +6262,9 @@ export class DatabaseWorkbenchPanel {
         throw new Error("CREATE TABLE 括号不完整。");
       }
       const rawTableName = createMatch[1].trim().split(/\\s+/).pop() || "";
-      const tableName = normalizeSqlIdentifier(rawTableName);
+      const tablePath = splitSqlIdentifierPath(rawTableName).map(normalizeSqlIdentifier).filter(Boolean);
+      const tableName = tablePath[tablePath.length - 1] || "";
+      const tableSchema = state.connectionType === "postgres" ? (tablePath.length > 1 ? tablePath.slice(0, -1).join(".") : (state.defaultSchema || "public")) : "";
       if (!tableName) {
         throw new Error("没有识别到表名。");
       }
@@ -6249,7 +6273,8 @@ export class DatabaseWorkbenchPanel {
       const tail = text.slice(closeIndex + 1);
       const commentMaps = parsePostgresCommentStatements(text);
       const table = {
-        name: uniqueTableName(tableName),
+        ...(tableSchema ? { schema: tableSchema } : {}),
+        name: uniqueTableName(tableName, tableSchema),
         comment: extractCreateTableComment(tail) || commentMaps.tableComments.get(tableName) || "",
       };
       const columns = [];
@@ -6629,8 +6654,24 @@ export class DatabaseWorkbenchPanel {
       return { tableComments, columnComments };
     }
 
-    function uniqueTableName(base) {
-      const existing = new Set((state.tables || []).map((table) => table.name));
+    function getPostgresTableSchemaName(table) {
+      if (table?.schema) return table.schema;
+      const parts = splitSqlIdentifierPath(table?.name || "").map(normalizeSqlIdentifier).filter(Boolean);
+      return parts.length > 1 ? parts.slice(0, -1).join(".") : "public";
+    }
+
+    function getTableDisplayName(table) {
+      if (table?.displayName) return table.displayName;
+      const parts = splitSqlIdentifierPath(table?.name || "").map(normalizeSqlIdentifier).filter(Boolean);
+      return parts[parts.length - 1] || table?.name || "";
+    }
+
+    function uniqueTableName(base, schema = "") {
+      const normalizedSchema = state.connectionType === "postgres" ? (schema || state.defaultSchema || "public") : "";
+      const existing = new Set((state.tables || []).map((table) => {
+        if (state.connectionType !== "postgres") return table.name;
+        return getPostgresTableSchemaName(table) === normalizedSchema ? getTableDisplayName(table) : "";
+      }));
       let name = base;
       let index = 1;
       while (existing.has(name)) {
@@ -7076,8 +7117,12 @@ export class DatabaseWorkbenchPanel {
     }
 
     function renderTableSchemaDetail(editor) {
+      const schemaRow = state.connectionType === "postgres" && editor.mode === "createTable"
+        ? postgresSchemaInputRow(editor)
+        : "";
       schemaDetail.innerHTML = '<div class="schema-detail-title"><h3>表信息</h3><span>root 节点</span></div>'
         + '<div class="schema-form">'
+        + schemaRow
         + schemaInputRow("名称", "table.name", editor.table.name)
         + schemaInputRow("描述", "table.comment", editor.table.comment)
         + '</div>';
@@ -7227,6 +7272,28 @@ export class DatabaseWorkbenchPanel {
 
     function schemaInputRow(label, path, value, placeholder = "") {
       return '<div class="schema-form-row"><label>' + escapeHtml(label) + '</label><input class="field" data-schema-path="' + path + '" value="' + escapeHtml(value || "") + '" placeholder="' + escapeHtml(placeholder) + '" /></div>';
+    }
+
+    function postgresSchemaInputRow(editor) {
+      const options = getPostgresSchemaOptions();
+      return '<div class="schema-form-row"><label>Schema</label>'
+        + '<input class="field" data-schema-path="table.schema" list="postgresSchemaOptions" value="' + escapeHtml(editor.table.schema || state.defaultSchema || "public") + '" placeholder="例如 public" />'
+        + '<datalist id="postgresSchemaOptions">' + options.map((schema) => '<option value="' + escapeHtml(schema) + '"></option>').join("") + '</datalist>'
+        + '</div>';
+    }
+
+    function getPostgresSchemaOptions() {
+      const schemas = new Set(["public"]);
+      if (state.defaultSchema) schemas.add(state.defaultSchema);
+      (state.tables || []).forEach((table) => {
+        const schema = getPostgresTableSchemaName(table);
+        if (schema) schemas.add(schema);
+      });
+      return [...schemas].sort((left, right) => {
+        if (left === "public" && right !== "public") return -1;
+        if (right === "public" && left !== "public") return 1;
+        return left.localeCompare(right);
+      });
     }
 
     function schemaCheckbox(label, path, checked, extra = "") {
@@ -12135,7 +12202,7 @@ function buildPostgresSchemaDraftSql(originalTable: TableInfo, draft: Record<str
   const nextPrimaryKeys = primaryDraft ? asArray(primaryDraft.columns).map(String).filter((column) => column && !deletedColumnNames.has(column)) : [];
   const primaryDeleted = deletedKeys.some((key) => key.primary === true || asString(key.originalName) === originalTable.primaryKeyName)
     || originalPrimaryKeys.some((column) => deletedColumnNames.has(column));
-  const primaryChanged = primaryDeleted || nextPrimaryKeys.join("\n") !== originalPrimaryKeys.join("\n") || (primaryDraft && asString(primaryDraft.name) !== (originalTable.primaryKeyName || `${workingTable}_pkey`));
+  const primaryChanged = primaryDeleted || nextPrimaryKeys.join("\n") !== originalPrimaryKeys.join("\n") || (primaryDraft && asString(primaryDraft.name) !== (originalTable.primaryKeyName || getDefaultPostgresPrimaryKeyName(workingTable)));
 
   const droppedTriggers = new Set<string>();
   for (const triggerDraft of asArray(deletedItems.triggers).map(asRecord)) {
@@ -12165,7 +12232,7 @@ function buildPostgresSchemaDraftSql(originalTable: TableInfo, draft: Record<str
     if ([...deletedColumnNames].some((column) => isCheckExpressionReferencingColumn(check.expression, column))) dropConstraint(check.name);
   }
   if (primaryChanged && originalPrimaryKeys.length) {
-    dropConstraint(originalTable.primaryKeyName || `${originalName}_pkey`);
+    dropConstraint(originalTable.primaryKeyName || getDefaultPostgresPrimaryKeyName(originalName));
   }
 
   const droppedIndexes = new Set<string>();
@@ -12264,7 +12331,7 @@ function buildPostgresSchemaDraftSql(originalTable: TableInfo, draft: Record<str
   }
 
   if (primaryChanged && nextPrimaryKeys.length) {
-    const primaryName = asString(primaryDraft?.name) || `${workingTable}_pkey`;
+    const primaryName = asString(primaryDraft?.name) || getDefaultPostgresPrimaryKeyName(workingTable);
     statements.push(`ALTER TABLE ${quoteIdentifier("postgres", workingTable)} ADD CONSTRAINT ${quoteIdentifier("postgres", primaryName)} PRIMARY KEY (${nextPrimaryKeys.map((column) => quoteIdentifier("postgres", column)).join(", ")});`);
   }
 
@@ -12301,7 +12368,7 @@ function buildPostgresSchemaDraftSql(originalTable: TableInfo, draft: Record<str
 
 function buildPostgresCreateTableDraftSql(draft: Record<string, unknown>): string[] {
   const draftTable = asRecord(draft.table);
-  const tableName = getDraftTableName(draft);
+  const tableName = getDraftTableName(draft, "postgres");
   if (!tableName) {
     throw new Error("表名称不能为空。");
   }
@@ -12321,7 +12388,7 @@ function buildPostgresCreateTableDraftSql(draft: Record<string, unknown>): strin
     const keyColumns = normalizeColumns(keyDraft.columns);
     if (!keyColumns.length) continue;
     if (keyDraft.primary === true) {
-      lines.push(`  CONSTRAINT ${quoteIdentifier("postgres", asString(keyDraft.name) || `${tableName}_pkey`)} PRIMARY KEY (${keyColumns.map((column) => quoteIdentifier("postgres", column)).join(", ")})`);
+      lines.push(`  CONSTRAINT ${quoteIdentifier("postgres", asString(keyDraft.name) || getDefaultPostgresPrimaryKeyName(tableName))} PRIMARY KEY (${keyColumns.map((column) => quoteIdentifier("postgres", column)).join(", ")})`);
     }
   }
   for (const fkDraft of asArray(draft.foreignKeys).map(asRecord).filter((item) => !isDraftPendingDelete(item))) {
@@ -12477,6 +12544,14 @@ function getPostgresQualifiedNameBase(value: string): string {
   return parts[parts.length - 1] || value;
 }
 
+function getPostgresTableSchemaName(table: Pick<TableInfo, "name" | "schema">): string {
+  if (table.schema) {
+    return table.schema;
+  }
+  const parts = splitPostgresQualifiedName(table.name);
+  return parts.length > 1 ? parts.slice(0, -1).join(".") : "public";
+}
+
 function splitPostgresQualifiedName(value: string): string[] {
   const parts: string[] = [];
   let current = "";
@@ -12526,6 +12601,10 @@ function buildPostgresEnumTypeName(table: string, column: string): string {
   const schema = parts.join(".");
   const typeName = shortenPostgresIdentifier(`${toPostgresIdentifierPart(tableName)}_${toPostgresIdentifierPart(column)}_enum`);
   return schema ? `${schema}.${typeName}` : typeName;
+}
+
+function getDefaultPostgresPrimaryKeyName(table: string): string {
+  return shortenPostgresIdentifier(`${toPostgresIdentifierPart(getPostgresQualifiedNameBase(table))}_pkey`);
 }
 
 function toPostgresIdentifierPart(value: string): string {
@@ -12670,8 +12749,20 @@ function getPreviousDraftColumnName(columns: Array<Record<string, unknown>>, ori
   return index > 0 ? asString(columns[index - 1].name) : "";
 }
 
-function getDraftTableName(draft: Record<string, unknown>): string {
-  return asString(asRecord(draft.table).name);
+function getDraftTableName(draft: Record<string, unknown>, type: DbConnectionConfig["type"] = "mysql"): string {
+  const draftTable = asRecord(draft.table);
+  const tableName = asString(draftTable.name);
+  if (type !== "postgres" || !isCreateTableDraft(draft) || !tableName) {
+    return tableName;
+  }
+  if (splitPostgresQualifiedName(tableName).length > 1) {
+    return tableName;
+  }
+  const schema = asString(draftTable.schema);
+  if (!schema && Object.prototype.hasOwnProperty.call(draftTable, "schema")) {
+    throw new Error("PostgreSQL 创建表需要指定 schema。");
+  }
+  return schema ? `${schema}.${tableName}` : tableName;
 }
 
 function buildMysqlColumnDefinitionFromDraft(column: Record<string, unknown>): string {

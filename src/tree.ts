@@ -12,7 +12,8 @@ export type TreeNode =
   | { kind: "connection"; connection: DbConnectionConfig }
   | { kind: "databaseFilter"; connection: DbConnectionConfig; scope: DatabaseFilterScope; total: number; selected: number }
   | { kind: "database"; connection: DbConnectionConfig; database: string }
-  | { kind: "table"; connection: DbConnectionConfig; database: string; table: string; comment?: string };
+  | { kind: "schema"; connection: DbConnectionConfig; database: string; schema: string; tableCount?: number }
+  | { kind: "table"; connection: DbConnectionConfig; database: string; table: string; schema?: string; displayName?: string; comment?: string };
 
 export type ActiveTreeSelection =
   | { kind: "database"; connectionId: string; database: string }
@@ -94,7 +95,17 @@ export class ConnectionsTreeProvider implements vscode.TreeDataProvider<TreeNode
       return item;
     }
 
-    const item = new vscode.TreeItem(node.table, vscode.TreeItemCollapsibleState.None);
+    if (node.kind === "schema") {
+      const item = new vscode.TreeItem(node.schema, vscode.TreeItemCollapsibleState.Collapsed);
+      item.description = typeof node.tableCount === "number" ? `${node.tableCount} 张表` : "schema";
+      item.tooltip = `Schema：${node.schema}`;
+      item.contextValue = `databaseWorkbench.schema.${node.connection.type}`;
+      item.iconPath = new vscode.ThemeIcon("symbol-namespace");
+      return item;
+    }
+
+    const tableLabel = node.displayName || getTableDisplayName(node.table);
+    const item = new vscode.TreeItem(tableLabel, vscode.TreeItemCollapsibleState.None);
     const pinned = this.isPinned(node);
     item.description = `${pinned ? "置顶 · " : ""}${node.comment?.trim() || getTableDescription(node.connection.type)}`;
     item.tooltip = node.comment?.trim()
@@ -170,6 +181,16 @@ export class ConnectionsTreeProvider implements vscode.TreeDataProvider<TreeNode
 
       try {
         const tables = await this.databaseService.listTableSummaries(connection, node.database);
+        if (node.connection.type === "postgres") {
+          const schemas = groupPostgresTablesBySchema(tables);
+          return this.sortPinnedFirst([...schemas.entries()].map(([schema, schemaTables]) => this.getCachedNode({
+            kind: "schema",
+            connection: node.connection,
+            database: node.database,
+            schema,
+            tableCount: schemaTables.length,
+          })));
+        }
         const visibleTables = node.connection.type === "elasticsearch"
           ? filterBySavedNames(tables, this.store.getDatabaseFilter(node.connection.id))
           : tables;
@@ -178,10 +199,36 @@ export class ConnectionsTreeProvider implements vscode.TreeDataProvider<TreeNode
           connection: node.connection,
           database: node.database,
           table: table.name,
+          schema: table.schema,
+          displayName: table.displayName,
           comment: table.comment,
         })));
       } catch (error) {
         vscode.window.showErrorMessage(`读取表列表失败：${formatError(error)}`);
+        return [];
+      }
+    }
+
+    if (node.kind === "schema") {
+      const connection = await this.store.getWithSecret(node.connection.id);
+      if (!connection) {
+        return [];
+      }
+      try {
+        const tables = await this.databaseService.listTableSummaries(connection, node.database);
+        return this.sortPinnedFirst(tables
+          .filter((table) => getPostgresTableSchema(table) === node.schema)
+          .map((table) => this.getCachedNode({
+            kind: "table",
+            connection: node.connection,
+            database: node.database,
+            table: table.name,
+            schema: node.schema,
+            displayName: table.displayName || getTableDisplayName(table.name),
+            comment: table.comment,
+          })));
+      } catch (error) {
+        vscode.window.showErrorMessage(`读取 ${node.schema} 的表列表失败：${formatError(error)}`);
         return [];
       }
     }
@@ -205,6 +252,19 @@ export class ConnectionsTreeProvider implements vscode.TreeDataProvider<TreeNode
       return this.getCachedNode({ kind: "connection", connection: node.connection });
     }
 
+    if (node.kind === "schema") {
+      return this.getCachedNode({ kind: "database", connection: node.connection, database: node.database });
+    }
+
+    if (node.connection.type === "postgres") {
+      return this.getCachedNode({
+        kind: "schema",
+        connection: node.connection,
+        database: node.database,
+        schema: node.schema || getPostgresTableSchema({ name: node.table }),
+      });
+    }
+
     return this.getCachedNode({ kind: "database", connection: node.connection, database: node.database });
   }
 
@@ -216,7 +276,15 @@ export class ConnectionsTreeProvider implements vscode.TreeDataProvider<TreeNode
     if (selection.kind === "database") {
       return this.getCachedNode({ kind: "database", connection, database: selection.database });
     }
-    return this.getCachedNode({ kind: "table", connection, database: selection.database, table: selection.table });
+    const schema = connection.type === "postgres" ? getPostgresTableSchema({ name: selection.table }) : undefined;
+    return this.getCachedNode({
+      kind: "table",
+      connection,
+      database: selection.database,
+      table: selection.table,
+      schema,
+      displayName: connection.type === "postgres" ? getTableDisplayName(selection.table) : undefined,
+    });
   }
 
   async handleDrag(source: readonly TreeNode[], dataTransfer: vscode.DataTransfer): Promise<void> {
@@ -333,7 +401,15 @@ export function asDatabaseFilterNode(value: unknown): { kind: "databaseFilter"; 
   return isTreeNode(value) && value.kind === "databaseFilter" ? value : undefined;
 }
 
-export function asTableNode(value: unknown): ({ kind: "table"; connection: DbConnectionConfig; database: string; table: string } & DatabaseNode) | undefined {
+export function asSchemaNode(value: unknown): ({ kind: "schema"; connection: DbConnectionConfig; database: string; schema: string } & DatabaseNode) | undefined {
+  if (!isTreeNode(value) || value.kind !== "schema") {
+    return undefined;
+  }
+
+  return { ...value, connectionId: value.connection.id };
+}
+
+export function asTableNode(value: unknown): ({ kind: "table"; connection: DbConnectionConfig; database: string; table: string; schema?: string; displayName?: string } & DatabaseNode) | undefined {
   if (!isTreeNode(value) || value.kind !== "table") {
     return undefined;
   }
@@ -351,11 +427,80 @@ export function getTreeNodePinKey(node: TreeNode): string {
   if (node.kind === "database" || node.kind === "databaseFilter") {
     return `database:${node.connection.id}:${encodePinPart(node.kind === "database" ? node.database : "__filter__")}`;
   }
+  if (node.kind === "schema") {
+    return `schema:${node.connection.id}:${encodePinPart(node.database)}:${encodePinPart(node.schema)}`;
+  }
   return `table:${node.connection.id}:${encodePinPart(node.database)}:${encodePinPart(node.table)}`;
 }
 
 function isTreeNode(value: unknown): value is TreeNode {
   return Boolean(value && typeof value === "object" && "kind" in value);
+}
+
+function groupPostgresTablesBySchema(tables: Array<{ name: string; schema?: string }>): Map<string, Array<{ name: string; schema?: string }>> {
+  const grouped = new Map<string, Array<{ name: string; schema?: string }>>();
+  for (const table of tables) {
+    const schema = getPostgresTableSchema(table);
+    const schemaTables = grouped.get(schema) ?? [];
+    schemaTables.push(table);
+    grouped.set(schema, schemaTables);
+  }
+  return new Map([...grouped.entries()].sort(([left], [right]) => {
+    if (left === "public" && right !== "public") return -1;
+    if (right === "public" && left !== "public") return 1;
+    return left.localeCompare(right);
+  }));
+}
+
+function getPostgresTableSchema(table: { name: string; schema?: string }): string {
+  if (table.schema) {
+    return table.schema;
+  }
+  const parts = splitDottedIdentifier(table.name);
+  return parts.length > 1 ? parts.slice(0, -1).join(".") : "public";
+}
+
+function getTableDisplayName(name: string): string {
+  const parts = splitDottedIdentifier(name);
+  return parts[parts.length - 1] || name;
+}
+
+function splitDottedIdentifier(value: string): string[] {
+  const parts: string[] = [];
+  let current = "";
+  let quoted = false;
+  const text = String(value || "");
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    const next = text[index + 1];
+    if (quoted) {
+      if (char === '"' && next === '"') {
+        current += '"';
+        index += 1;
+        continue;
+      }
+      if (char === '"') {
+        quoted = false;
+        continue;
+      }
+      current += char;
+      continue;
+    }
+    if (char === '"') {
+      quoted = true;
+      continue;
+    }
+    if (char === ".") {
+      parts.push(current);
+      current = "";
+      continue;
+    }
+    current += char;
+  }
+  if (current || !parts.length) {
+    parts.push(current);
+  }
+  return parts.map((part) => part.trim()).filter(Boolean);
 }
 
 function encodePinPart(value: string): string {

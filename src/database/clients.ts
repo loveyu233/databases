@@ -606,8 +606,10 @@ class PostgresClient implements DbClient {
   }
 
   async listTableSummaries(): Promise<TableSummary[]> {
-    const result = await this.client.query<{ table_name: string; table_comment: string | null }>(
+    const result = await this.client.query<{ table_name: string; table_schema: string; raw_table_name: string; table_comment: string | null }>(
       `SELECT CASE WHEN t.table_schema = 'public' THEN t.table_name ELSE t.table_schema || '.' || t.table_name END AS table_name,
+              t.table_schema AS table_schema,
+              t.table_name AS raw_table_name,
               obj_description(format('%I.%I', t.table_schema, t.table_name)::regclass::oid, 'pg_class') AS table_comment
        FROM information_schema.tables t
        WHERE t.table_schema NOT IN ('pg_catalog', 'information_schema') AND t.table_schema NOT LIKE 'pg_toast%' AND t.table_schema NOT LIKE 'pg_temp_%' AND t.table_type = 'BASE TABLE'
@@ -615,6 +617,8 @@ class PostgresClient implements DbClient {
     );
     return result.rows.map((row) => ({
       name: row.table_name,
+      schema: row.table_schema,
+      displayName: row.raw_table_name,
       comment: row.table_comment ?? "",
     }));
   }
@@ -622,6 +626,8 @@ class PostgresClient implements DbClient {
   async loadSchema(): Promise<TableInfo[]> {
     const result = await this.client.query<{
       table_name: string;
+      table_schema: string;
+      raw_table_name: string;
       column_name: string;
       data_type: string;
       not_null: boolean;
@@ -633,6 +639,8 @@ class PostgresClient implements DbClient {
       is_identity: boolean;
     }>(
       `SELECT CASE WHEN n.nspname = 'public' THEN c.relname ELSE n.nspname || '.' || c.relname END AS table_name,
+              n.nspname AS table_schema,
+              c.relname AS raw_table_name,
               a.attname AS column_name,
               pg_catalog.format_type(a.atttypid, a.atttypmod) AS data_type,
               a.attnotnull AS not_null,
@@ -657,7 +665,7 @@ class PostgresClient implements DbClient {
          AND c.relkind IN ('r', 'p')
          AND a.attnum > 0
          AND NOT a.attisdropped
-       ORDER BY c.relname, a.attnum`
+       ORDER BY n.nspname, c.relname, a.attnum`
     );
     const indexRows = await this.client.query<{
       table_name: string;
@@ -676,7 +684,7 @@ class PostgresClient implements DbClient {
        JOIN unnest(ix.indkey) WITH ORDINALITY AS ord(attnum, seq) ON ord.attnum > 0
        LEFT JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = ord.attnum
        WHERE n.nspname NOT IN ('pg_catalog', 'information_schema') AND n.nspname NOT LIKE 'pg_toast%' AND n.nspname NOT LIKE 'pg_temp_%' AND ix.indisprimary = false
-       ORDER BY t.relname, i.relname, ord.seq`
+       ORDER BY n.nspname, t.relname, i.relname, ord.seq`
     );
     const foreignKeyRows = await this.client.query<{
       table_name: string;
@@ -704,7 +712,7 @@ class PostgresClient implements DbClient {
        JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = ck.attnum
        JOIN pg_attribute ra ON ra.attrelid = rt.oid AND ra.attnum = fk.attnum
        WHERE n.nspname NOT IN ('pg_catalog', 'information_schema') AND n.nspname NOT LIKE 'pg_toast%' AND n.nspname NOT LIKE 'pg_temp_%' AND con.contype = 'f'
-       ORDER BY t.relname, con.conname, ck.seq`
+       ORDER BY n.nspname, t.relname, con.conname, ck.seq`
     );
     const checkRows = await this.client.query<{
       table_name: string;
@@ -718,7 +726,7 @@ class PostgresClient implements DbClient {
        JOIN pg_class t ON t.oid = con.conrelid
        JOIN pg_namespace n ON n.oid = t.relnamespace
        WHERE n.nspname NOT IN ('pg_catalog', 'information_schema') AND n.nspname NOT LIKE 'pg_toast%' AND n.nspname NOT LIKE 'pg_temp_%' AND con.contype = 'c'
-       ORDER BY t.relname, con.conname`
+       ORDER BY n.nspname, t.relname, con.conname`
     );
     const triggerRows = await this.client.query<{
       table_name: string;
@@ -734,7 +742,7 @@ class PostgresClient implements DbClient {
               action_statement AS statement
        FROM information_schema.triggers
        WHERE trigger_schema NOT IN ('pg_catalog', 'information_schema') AND trigger_schema NOT LIKE 'pg_toast%' AND trigger_schema NOT LIKE 'pg_temp_%'
-       ORDER BY event_object_table, trigger_name`
+       ORDER BY event_object_schema, event_object_table, trigger_name`
     );
     const enumRows = await this.client.query<{
       table_name: string;
@@ -742,6 +750,8 @@ class PostgresClient implements DbClient {
       enum_values: unknown;
     }>(
       `SELECT CASE WHEN n.nspname = 'public' THEN c.relname ELSE n.nspname || '.' || c.relname END AS table_name,
+              n.nspname AS table_schema,
+              c.relname AS raw_table_name,
               a.attname AS column_name,
               json_agg(e.enumlabel ORDER BY e.enumsortorder) AS enum_values
        FROM pg_class c
@@ -760,6 +770,8 @@ class PostgresClient implements DbClient {
     );
 
     const byTable = new Map<string, TableColumn[]>();
+    const tableSchemas = new Map<string, string>();
+    const tableDisplayNames = new Map<string, string>();
     const tableComments = new Map<string, string>();
     const primaryKeyNames = new Map<string, string>();
     const enumValuesByColumn = new Map(enumRows.rows.map((row) => [
@@ -768,6 +780,8 @@ class PostgresClient implements DbClient {
     ]));
     for (const row of result.rows) {
       const columns = byTable.get(row.table_name) ?? [];
+      tableSchemas.set(row.table_name, row.table_schema);
+      tableDisplayNames.set(row.table_name, row.raw_table_name);
       tableComments.set(row.table_name, row.table_comment ?? "");
       if (row.primary_key_name) {
         primaryKeyNames.set(row.table_name, row.primary_key_name);
@@ -830,6 +844,8 @@ class PostgresClient implements DbClient {
 
     return [...byTable.entries()].map(([name, columns]) => ({
       name,
+      schema: tableSchemas.get(name) ?? "",
+      displayName: tableDisplayNames.get(name) ?? name,
       columns,
       comment: tableComments.get(name) ?? "",
       primaryKeyName: primaryKeyNames.get(name) ?? "",
@@ -841,7 +857,7 @@ class PostgresClient implements DbClient {
   }
 
   async getCreateTableSql(table: string): Promise<string> {
-    const tableInfo = (await this.loadSchema()).find((item) => item.name === table);
+    const tableInfo = (await this.loadSchema()).find((item) => item.name === table || (item.schema === "public" && item.displayName === table));
     if (!tableInfo) {
       throw new Error(`未读取到 ${table} 的表结构。`);
     }

@@ -56,11 +56,15 @@ export type TableColumn = {
 
 export type TableSummary = {
   name: string;
+  schema?: string;
+  displayName?: string;
   comment?: string;
 };
 
 export type TableInfo = {
   name: string;
+  schema?: string;
+  displayName?: string;
   columns: TableColumn[];
   comment?: string;
   engine?: string;
@@ -319,7 +323,7 @@ export type PanelMessage =
   | { type: "refreshSchema" };
 
 export type PanelToWebviewMessage =
-  | { type: "init"; database: string; connectionId?: string; connectionName: string; connectionType?: DatabaseType; tables: TableInfo[]; selectedTable?: string; defaultLimit: number; tableDisplay: TableDisplayConfig; schemaCapabilities?: SchemaCapabilities; completionUsage?: Record<string, number>; queryConsole?: boolean; connections?: Array<Pick<DbConnectionConfig, "id" | "name" | "type" | "host" | "port" | "username">> }
+  | { type: "init"; database: string; connectionId?: string; connectionName: string; connectionType?: DatabaseType; tables: TableInfo[]; selectedTable?: string; defaultLimit: number; tableDisplay: TableDisplayConfig; schemaCapabilities?: SchemaCapabilities; completionUsage?: Record<string, number>; queryConsole?: boolean; defaultSchema?: string; connections?: Array<Pick<DbConnectionConfig, "id" | "name" | "type" | "host" | "port" | "username">> }
   | { type: "tableSelected"; table: TableInfo; connectionType?: DatabaseType; defaultLimit: number; tableDisplay: TableDisplayConfig; schemaCapabilities?: SchemaCapabilities }
   | { type: "importSourceDatabases"; connectionId: string; databases: string[] }
   | { type: "importSourceTables"; connectionId: string; database: string; tables: TableInfo[] }
