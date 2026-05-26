@@ -1131,10 +1131,9 @@ export class DatabaseWorkbenchPanel {
           beforeData: originalTable ? originalTable as unknown as Record<string, unknown> : null,
         }],
       });
-      for (const statement of statements) {
+      await this.databaseService.queryStatements(connection, this.database, statements, queryConfig.maxRows, (statement) => {
         this.lastQueryErrorSql = statement;
-        await this.databaseService.query(connection, this.database, statement, queryConfig.maxRows);
-      }
+      });
     } catch (error) {
       await this.completeFailedOperationLog(logId, error, sqlPreview);
       const canExplainWithAi = isAiConfigured() && await this.hasProFeature("ai");
@@ -6150,6 +6149,7 @@ export class DatabaseWorkbenchPanel {
         ? table.indexes.map((index) => ({ name: index.name, originalName: index.name, unique: Boolean(index.unique), columns: index.columns || [] }))
         : indexColumns.map((column) => ({ name: "idx_" + table.name + "_" + column.name, originalName: "idx_" + table.name + "_" + column.name, unique: column.key === "UNI", columns: [column.name] }));
       return {
+        ddlRole: "",
         table: { name: table.name, schema: table.schema || "", comment: table.comment || "" },
         columns,
         keys: primaryColumns.length ? [{ name: primaryKeyName, originalName: primaryKeyName, primary: true, columns: primaryColumns }] : [],
@@ -6169,6 +6169,7 @@ export class DatabaseWorkbenchPanel {
       const tableName = uniqueTableName("new_table", schema);
       return {
         mode: "createTable",
+        ddlRole: "",
         table: state.connectionType === "postgres"
           ? { schema, name: tableName, comment: "" }
           : { name: tableName, comment: "" },
@@ -6366,6 +6367,7 @@ export class DatabaseWorkbenchPanel {
       }
       return {
         mode: "createTable",
+        ddlRole: "",
         table,
         columns,
         keys,
@@ -7120,9 +7122,13 @@ export class DatabaseWorkbenchPanel {
       const schemaRow = state.connectionType === "postgres" && editor.mode === "createTable"
         ? postgresSchemaInputRow(editor)
         : "";
+      const ddlRoleRow = state.connectionType === "postgres"
+        ? schemaInputRow("执行 Role", "ddlRole", editor.ddlRole || "", "例如 xtj_smart_pen_owner，留空则不切换")
+        : "";
       schemaDetail.innerHTML = '<div class="schema-detail-title"><h3>表信息</h3><span>root 节点</span></div>'
         + '<div class="schema-form">'
         + schemaRow
+        + ddlRoleRow
         + schemaInputRow("名称", "table.name", editor.table.name)
         + schemaInputRow("描述", "table.comment", editor.table.comment)
         + '</div>';
@@ -11904,7 +11910,7 @@ function getErrorMessage(error: unknown): string {
 
 function buildSchemaDraftSql(originalTable: TableInfo, draft: Record<string, unknown>, type: DbConnectionConfig["type"] = "mysql"): string[] {
   if (type === "postgres") {
-    return buildPostgresSchemaDraftSql(originalTable, draft);
+    return withPostgresDdlRole(buildPostgresSchemaDraftSql(originalTable, draft), draft);
   }
   const draftTable = asRecord(draft.table);
   const draftColumns = asArray(draft.columns).map(asRecord).filter((column) => !isDraftPendingDelete(column));
@@ -12079,7 +12085,7 @@ function buildSchemaDraftSql(originalTable: TableInfo, draft: Record<string, unk
 
 function buildCreateTableDraftSql(draft: Record<string, unknown>, type: DbConnectionConfig["type"] = "mysql"): string[] {
   if (type === "postgres") {
-    return buildPostgresCreateTableDraftSql(draft);
+    return withPostgresDdlRole(buildPostgresCreateTableDraftSql(draft), draft);
   }
   const draftTable = asRecord(draft.table);
   const tableName = getDraftTableName(draft);
@@ -12484,6 +12490,28 @@ function pushUniqueStatement(statements: string[], statement: string | undefined
   if (statement && !statements.includes(statement)) {
     statements.push(statement);
   }
+}
+
+function withPostgresDdlRole(statements: string[], draft: Record<string, unknown>): string[] {
+  const role = formatPostgresRoleName(asString(draft.ddlRole));
+  if (!role || statements.length === 0) {
+    return statements;
+  }
+  return [`SET ROLE ${role};`, ...statements, "RESET ROLE;"];
+}
+
+function formatPostgresRoleName(role: string): string {
+  const text = role.trim();
+  if (!text) {
+    return "";
+  }
+  if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(text)) {
+    return text;
+  }
+  if (/^"(?:[^"]|"")+"$/.test(text)) {
+    return text;
+  }
+  return `"${text.replace(/"/g, "\"\"")}"`;
 }
 
 function normalizePostgresColumnType(table: string, column: string, rawType: string): string {

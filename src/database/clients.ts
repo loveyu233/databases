@@ -89,6 +89,24 @@ export class DatabaseService {
     return withClient(connection, database, (client) => client.query(sql, maxRows));
   }
 
+  async queryStatements(
+    connection: DbConnectionWithSecret,
+    database: string,
+    statements: string[],
+    maxRows: number,
+    beforeEach?: (statement: string) => void
+  ): Promise<QueryResult[]> {
+    const executableStatements = statements.map((statement) => statement.trim()).filter(Boolean);
+    return withClient(connection, database, async (client) => {
+      const results: QueryResult[] = [];
+      for (const statement of executableStatements) {
+        beforeEach?.(statement);
+        results.push(await client.query(statement, maxRows));
+      }
+      return results;
+    });
+  }
+
   async queryMysqlInConsistentPages(
     connection: DbConnectionWithSecret,
     database: string,

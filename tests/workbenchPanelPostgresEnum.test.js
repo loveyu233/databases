@@ -121,6 +121,14 @@ assert.ok(schemaCreateSql.includes("CREATE TYPE \"type_lab\".\"devices_status_en
 assert.ok(schemaCreateSql.includes("CREATE TABLE \"type_lab\".\"devices\""), "指定 schema 建表时应生成 schema 限定表名");
 assert.ok(schemaCreateSql.includes("\"status\" \"type_lab\".\"devices_status_enum\" NOT NULL DEFAULT 'active'"), "指定 schema 建表时字段应引用同 schema 的 enum 类型");
 
+const roleCreateStatements = createWorkbench().buildSchemaDraftStatements({
+  ...createDraft,
+  ddlRole: "xtj_smart_pen_owner",
+}).statements;
+assert.equal(roleCreateStatements[0], "SET ROLE xtj_smart_pen_owner;", "PG DDL 设置 role 后应在最前执行 SET ROLE");
+assert.equal(roleCreateStatements.at(-1), "RESET ROLE;", "PG DDL 设置 role 后应在最后 RESET ROLE");
+assert.ok(roleCreateStatements.join("\n").includes("CREATE TABLE \"devices\""), "PG DDL role 包裹后仍应保留建表 SQL");
+
 const editWorkbench = createWorkbench("devices");
 editWorkbench.schema = [{
   name: "devices",
@@ -188,6 +196,7 @@ const unchangedEnumDraft = {
   columnOrderMoves: [],
 };
 assert.equal(existingEnumWorkbench.buildSchemaDraftStatements(unchangedEnumDraft).statements.length, 0, "已有 enum 字段用 enum(...) 展示时不应误判为类型修改");
+assert.equal(existingEnumWorkbench.buildSchemaDraftStatements({ ...unchangedEnumDraft, ddlRole: "xtj_smart_pen_owner" }).statements.length, 0, "没有 DDL 修改时即使设置 role 也不应生成 SET ROLE");
 
 const addEnumValueDraft = {
   ...unchangedEnumDraft,
