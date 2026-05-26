@@ -192,4 +192,32 @@ assert.ok(addEnumValueSql.includes("ALTER TYPE \"devices_status_enum\" ADD VALUE
 assert.ok(!addEnumValueSql.includes("CREATE TYPE \"devices_status_enum\""), "已有 enum 字段追加值时不应重复 CREATE TYPE");
 assert.ok(!addEnumValueSql.includes("ALTER COLUMN \"status\" TYPE"), "已有 enum 字段追加值时不应误改字段类型");
 
+const removeEnumValueDraft = {
+  ...unchangedEnumDraft,
+  columns: [{
+    ...unchangedEnumDraft.columns[0],
+    type: "enum('active')",
+  }],
+};
+const removeEnumValueSql = existingEnumWorkbench.buildSchemaDraftStatements(removeEnumValueDraft).statements.join("\n");
+assert.match(removeEnumValueSql, /CREATE TYPE "devices_status_enum_replacement_[a-f0-9]{8}" AS ENUM \('active'\);/, "删除 enum 值时应先创建替换 enum 类型");
+assert.ok(removeEnumValueSql.includes("ALTER TABLE \"devices\" ALTER COLUMN \"status\" DROP DEFAULT;"), "替换 enum 类型前应先移除默认值");
+assert.match(removeEnumValueSql, /ALTER TABLE "devices" ALTER COLUMN "status" TYPE "devices_status_enum_replacement_[a-f0-9]{8}" USING "status"::text::"devices_status_enum_replacement_[a-f0-9]{8}";/, "删除 enum 值时应把字段切到替换类型");
+assert.ok(removeEnumValueSql.includes("DROP TYPE \"devices_status_enum\";"), "字段切换后应删除旧 enum 类型");
+assert.match(removeEnumValueSql, /ALTER TYPE "devices_status_enum_replacement_[a-f0-9]{8}" RENAME TO "devices_status_enum";/, "替换类型应改回原 enum 类型名");
+assert.ok(removeEnumValueSql.includes("ALTER TABLE \"devices\" ALTER COLUMN \"status\" SET DEFAULT 'active';"), "替换 enum 类型后应恢复默认值");
+
+existingEnumWorkbench.schema[0].columns[0].defaultValue = "'active'::devices_status_enum";
+const typedDefaultRemoveDraft = {
+  ...unchangedEnumDraft,
+  columns: [{
+    ...unchangedEnumDraft.columns[0],
+    type: "enum('active')",
+    defaultValue: "'active'::devices_status_enum",
+  }],
+};
+const typedDefaultRemoveSql = existingEnumWorkbench.buildSchemaDraftStatements(typedDefaultRemoveDraft).statements.join("\n");
+assert.ok(typedDefaultRemoveSql.includes("ALTER TABLE \"devices\" ALTER COLUMN \"status\" SET DEFAULT 'active'::devices_status_enum;"), "替换 enum 类型后应原样恢复 PG 已带类型转换的默认值");
+assert.ok(!typedDefaultRemoveSql.includes("SET DEFAULT '''active''::devices_status_enum'"), "PG 已带类型转换的默认值不应再次包裹引号");
+
 console.log("ok - Workbench PostgreSQL enum 字段 SQL 生成");

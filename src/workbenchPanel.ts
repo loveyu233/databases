@@ -11657,7 +11657,11 @@ function buildPostgresSchemaDraftSql(originalTable: TableInfo, draft: Record<str
       const usingSql = typePlan.inlineEnum ? ` USING ${quoteIdentifier("postgres", currentColumnName)}::text::${typePlan.typeSql}` : "";
       statements.push(`ALTER TABLE ${quoteIdentifier("postgres", workingTable)} ALTER COLUMN ${quoteIdentifier("postgres", currentColumnName)} TYPE ${typePlan.typeSql}${usingSql};`);
     }
-    for (const statement of buildPostgresEnumValueAlterSql(nextTypePlan, originalColumn)) {
+    const enumValueAlterPlan = buildPostgresEnumValueAlterSql(nextTypePlan, originalColumn, workingTable, currentColumnName, originalDefault);
+    if (enumValueAlterPlan.dropsDefault) {
+      droppedDefaultForTypeChange = true;
+    }
+    for (const statement of enumValueAlterPlan.statements) {
       statements.push(statement);
     }
     if ((column.notNull === true) !== !originalColumn.nullable) {
@@ -11853,18 +11857,94 @@ function normalizePostgresColumnType(table: string, column: string, rawType: str
   return normalizeQualifiedIdentifier(resolvePostgresColumnType(table, column, rawType).actualType);
 }
 
-function buildPostgresEnumValueAlterSql(typePlan: ReturnType<typeof resolvePostgresColumnType>, originalColumn: TableInfo["columns"][number]): string[] {
+function buildPostgresEnumValueAlterSql(
+  typePlan: ReturnType<typeof resolvePostgresColumnType>,
+  originalColumn: TableInfo["columns"][number],
+  tableName: string,
+  columnName: string,
+  originalDefault: string
+): { statements: string[]; dropsDefault: boolean } {
   if (!typePlan.inlineEnum || !typePlan.enumValues || !originalColumn.enumValues?.length) {
-    return [];
+    return { statements: [], dropsDefault: false };
   }
   const originalValues = originalColumn.enumValues.map(String);
-  const missingValues = originalValues.filter((value) => !typePlan.enumValues!.includes(value));
-  if (missingValues.length) {
-    throw new Error("PostgreSQL 暂不支持通过 enum(...) 删除已有枚举值，请只追加新枚举值，或手动迁移到新的枚举类型。");
+  const nextValues = typePlan.enumValues.map(String);
+  if (isPostgresEnumPureAppend(originalValues, nextValues)) {
+    return {
+      statements: nextValues
+        .slice(originalValues.length)
+        .map((value) => `ALTER TYPE ${quoteIdentifier("postgres", typePlan.actualType)} ADD VALUE IF NOT EXISTS ${toSqlLiteral(value)};`),
+      dropsDefault: false,
+    };
   }
-  return typePlan.enumValues
-    .filter((value) => !originalValues.includes(value))
-    .map((value) => `ALTER TYPE ${quoteIdentifier("postgres", typePlan.actualType)} ADD VALUE IF NOT EXISTS ${toSqlLiteral(value)};`);
+
+  const replacementType = buildPostgresReplacementEnumTypeName(typePlan.actualType, nextValues);
+  const statements = [
+    `CREATE TYPE ${quoteIdentifier("postgres", replacementType)} AS ENUM (${nextValues.map(toSqlLiteral).join(", ")});`,
+  ];
+  if (originalDefault) {
+    statements.push(`ALTER TABLE ${quoteIdentifier("postgres", tableName)} ALTER COLUMN ${quoteIdentifier("postgres", columnName)} DROP DEFAULT;`);
+  }
+  statements.push(
+    `ALTER TABLE ${quoteIdentifier("postgres", tableName)} ALTER COLUMN ${quoteIdentifier("postgres", columnName)} TYPE ${quoteIdentifier("postgres", replacementType)} USING ${quoteIdentifier("postgres", columnName)}::text::${quoteIdentifier("postgres", replacementType)};`,
+    `DROP TYPE ${quoteIdentifier("postgres", typePlan.actualType)};`,
+    `ALTER TYPE ${quoteIdentifier("postgres", replacementType)} RENAME TO ${quoteIdentifier("postgres", getPostgresQualifiedNameBase(typePlan.actualType))};`
+  );
+  return { statements, dropsDefault: Boolean(originalDefault) };
+}
+
+function isPostgresEnumPureAppend(originalValues: string[], nextValues: string[]): boolean {
+  return nextValues.length >= originalValues.length
+    && originalValues.every((value, index) => nextValues[index] === value);
+}
+
+function buildPostgresReplacementEnumTypeName(enumTypeName: string, nextValues: string[]): string {
+  const parts = splitPostgresQualifiedName(enumTypeName);
+  const baseName = parts.pop() || "enum_type";
+  const schema = parts.join(".");
+  const replacementName = shortenPostgresIdentifier(`${toPostgresIdentifierPart(baseName)}_replacement_${hashIdentifier(nextValues.join("\u0000")).slice(0, 8)}`);
+  return schema ? `${schema}.${replacementName}` : replacementName;
+}
+
+function getPostgresQualifiedNameBase(value: string): string {
+  const parts = splitPostgresQualifiedName(value);
+  return parts[parts.length - 1] || value;
+}
+
+function splitPostgresQualifiedName(value: string): string[] {
+  const parts: string[] = [];
+  let current = "";
+  let quoted = false;
+  const text = String(value || "");
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    const next = text[index + 1];
+    if (quoted) {
+      if (char === '"' && next === '"') {
+        current += '"';
+        index += 1;
+        continue;
+      }
+      if (char === '"') {
+        quoted = false;
+        continue;
+      }
+      current += char;
+      continue;
+    }
+    if (char === '"') {
+      quoted = true;
+      continue;
+    }
+    if (char === ".") {
+      parts.push(current);
+      current = "";
+      continue;
+    }
+    current += char;
+  }
+  parts.push(current);
+  return parts.filter((part) => part.length > 0);
 }
 
 function normalizeQualifiedIdentifier(value: string): string {
@@ -11991,6 +12071,7 @@ function formatPostgresDefault(value: string): string {
   const text = value.trim();
   if (/^(NULL|CURRENT_TIMESTAMP(?:\(\))?|CURRENT_DATE(?:\(\))?|CURRENT_TIME(?:\(\))?|NOW\(\))$/i.test(text)) return text;
   if (/^-?\d+(?:\.\d+)?$/.test(text)) return text;
+  if (/^'(?:''|[^'])*'::/.test(text)) return text;
   if (/^'.*'$/.test(text)) return text;
   if (/^nextval\(/i.test(text)) return text;
   return toSqlLiteral(text);
