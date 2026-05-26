@@ -340,6 +340,9 @@ export class DatabaseWorkbenchPanel {
         case "openRelationQuery":
           await this.openRelationQuery(message.sourceTable, message.sourceColumn, message.targetTable, message.targetColumn, message.values);
           return;
+        case "quickFieldValueQuery":
+          await this.runQuickFieldValueQuery(message.table, message.column, message.values, message.limit);
+          return;
         case "redisDeleteKeys":
           await this.redisDeleteKeys(message.keys, message.confirmed === true);
           return;
@@ -1372,6 +1375,23 @@ export class DatabaseWorkbenchPanel {
       autoRunInitialSql: true,
     });
     this.panel.webview.postMessage({ type: "loading", area: "query", message: "已打开新的关联查询控制台。" });
+  }
+
+  private async runQuickFieldValueQuery(table: string, column: string, values: unknown[], limit?: number): Promise<void> {
+    if (this.connection.type !== "mysql" && this.connection.type !== "postgres") {
+      throw new Error("字段快速条件查询暂时只支持 MySQL 和 PostgreSQL。");
+    }
+    const safeTable = String(table || "").trim();
+    if (!safeTable) {
+      throw new Error("请先从左侧数据库树选择一张表。");
+    }
+    const where = buildFieldValueConditionSql(this.connection.type, column, values);
+    this.panel.webview.postMessage({
+      type: "quickConditionApplied",
+      where,
+      status: "已把选中字段值写入快速条件，正在查询结果...",
+    });
+    await this.runQuickQuery(safeTable, where, Number(limit || getQueryConfig().defaultLimit), 1, undefined, undefined);
   }
 
   private async redisDeleteKeys(keys: string[], confirmed: boolean): Promise<void> {
@@ -3152,6 +3172,7 @@ export class DatabaseWorkbenchPanel {
     .export-dialog.sql-mode .export-alias-tip { display: none; }
     .export-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
     .relation-dialog { width: min(640px, 96vw); }
+    .quick-field-dialog { width: min(560px, 96vw); }
     .relation-preview {
       border: 1px solid var(--line);
       border-radius: 10px;
@@ -3573,8 +3594,23 @@ export class DatabaseWorkbenchPanel {
     </section>
   </main>
   <div class="row-context-menu" id="rowContextMenu">
+    <button id="quickFieldQueryBtn">快速条件查询</button>
     <button id="relationQueryBtn">关联查询</button>
     <button class="danger-action" id="deleteRowBtn">删除该行</button>
+  </div>
+  <div class="export-overlay" id="quickFieldQueryOverlay" role="dialog" aria-modal="true" aria-labelledby="quickFieldQueryTitle">
+    <div class="export-dialog quick-field-dialog">
+      <div class="export-title" id="quickFieldQueryTitle">快速条件查询</div>
+      <div class="export-meta" id="quickFieldQueryMeta">选择字段后，会把选中行该字段的值写入快速条件并立即查询。</div>
+      <div class="export-form">
+        <label class="export-row"><span>查询字段</span><select class="field" id="quickFieldQueryColumn"></select></label>
+        <div class="relation-preview" id="quickFieldQueryPreview"></div>
+      </div>
+      <div class="export-actions">
+        <button class="secondary" id="cancelQuickFieldQueryBtn">取消</button>
+        <button id="confirmQuickFieldQueryBtn">确认并查询</button>
+      </div>
+    </div>
   </div>
   <div class="export-overlay" id="relationOverlay" role="dialog" aria-modal="true" aria-labelledby="relationDialogTitle">
     <div class="export-dialog relation-dialog">
@@ -3840,7 +3876,7 @@ export class DatabaseWorkbenchPanel {
 	  <script nonce="${nonce}">
     const vscode = acquireVsCodeApi();
     let webviewPersistedState = typeof vscode.getState === "function" ? (vscode.getState() || {}) : {};
-	    const state = { database: "", connectionId: "", connectionName: "", connectionType: "mysql", queryConsole: false, connections: [], tables: [], selectedTable: "", currentTable: null, schemaEditor: null, defaultLimit: 30, tableDisplay: { showColumnComments: true, hiddenColumnCommentNames: ["id", "created_at", "updated_at", "deleted_at"], dataGridFontSize: 12, sqlConfirmFontSize: 15 }, schemaCapabilities: { supportsNotEmptyStringCheck: false }, lastSql: "", currentResult: null, sortColumn: "", sortDirection: "asc", fieldColumns: [], selectedColumns: [], fieldSelectionInitialized: false, lastQueryMode: "preview", primaryKeys: [], columnTypes: {}, columnComments: {}, columnMeta: {}, pendingEdits: {}, quickInsert: { active: false, values: {} }, rowSelection: { selected: [], dragging: false, anchor: null, deleting: false }, relationQuery: { rowIndexes: [], sourceColumn: "", targetTable: "", targetColumn: "" }, importSource: { databases: [], tables: [], columns: [], mappings: [] }, redisDetail: { key: "", keyType: "", page: 1, pageSize: 30, totalRows: 0, totalPages: 1, columns: [], rows: [], search: "", fuzzySearch: false, sortDirection: "asc", memoryUsage: null, contextRowIndex: -1 }, operationLogs: [], selectedLogId: "", rollbackingLogId: "", rollbackError: null, logContextLogId: "", activeLogTagColor: "", logTagDraft: { logId: "", color: "blue" }, aiTimeline: [], aiActiveTimelineId: "", aiContinueParentId: "", aiContinueSourceId: "" };
+	    const state = { database: "", connectionId: "", connectionName: "", connectionType: "mysql", queryConsole: false, connections: [], tables: [], selectedTable: "", currentTable: null, schemaEditor: null, defaultLimit: 30, tableDisplay: { showColumnComments: true, hiddenColumnCommentNames: ["id", "created_at", "updated_at", "deleted_at"], dataGridFontSize: 12, sqlConfirmFontSize: 15 }, schemaCapabilities: { supportsNotEmptyStringCheck: false }, lastSql: "", currentResult: null, sortColumn: "", sortDirection: "asc", fieldColumns: [], selectedColumns: [], fieldSelectionInitialized: false, lastQueryMode: "preview", primaryKeys: [], columnTypes: {}, columnComments: {}, columnMeta: {}, pendingEdits: {}, quickInsert: { active: false, values: {} }, rowSelection: { selected: [], dragging: false, anchor: null, deleting: false }, quickFieldQuery: { rowIndexes: [], column: "" }, relationQuery: { rowIndexes: [], sourceColumn: "", targetTable: "", targetColumn: "" }, importSource: { databases: [], tables: [], columns: [], mappings: [] }, redisDetail: { key: "", keyType: "", page: 1, pageSize: 30, totalRows: 0, totalPages: 1, columns: [], rows: [], search: "", fuzzySearch: false, sortDirection: "asc", memoryUsage: null, contextRowIndex: -1 }, operationLogs: [], selectedLogId: "", rollbackingLogId: "", rollbackError: null, logContextLogId: "", activeLogTagColor: "", logTagDraft: { logId: "", color: "blue" }, aiTimeline: [], aiActiveTimelineId: "", aiContinueParentId: "", aiContinueSourceId: "" };
     const $ = (selector) => document.querySelector(selector);
 	    const sqlInput = $("#sqlInput");
 	    const sqlHighlight = $("#sqlHighlight");
@@ -3869,6 +3905,10 @@ export class DatabaseWorkbenchPanel {
 	    const importRowLimitInput = $("#importRowLimitInput");
 	    const importBatchSizeInput = $("#importBatchSizeInput");
 	    const importFieldMap = $("#importFieldMap");
+    const quickFieldQueryOverlay = $("#quickFieldQueryOverlay");
+    const quickFieldQueryMeta = $("#quickFieldQueryMeta");
+    const quickFieldQueryColumn = $("#quickFieldQueryColumn");
+    const quickFieldQueryPreview = $("#quickFieldQueryPreview");
     const relationOverlay = $("#relationOverlay");
     const relationMeta = $("#relationMeta");
     const relationSourceColumn = $("#relationSourceColumn");
@@ -4157,6 +4197,10 @@ export class DatabaseWorkbenchPanel {
         setSqlEditorValue(message.sql || "", message.status || "SQL 已放入编辑器。");
         return;
       }
+      if (message.type === "quickConditionApplied") {
+        applyQuickCondition(message.where || "", message.status || "已把字段值写入快速条件。");
+        return;
+      }
       if (message.type === "generatedSql") {
         state.lastSql = message.sql;
         applyGeneratedSql(message.sql);
@@ -4440,6 +4484,7 @@ export class DatabaseWorkbenchPanel {
         hideRedisDetailContextMenu();
         closeLogTagDialog();
         closeDiscardRefreshDialog();
+        closeQuickFieldQueryDialog();
         closeRelationQueryDialog();
         closeRedisKeyDetail();
       }
@@ -4470,6 +4515,13 @@ export class DatabaseWorkbenchPanel {
       }
       preserveSqlInputOnNextResult = true;
       vscode.postMessage({ type: "runSql", sql: executableSql, limit: Number(limitInput.value || state.defaultLimit), page: 1 });
+    });
+    $("#quickFieldQueryBtn").addEventListener("click", openQuickFieldQueryDialog);
+    $("#cancelQuickFieldQueryBtn").addEventListener("click", closeQuickFieldQueryDialog);
+    $("#confirmQuickFieldQueryBtn").addEventListener("click", confirmQuickFieldQuery);
+    quickFieldQueryColumn.addEventListener("change", () => {
+      state.quickFieldQuery.column = quickFieldQueryColumn.value;
+      updateQuickFieldQueryPreview();
     });
     $("#relationQueryBtn").addEventListener("click", openRelationQueryDialog);
     $("#cancelRelationQueryBtn").addEventListener("click", closeRelationQueryDialog);
@@ -5671,6 +5723,15 @@ export class DatabaseWorkbenchPanel {
       state.sortColumn = "";
       state.sortDirection = "asc";
       vscode.postMessage({ type: "quickQuery", table: getQuickQueryTarget(), where: whereInput.value, limit: Number(limitInput.value || state.defaultLimit), page: 1 });
+    }
+
+    function applyQuickCondition(where, statusMessage) {
+      whereInput.value = where;
+      updateSqlInputHighlight(whereInput);
+      state.lastQueryMode = "quick";
+      state.sortColumn = "";
+      state.sortDirection = "asc";
+      setStatus(statusMessage || "已把条件写入快速条件。", false);
     }
 
     function refreshData(options = {}) {
@@ -8909,6 +8970,7 @@ export class DatabaseWorkbenchPanel {
     function updateDeleteRowButtonText() {
       const count = state.rowSelection.selected.length;
       $("#deleteRowBtn").textContent = count > 1 ? "删除选中 " + count + " 行" : "删除该行";
+      $("#quickFieldQueryBtn").textContent = count > 1 ? "快速查询选中 " + count + " 行" : "快速条件查询";
       $("#relationQueryBtn").textContent = count > 1 ? "关联查询选中 " + count + " 行" : "关联查询";
     }
 
@@ -8943,12 +9005,16 @@ export class DatabaseWorkbenchPanel {
 
     function updateRowContextActions(row) {
       const deleteBtn = $("#deleteRowBtn");
+      const quickFieldBtn = $("#quickFieldQueryBtn");
       const relationBtn = $("#relationQueryBtn");
       const canDelete = canDeleteContextRows(row);
+      const canQuickField = canOpenQuickFieldQueryForRows();
       const canRelation = canOpenRelationQueryForRows();
       deleteBtn.disabled = !canDelete;
+      quickFieldBtn.disabled = !canQuickField;
       relationBtn.disabled = !canRelation;
       deleteBtn.title = canDelete ? "" : getDeleteDisabledReason(row);
+      quickFieldBtn.title = canQuickField ? "用选中行字段值写入快速条件并查询当前表" : "快速条件查询仅支持 MySQL/PostgreSQL 表数据预览结果";
       relationBtn.title = canRelation ? "用选中行字段值去查询另一张表" : "关联查询仅支持 MySQL/PostgreSQL 表数据预览结果";
     }
 
@@ -8970,6 +9036,14 @@ export class DatabaseWorkbenchPanel {
     function canOpenRelationQueryForRows() {
       return (state.connectionType === "mysql" || state.connectionType === "postgres")
         && !state.queryConsole
+        && Boolean(state.selectedTable && state.currentTable && state.currentResult?.rows?.length)
+        && getContextRowIndexes().length > 0;
+    }
+
+    function canOpenQuickFieldQueryForRows() {
+      return (state.connectionType === "mysql" || state.connectionType === "postgres")
+        && !state.queryConsole
+        && !hasPendingEdits()
         && Boolean(state.selectedTable && state.currentTable && state.currentResult?.rows?.length)
         && getContextRowIndexes().length > 0;
     }
@@ -9037,6 +9111,81 @@ export class DatabaseWorkbenchPanel {
     function getContextRowIndexes() {
       const indexes = state.rowSelection.selected.length ? state.rowSelection.selected : [activeContextRowIndex];
       return [...new Set(indexes.filter((index) => Number.isInteger(index) && state.currentResult?.rows?.[index]))];
+    }
+
+    function openQuickFieldQueryDialog() {
+      if (hasPendingEdits()) {
+        setStatus("请先提交当前修改后再进行快速条件查询。", true);
+        return;
+      }
+      if (!canOpenQuickFieldQueryForRows()) {
+        setStatus("快速条件查询仅支持 MySQL/PostgreSQL 表数据预览结果。", true);
+        return;
+      }
+      const rowIndexes = getContextRowIndexes();
+      const columns = getRelationSourceColumns();
+      if (!columns.length) {
+        hideRowContextMenu();
+        setStatus("当前表结构不完整，无法生成快速条件。", true);
+        return;
+      }
+      const column = chooseInitialRelationSourceColumn(columns);
+      hideRowContextMenu();
+      state.quickFieldQuery = { rowIndexes, column };
+      quickFieldQueryColumn.innerHTML = columns.map((item) => '<option value="' + escapeHtml(item) + '">' + escapeHtml(item) + '</option>').join("");
+      quickFieldQueryColumn.value = column;
+      quickFieldQueryOverlay.classList.add("open");
+      updateQuickFieldQueryPreview();
+      quickFieldQueryColumn.focus();
+    }
+
+    function closeQuickFieldQueryDialog() {
+      quickFieldQueryOverlay.classList.remove("open");
+      state.quickFieldQuery = { rowIndexes: [], column: "" };
+    }
+
+    function updateQuickFieldQueryPreview() {
+      state.quickFieldQuery.column = quickFieldQueryColumn.value;
+      const values = collectQuickFieldQueryValues(state.quickFieldQuery.column);
+      const uniqueValues = dedupeRelationPreviewValues(values);
+      const missingRows = state.quickFieldQuery.rowIndexes.length - values.length;
+      $("#confirmQuickFieldQueryBtn").disabled = !state.quickFieldQuery.column || !uniqueValues.length;
+      quickFieldQueryMeta.innerHTML = '已选择 <strong>' + state.quickFieldQuery.rowIndexes.length + '</strong> 行，将当前表 <strong>' + escapeHtml(state.selectedTable + "." + state.quickFieldQuery.column) + '</strong> 的值写入快速条件。';
+      quickFieldQueryPreview.innerHTML = '<div>快速条件字段：<strong>' + escapeHtml(state.quickFieldQuery.column) + '</strong></div>'
+        + '<div>可用值：' + uniqueValues.length + ' 个' + (missingRows > 0 ? '，' + missingRows + ' 行缺少该字段值' : '') + '</div>'
+        + '<div>预览：' + escapeHtml(uniqueValues.slice(0, 12).map(formatValue).join(", ") || "没有可用值") + (uniqueValues.length > 12 ? " ..." : "") + '</div>';
+    }
+
+    function collectQuickFieldQueryValues(column) {
+      return state.quickFieldQuery.rowIndexes
+        .map((rowIndex) => state.currentResult?.rows?.[rowIndex])
+        .filter(Boolean)
+        .filter((row) => Object.prototype.hasOwnProperty.call(row, column))
+        .map((row) => row[column])
+        .filter((value) => value !== undefined);
+    }
+
+    function confirmQuickFieldQuery() {
+      if (hasPendingEdits()) {
+        closeQuickFieldQueryDialog();
+        setStatus("请先提交当前修改后再进行快速条件查询。", true);
+        return;
+      }
+      const values = collectQuickFieldQueryValues(quickFieldQueryColumn.value);
+      if (!values.length) {
+        setStatus("选中行里没有可用于快速条件查询的字段值。", true);
+        return;
+      }
+      const payload = {
+        type: "quickFieldValueQuery",
+        table: state.selectedTable,
+        column: quickFieldQueryColumn.value,
+        values,
+        limit: Number(limitInput.value || state.defaultLimit),
+      };
+      closeQuickFieldQueryDialog();
+      setStatus("正在写入快速条件并查询...", false);
+      vscode.postMessage(payload);
     }
 
     function openRelationQueryDialog() {
@@ -11207,31 +11356,46 @@ export function buildRelationQuerySql(
   if (!safeSourceTable || !safeSourceColumn || !safeTargetTable || !safeTargetColumn) {
     throw new Error("请选择当前表字段、目标表和目标表字段。");
   }
-
-  const uniqueValues = dedupeSqlValues(values.filter((value) => value !== undefined));
-  if (!uniqueValues.length) {
+  if (!values.some((value) => value !== undefined)) {
     throw new Error("选中行里没有可用于关联查询的字段值。");
   }
-
-  const nonNullValues = uniqueValues.filter((value) => value !== null);
-  const hasNull = uniqueValues.length !== nonNullValues.length;
-  const quotedTargetColumn = quoteIdentifier(type, safeTargetColumn);
-  const conditions: string[] = [];
-  if (nonNullValues.length) {
-    conditions.push(`${quotedTargetColumn} IN (${nonNullValues.map(toSqlLiteral).join(", ")})`);
-  }
-  if (hasNull) {
-    conditions.push(`${quotedTargetColumn} IS NULL`);
-  }
-  if (!conditions.length) {
-    throw new Error("选中行里只有空值，无法生成关联查询。");
-  }
+  const where = buildFieldValueConditionSql(type, safeTargetColumn, values);
 
   return [
     `SELECT *`,
     `FROM ${quoteIdentifier(type, safeTargetTable)}`,
-    `WHERE ${conditions.join(" OR ")};`,
+    `WHERE ${where};`,
   ].join("\n");
+}
+
+export function buildFieldValueConditionSql(type: DbConnectionConfig["type"], column: string, values: unknown[]): string {
+  if (type !== "mysql" && type !== "postgres") {
+    throw new Error("字段快速条件查询暂时只支持 MySQL 和 PostgreSQL。");
+  }
+  const safeColumn = column.trim();
+  if (!safeColumn) {
+    throw new Error("请选择要作为快速条件的字段。");
+  }
+
+  const uniqueValues = dedupeSqlValues(values.filter((value) => value !== undefined));
+  if (!uniqueValues.length) {
+    throw new Error("选中行里没有可用于快速条件查询的字段值。");
+  }
+
+  const nonNullValues = uniqueValues.filter((value) => value !== null);
+  const hasNull = uniqueValues.length !== nonNullValues.length;
+  const quotedColumn = quoteIdentifier(type, safeColumn);
+  const conditions: string[] = [];
+  if (nonNullValues.length) {
+    conditions.push(`${quotedColumn} IN (${nonNullValues.map(toSqlLiteral).join(", ")})`);
+  }
+  if (hasNull) {
+    conditions.push(`${quotedColumn} IS NULL`);
+  }
+  if (!conditions.length) {
+    throw new Error("选中行里没有可用于快速条件查询的字段值。");
+  }
+  return conditions.length > 1 ? `(${conditions.join(" OR ")})` : conditions[0];
 }
 
 function dedupeSqlValues(values: unknown[]): unknown[] {

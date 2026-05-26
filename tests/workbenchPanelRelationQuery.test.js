@@ -55,13 +55,22 @@ const fakeVscode = {
   },
 };
 
-const { buildRelationQuerySql } = require("../out/workbenchPanel");
+const { buildFieldValueConditionSql, buildRelationQuerySql } = require("../out/workbenchPanel");
+
+assert.equal(
+  buildFieldValueConditionSql("mysql", "status", ["active", "disabled", "active"]),
+  "`status` IN ('active', 'disabled')"
+);
+assert.equal(
+  buildFieldValueConditionSql("postgres", "user_id", [1, 2, 2, null]),
+  "(\"user_id\" IN (1, 2) OR \"user_id\" IS NULL)"
+);
 
 const mysqlSql = buildRelationQuerySql("mysql", "users", "id", "orders", "user_id", [1, 2, 2, null]);
 assert.equal(mysqlSql, [
   "SELECT *",
   "FROM `orders`",
-  "WHERE `user_id` IN (1, 2) OR `user_id` IS NULL;",
+  "WHERE (`user_id` IN (1, 2) OR `user_id` IS NULL);",
 ].join("\n"));
 
 const pgSql = buildRelationQuerySql("postgres", "tenant.users", "dept_id", "tenant.departments", "id", ["a", "b'c"]);
@@ -76,4 +85,4 @@ assert.throws(
   /选中行里没有可用于关联查询的字段值/
 );
 
-console.log("ok - Workbench 表格关联查询 SQL 生成");
+console.log("ok - Workbench 表格关联查询和快速条件查询 SQL 生成");

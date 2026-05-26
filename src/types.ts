@@ -293,6 +293,7 @@ export type PanelMessage =
   | { type: "deleteRow"; table: string; primaryKeys: string[]; primaryValues: Record<string, unknown>; confirmed?: boolean }
   | { type: "deleteRows"; table: string; primaryKeys: string[]; primaryValuesList: Array<Record<string, unknown>>; confirmed?: boolean }
   | { type: "openRelationQuery"; sourceTable: string; sourceColumn: string; targetTable: string; targetColumn: string; values: unknown[] }
+  | { type: "quickFieldValueQuery"; table: string; column: string; values: unknown[]; limit?: number }
   | { type: "redisDeleteKeys"; keys: string[]; confirmed?: boolean }
   | { type: "redisUpdateKeys"; updates: Array<{ key: string; value: string }>; confirmed?: boolean }
   | { type: "redisUpdateTtls"; updates: Array<{ key: string; ttl: string }>; confirmed?: boolean }
@@ -338,6 +339,7 @@ export type PanelToWebviewMessage =
   | { type: "sqlConfirmPreview"; title: string; sql: string; action: PanelMessage; status?: string; cancelAction?: PanelMessage }
   | { type: "openSchemaEditor"; mode: "editTable" | "createTable" }
   | { type: "setSqlEditor"; sql: string; status?: string }
+  | { type: "quickConditionApplied"; where: string; status?: string }
   | { type: "generatedSql"; sql: string }
   | { type: "generatedCreateTableSql"; sql: string }
   | { type: "schema"; tables: TableInfo[] }
