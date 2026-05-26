@@ -28,6 +28,10 @@ type SchemaEditorMode = "editTable" | "createTable";
 type WorkbenchPanelOptions = {
   schemaEditorMode?: SchemaEditorMode;
   queryConsole?: boolean;
+  queryConsoleKeySuffix?: string;
+  queryConsoleTitle?: string;
+  initialSql?: string;
+  autoRunInitialSql?: boolean;
 };
 export type ActiveWorkbenchTreeSelection =
   | { kind: "database"; connectionId: string; database: string }
@@ -66,6 +70,8 @@ export class DatabaseWorkbenchPanel {
   private schemaLoaded = false;
   private pendingSchemaEditorMode: SchemaEditorMode | undefined;
   private readonly queryConsole: boolean;
+  private pendingInitialSql = "";
+  private readonly autoRunInitialSql: boolean;
   private schemaCapabilities: SchemaCapabilities = { supportsNotEmptyStringCheck: false };
   private lastQueryErrorSql = "";
   private panelKey: string;
@@ -85,6 +91,8 @@ export class DatabaseWorkbenchPanel {
   ) {
     this.panelKey = panelKey ?? `${connection.id}:${database}`;
     this.queryConsole = options?.queryConsole === true;
+    this.pendingInitialSql = String(options?.initialSql || "");
+    this.autoRunInitialSql = options?.autoRunInitialSql === true;
     this.createTablePanel = options?.schemaEditorMode === "createTable";
     this.selectedTable = initialTable;
     this.panel.onDidDispose(() => this.dispose(), null, this.disposables);
@@ -104,10 +112,13 @@ export class DatabaseWorkbenchPanel {
     options?: WorkbenchPanelOptions
   ): DatabaseWorkbenchPanel {
     const isCreateTablePanel = options?.schemaEditorMode === "createTable";
-    const key = DatabaseWorkbenchPanel.buildPanelKey(connection, database, table, isCreateTablePanel, options?.queryConsole === true);
+    const key = DatabaseWorkbenchPanel.buildPanelKey(connection, database, table, isCreateTablePanel, options?.queryConsole === true, options?.queryConsoleKeySuffix);
     const existing = DatabaseWorkbenchPanel.panels.get(key);
     if (existing) {
       existing.panel.reveal(vscode.ViewColumn.One);
+      if (options?.queryConsole && options.initialSql) {
+        void existing.applySqlToQueryConsole(options.initialSql, options.autoRunInitialSql === true);
+      }
       if (table) {
         void existing.selectTable(table, true).then(() => {
           if (options?.schemaEditorMode) existing.requestSchemaEditor(options.schemaEditorMode);
@@ -119,7 +130,7 @@ export class DatabaseWorkbenchPanel {
     }
 
     const title = options?.queryConsole
-      ? `查询控制台 · ${database}`
+      ? options.queryConsoleTitle || `查询控制台 · ${database}`
       : isCreateTablePanel
       ? `正在创建 · ${database}`
       : table ? `${table} · ${database}` : `${connection.name} / ${database}`;
@@ -193,10 +204,11 @@ export class DatabaseWorkbenchPanel {
     database: string,
     table: string | undefined,
     isCreateTablePanel: boolean,
-    isQueryConsole: boolean
+    isQueryConsole: boolean,
+    queryConsoleKeySuffix = ""
   ): string {
     if (isQueryConsole) {
-      return JSON.stringify([connection.id, database, "query_console"]);
+      return JSON.stringify([connection.id, database, "query_console", queryConsoleKeySuffix]);
     }
     if (isCreateTablePanel) {
       return JSON.stringify([connection.id, database, "__create_table__"]);
@@ -238,6 +250,25 @@ export class DatabaseWorkbenchPanel {
       return;
     }
     await this.loadSchema(true);
+  }
+
+  private async applySqlToQueryConsole(sql: string, autoRun: boolean): Promise<void> {
+    if (!this.queryConsole) {
+      return;
+    }
+    const normalizedSql = String(sql || "").trim();
+    if (!normalizedSql) {
+      return;
+    }
+    this.panel.webview.postMessage({
+      type: "setSqlEditor",
+      sql: normalizedSql,
+      status: autoRun ? "已生成关联查询 SQL，正在执行..." : "已生成关联查询 SQL。",
+    });
+    if (autoRun) {
+      this.lastQueryErrorSql = normalizedSql;
+      await this.runSql(normalizedSql, getQueryConfig().defaultLimit, 1);
+    }
   }
 
   private async handleMessage(message: PanelMessage): Promise<void> {
@@ -305,6 +336,9 @@ export class DatabaseWorkbenchPanel {
           return;
         case "deleteRows":
           await this.deleteRows(message.table, message.primaryKeys, message.primaryValuesList, message.confirmed === true);
+          return;
+        case "openRelationQuery":
+          await this.openRelationQuery(message.sourceTable, message.sourceColumn, message.targetTable, message.targetColumn, message.values);
           return;
         case "redisDeleteKeys":
           await this.redisDeleteKeys(message.keys, message.confirmed === true);
@@ -416,6 +450,11 @@ export class DatabaseWorkbenchPanel {
     }
     this.schemaLoaded = true;
     this.flushSchemaEditorRequest();
+    if (this.queryConsole && this.pendingInitialSql) {
+      const initialSql = this.pendingInitialSql;
+      this.pendingInitialSql = "";
+      await this.applySqlToQueryConsole(initialSql, this.autoRunInitialSql);
+    }
   }
 
   private async selectTable(table: string, preview: boolean): Promise<void> {
@@ -1311,6 +1350,28 @@ export class DatabaseWorkbenchPanel {
     }
     this.panel.webview.postMessage({ type: "editsApplied" });
     await this.previewTable(table);
+  }
+
+  private async openRelationQuery(
+    sourceTable: string,
+    sourceColumn: string,
+    targetTable: string,
+    targetColumn: string,
+    values: unknown[]
+  ): Promise<void> {
+    if (this.connection.type !== "mysql" && this.connection.type !== "postgres") {
+      throw new Error("关联查询暂时只支持 MySQL 和 PostgreSQL。");
+    }
+    const sql = buildRelationQuerySql(this.connection.type, sourceTable, sourceColumn, targetTable, targetColumn, values);
+    const suffix = `relation:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
+    DatabaseWorkbenchPanel.open(this.context, this.store, this.databaseService, this.connection, this.database, undefined, {
+      queryConsole: true,
+      queryConsoleKeySuffix: suffix,
+      queryConsoleTitle: `关联查询 · ${targetTable}`,
+      initialSql: sql,
+      autoRunInitialSql: true,
+    });
+    this.panel.webview.postMessage({ type: "loading", area: "query", message: "已打开新的关联查询控制台。" });
   }
 
   private async redisDeleteKeys(keys: string[], confirmed: boolean): Promise<void> {
@@ -2449,7 +2510,7 @@ export class DatabaseWorkbenchPanel {
       position: fixed;
       z-index: 120;
       display: none;
-      min-width: 120px;
+      min-width: 148px;
       padding: 6px;
       border: 1px solid var(--line);
       border-radius: 8px;
@@ -2460,11 +2521,14 @@ export class DatabaseWorkbenchPanel {
     .row-context-menu button {
       width: 100%;
       padding: 7px 10px;
-      color: var(--danger);
+      color: var(--fg);
       background: transparent;
       text-align: left;
     }
-    .row-context-menu button:hover { background: rgba(244, 135, 113, .12); }
+    .row-context-menu button:hover { background: rgba(127,127,127,.12); }
+    .row-context-menu button.danger-action { color: var(--danger); }
+    .row-context-menu button.danger-action:hover { background: rgba(244, 135, 113, .12); }
+    .row-context-menu button:disabled { color: var(--muted); background: transparent; opacity: .55; }
     .edit-overlay {
       position: fixed;
       inset: 0;
@@ -3087,6 +3151,20 @@ export class DatabaseWorkbenchPanel {
     .export-dialog.sql-mode .export-alias,
     .export-dialog.sql-mode .export-alias-tip { display: none; }
     .export-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+    .relation-dialog { width: min(640px, 96vw); }
+    .relation-preview {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: var(--panel-2);
+      padding: 10px 12px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.7;
+      max-height: 150px;
+      overflow: auto;
+      word-break: break-word;
+    }
+    .relation-preview strong { color: var(--fg); font-family: var(--mono); }
     .import-dialog { width: min(980px, 94vw); max-height: min(760px, 92vh); overflow: auto; }
     .import-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; align-items: end; }
     .import-grid label { min-width: 0; display: grid; gap: 6px; margin: 0; }
@@ -3495,7 +3573,24 @@ export class DatabaseWorkbenchPanel {
     </section>
   </main>
   <div class="row-context-menu" id="rowContextMenu">
-    <button id="deleteRowBtn">删除该行</button>
+    <button id="relationQueryBtn">关联查询</button>
+    <button class="danger-action" id="deleteRowBtn">删除该行</button>
+  </div>
+  <div class="export-overlay" id="relationOverlay" role="dialog" aria-modal="true" aria-labelledby="relationDialogTitle">
+    <div class="export-dialog relation-dialog">
+      <div class="export-title" id="relationDialogTitle">关联查询</div>
+      <div class="export-meta" id="relationMeta">选择当前表字段和目标表字段后，会打开新的查询控制台并自动执行。</div>
+      <div class="export-form">
+        <label class="export-row"><span>当前表字段</span><select class="field" id="relationSourceColumn"></select></label>
+        <label class="export-row"><span>目标表</span><select class="field" id="relationTargetTable"></select></label>
+        <label class="export-row"><span>目标表字段</span><select class="field" id="relationTargetColumn"></select></label>
+        <div class="relation-preview" id="relationPreview"></div>
+      </div>
+      <div class="export-actions">
+        <button class="secondary" id="cancelRelationQueryBtn">取消</button>
+        <button id="confirmRelationQueryBtn">确认并查询</button>
+      </div>
+    </div>
   </div>
   <div class="code-suggest" id="codeSuggest"></div>
   <div class="export-overlay" id="exportOverlay" role="dialog" aria-modal="true" aria-labelledby="exportDialogTitle">
@@ -3745,7 +3840,7 @@ export class DatabaseWorkbenchPanel {
 	  <script nonce="${nonce}">
     const vscode = acquireVsCodeApi();
     let webviewPersistedState = typeof vscode.getState === "function" ? (vscode.getState() || {}) : {};
-	    const state = { database: "", connectionId: "", connectionName: "", connectionType: "mysql", queryConsole: false, connections: [], tables: [], selectedTable: "", currentTable: null, schemaEditor: null, defaultLimit: 30, tableDisplay: { showColumnComments: true, hiddenColumnCommentNames: ["id", "created_at", "updated_at", "deleted_at"], dataGridFontSize: 12, sqlConfirmFontSize: 15 }, schemaCapabilities: { supportsNotEmptyStringCheck: false }, lastSql: "", currentResult: null, sortColumn: "", sortDirection: "asc", fieldColumns: [], selectedColumns: [], fieldSelectionInitialized: false, lastQueryMode: "preview", primaryKeys: [], columnTypes: {}, columnComments: {}, columnMeta: {}, pendingEdits: {}, quickInsert: { active: false, values: {} }, rowSelection: { selected: [], dragging: false, anchor: null, deleting: false }, importSource: { databases: [], tables: [], columns: [], mappings: [] }, redisDetail: { key: "", keyType: "", page: 1, pageSize: 30, totalRows: 0, totalPages: 1, columns: [], rows: [], search: "", fuzzySearch: false, sortDirection: "asc", memoryUsage: null, contextRowIndex: -1 }, operationLogs: [], selectedLogId: "", rollbackingLogId: "", rollbackError: null, logContextLogId: "", activeLogTagColor: "", logTagDraft: { logId: "", color: "blue" }, aiTimeline: [], aiActiveTimelineId: "", aiContinueParentId: "", aiContinueSourceId: "" };
+	    const state = { database: "", connectionId: "", connectionName: "", connectionType: "mysql", queryConsole: false, connections: [], tables: [], selectedTable: "", currentTable: null, schemaEditor: null, defaultLimit: 30, tableDisplay: { showColumnComments: true, hiddenColumnCommentNames: ["id", "created_at", "updated_at", "deleted_at"], dataGridFontSize: 12, sqlConfirmFontSize: 15 }, schemaCapabilities: { supportsNotEmptyStringCheck: false }, lastSql: "", currentResult: null, sortColumn: "", sortDirection: "asc", fieldColumns: [], selectedColumns: [], fieldSelectionInitialized: false, lastQueryMode: "preview", primaryKeys: [], columnTypes: {}, columnComments: {}, columnMeta: {}, pendingEdits: {}, quickInsert: { active: false, values: {} }, rowSelection: { selected: [], dragging: false, anchor: null, deleting: false }, relationQuery: { rowIndexes: [], sourceColumn: "", targetTable: "", targetColumn: "" }, importSource: { databases: [], tables: [], columns: [], mappings: [] }, redisDetail: { key: "", keyType: "", page: 1, pageSize: 30, totalRows: 0, totalPages: 1, columns: [], rows: [], search: "", fuzzySearch: false, sortDirection: "asc", memoryUsage: null, contextRowIndex: -1 }, operationLogs: [], selectedLogId: "", rollbackingLogId: "", rollbackError: null, logContextLogId: "", activeLogTagColor: "", logTagDraft: { logId: "", color: "blue" }, aiTimeline: [], aiActiveTimelineId: "", aiContinueParentId: "", aiContinueSourceId: "" };
     const $ = (selector) => document.querySelector(selector);
 	    const sqlInput = $("#sqlInput");
 	    const sqlHighlight = $("#sqlHighlight");
@@ -3774,6 +3869,12 @@ export class DatabaseWorkbenchPanel {
 	    const importRowLimitInput = $("#importRowLimitInput");
 	    const importBatchSizeInput = $("#importBatchSizeInput");
 	    const importFieldMap = $("#importFieldMap");
+    const relationOverlay = $("#relationOverlay");
+    const relationMeta = $("#relationMeta");
+    const relationSourceColumn = $("#relationSourceColumn");
+    const relationTargetTable = $("#relationTargetTable");
+    const relationTargetColumn = $("#relationTargetColumn");
+    const relationPreview = $("#relationPreview");
     const rowContextMenu = $("#rowContextMenu");
     const codeSuggest = $("#codeSuggest");
     const fieldPicker = $("#fieldPicker");
@@ -3819,6 +3920,7 @@ export class DatabaseWorkbenchPanel {
     const editError = $("#editError");
     let activeEdit = null;
 	    let activeContextRowIndex = null;
+    let activeContextColumn = "";
 	    let pendingSchemaConfirmDraft = null;
 	    let pendingUpdateConfirmPayload = null;
 	    let pendingSqlConfirmAction = null;
@@ -4049,6 +4151,10 @@ export class DatabaseWorkbenchPanel {
         } else {
           openSchemaEditor();
         }
+        return;
+      }
+      if (message.type === "setSqlEditor") {
+        setSqlEditorValue(message.sql || "", message.status || "SQL 已放入编辑器。");
         return;
       }
       if (message.type === "generatedSql") {
@@ -4334,6 +4440,7 @@ export class DatabaseWorkbenchPanel {
         hideRedisDetailContextMenu();
         closeLogTagDialog();
         closeDiscardRefreshDialog();
+        closeRelationQueryDialog();
         closeRedisKeyDetail();
       }
     });
@@ -4363,6 +4470,23 @@ export class DatabaseWorkbenchPanel {
       }
       preserveSqlInputOnNextResult = true;
       vscode.postMessage({ type: "runSql", sql: executableSql, limit: Number(limitInput.value || state.defaultLimit), page: 1 });
+    });
+    $("#relationQueryBtn").addEventListener("click", openRelationQueryDialog);
+    $("#cancelRelationQueryBtn").addEventListener("click", closeRelationQueryDialog);
+    $("#confirmRelationQueryBtn").addEventListener("click", confirmRelationQuery);
+    relationSourceColumn.addEventListener("change", () => {
+      state.relationQuery.sourceColumn = relationSourceColumn.value;
+      renderRelationTargetColumns();
+      updateRelationPreview();
+    });
+    relationTargetTable.addEventListener("change", () => {
+      state.relationQuery.targetTable = relationTargetTable.value;
+      renderRelationTargetColumns();
+      updateRelationPreview();
+    });
+    relationTargetColumn.addEventListener("change", () => {
+      state.relationQuery.targetColumn = relationTargetColumn.value;
+      updateRelationPreview();
     });
     $("#aiFromSqlBtn").addEventListener("click", () => sendAiTimelinePrompt());
     aiPromptInput.addEventListener("keydown", (event) => {
@@ -8785,28 +8909,22 @@ export class DatabaseWorkbenchPanel {
     function updateDeleteRowButtonText() {
       const count = state.rowSelection.selected.length;
       $("#deleteRowBtn").textContent = count > 1 ? "删除选中 " + count + " 行" : "删除该行";
+      $("#relationQueryBtn").textContent = count > 1 ? "关联查询选中 " + count + " 行" : "关联查询";
     }
 
     function openRowContextMenu(event, cell) {
       event.preventDefault();
       event.stopPropagation();
-      if (hasPendingEdits()) {
-        setStatus("请先提交当前修改后再删除。", true);
-        return;
-      }
-      if (state.connectionType !== "redis" && !state.primaryKeys.length) {
-        setStatus("当前表没有读取到主键，无法按行删除。", true);
-        return;
-      }
       const rowIndex = Number(cell.getAttribute("data-row-index"));
       const row = state.currentResult?.rows?.[rowIndex];
+      if (!Number.isInteger(rowIndex) || !row) {
+        return;
+      }
       if (state.connectionType === "redis") {
         if (!row?.key) {
           setStatus("无法删除：当前行没有 Redis Key。", true);
           return;
         }
-      } else if (!getPrimaryValuesForRow(row)) {
-        return;
       }
       if (!state.rowSelection.selected.includes(rowIndex)) {
         setRowSelection([rowIndex]);
@@ -8814,17 +8932,53 @@ export class DatabaseWorkbenchPanel {
         renderRowSelection();
       }
       activeContextRowIndex = rowIndex;
-      const left = Math.min(event.clientX, window.innerWidth - 132);
-      const top = Math.min(event.clientY, window.innerHeight - 48);
+      activeContextColumn = cell.getAttribute("data-column") || "";
+      updateRowContextActions(row);
+      const left = Math.min(event.clientX, window.innerWidth - 168);
+      const top = Math.min(event.clientY, window.innerHeight - 82);
       rowContextMenu.style.left = Math.max(8, left) + "px";
       rowContextMenu.style.top = Math.max(8, top) + "px";
       rowContextMenu.classList.add("open");
+    }
+
+    function updateRowContextActions(row) {
+      const deleteBtn = $("#deleteRowBtn");
+      const relationBtn = $("#relationQueryBtn");
+      const canDelete = canDeleteContextRows(row);
+      const canRelation = canOpenRelationQueryForRows();
+      deleteBtn.disabled = !canDelete;
+      relationBtn.disabled = !canRelation;
+      deleteBtn.title = canDelete ? "" : getDeleteDisabledReason(row);
+      relationBtn.title = canRelation ? "用选中行字段值去查询另一张表" : "关联查询仅支持 MySQL/PostgreSQL 表数据预览结果";
+    }
+
+    function canDeleteContextRows(row) {
+      if (state.connectionType === "redis") return Boolean(row?.key);
+      if (hasPendingEdits()) return false;
+      if (!state.primaryKeys.length) return false;
+      const selectedRows = state.rowSelection.selected.length ? state.rowSelection.selected : [activeContextRowIndex];
+      return selectedRows.every((rowIndex) => getPrimaryValuesForRow(state.currentResult?.rows?.[rowIndex], { silent: true }));
+    }
+
+    function getDeleteDisabledReason(row) {
+      if (state.connectionType === "redis") return row?.key ? "" : "当前行没有 Redis Key";
+      if (hasPendingEdits()) return "请先提交当前修改后再删除";
+      if (!state.primaryKeys.length) return "当前表没有读取到主键，无法按行删除";
+      return "选中行缺少主键字段，无法删除";
+    }
+
+    function canOpenRelationQueryForRows() {
+      return (state.connectionType === "mysql" || state.connectionType === "postgres")
+        && !state.queryConsole
+        && Boolean(state.selectedTable && state.currentTable && state.currentResult?.rows?.length)
+        && getContextRowIndexes().length > 0;
     }
 
     function hideRowContextMenu() {
       if (!rowContextMenu) return;
       rowContextMenu.classList.remove("open");
       activeContextRowIndex = null;
+      activeContextColumn = "";
       updateDeleteRowButtonText();
     }
 
@@ -8863,20 +9017,187 @@ export class DatabaseWorkbenchPanel {
       vscode.postMessage({ type: "deleteRows", table: state.selectedTable, primaryKeys: state.primaryKeys, primaryValuesList });
     }
 
-    function getPrimaryValuesForRow(row) {
+    function getPrimaryValuesForRow(row, options) {
+      const silent = options?.silent === true;
       if (!row) {
-        setStatus("无法删除：未找到当前行数据。", true);
+        if (!silent) setStatus("无法删除：未找到当前行数据。", true);
         return null;
       }
       const primaryValues = {};
       for (const primaryKey of state.primaryKeys) {
         if (row[primaryKey] === undefined || row[primaryKey] === null) {
-          setStatus("无法删除：结果中缺少主键字段 " + primaryKey + "。", true);
+          if (!silent) setStatus("无法删除：结果中缺少主键字段 " + primaryKey + "。", true);
           return null;
         }
         primaryValues[primaryKey] = row[primaryKey];
       }
       return primaryValues;
+    }
+
+    function getContextRowIndexes() {
+      const indexes = state.rowSelection.selected.length ? state.rowSelection.selected : [activeContextRowIndex];
+      return [...new Set(indexes.filter((index) => Number.isInteger(index) && state.currentResult?.rows?.[index]))];
+    }
+
+    function openRelationQueryDialog() {
+      if (!canOpenRelationQueryForRows()) {
+        setStatus("关联查询仅支持 MySQL/PostgreSQL 表数据预览结果。", true);
+        return;
+      }
+      const rowIndexes = getContextRowIndexes();
+      const sourceColumns = getRelationSourceColumns();
+      const targetTables = getRelationTargetTables();
+      if (!sourceColumns.length || !targetTables.length) {
+        hideRowContextMenu();
+        setStatus("当前表结构不完整，无法生成关联查询。", true);
+        return;
+      }
+      const sourceColumn = chooseInitialRelationSourceColumn(sourceColumns);
+      const targetTable = chooseInitialRelationTargetTable(targetTables);
+      hideRowContextMenu();
+      state.relationQuery = {
+        rowIndexes,
+        sourceColumn,
+        targetTable: targetTable.name,
+        targetColumn: "",
+      };
+      relationSourceColumn.innerHTML = sourceColumns.map((column) => '<option value="' + escapeHtml(column) + '">' + escapeHtml(column) + '</option>').join("");
+      relationTargetTable.innerHTML = targetTables.map((table) => '<option value="' + escapeHtml(table.name) + '">' + escapeHtml(table.comment ? table.name + " · " + table.comment : table.name) + '</option>').join("");
+      relationSourceColumn.value = sourceColumn;
+      relationTargetTable.value = targetTable.name;
+      renderRelationTargetColumns();
+      relationOverlay.classList.add("open");
+      updateRelationPreview();
+      relationTargetTable.focus();
+    }
+
+    function closeRelationQueryDialog() {
+      relationOverlay.classList.remove("open");
+      state.relationQuery = { rowIndexes: [], sourceColumn: "", targetTable: "", targetColumn: "" };
+    }
+
+    function getRelationSourceColumns() {
+      const schemaColumns = (state.currentTable?.columns || []).map((column) => column.name).filter(Boolean);
+      const resultColumns = state.currentResult?.columns || [];
+      const resultColumnSet = new Set(resultColumns);
+      const columns = schemaColumns.length
+        ? schemaColumns.filter((column) => resultColumnSet.has(column) || rowSelectionHasColumnValue(column))
+        : resultColumns;
+      return columns.length ? columns : resultColumns;
+    }
+
+    function getRelationTargetTables() {
+      return (state.tables || []).filter((table) => table?.name && Array.isArray(table.columns) && table.columns.length);
+    }
+
+    function chooseInitialRelationSourceColumn(columns) {
+      if (activeContextColumn && columns.includes(activeContextColumn)) return activeContextColumn;
+      const primaryKey = state.primaryKeys.find((column) => columns.includes(column));
+      return primaryKey || columns[0] || "";
+    }
+
+    function chooseInitialRelationTargetTable(tables) {
+      return tables.find((table) => table.name !== state.selectedTable) || tables[0];
+    }
+
+    function renderRelationTargetColumns() {
+      const targetTable = getRelationTargetTable();
+      const columns = (targetTable?.columns || []).map((column) => column.name).filter(Boolean);
+      const guessed = guessRelationTargetColumn(state.relationQuery.sourceColumn, targetTable, columns);
+      state.relationQuery.targetColumn = guessed;
+      relationTargetColumn.innerHTML = columns.map((column) => '<option value="' + escapeHtml(column) + '">' + escapeHtml(column) + '</option>').join("");
+      relationTargetColumn.value = guessed;
+    }
+
+    function getRelationTargetTable() {
+      const targetName = relationTargetTable.value || state.relationQuery.targetTable;
+      return (state.tables || []).find((table) => table.name === targetName) || null;
+    }
+
+    function guessRelationTargetColumn(sourceColumn, targetTable, targetColumns) {
+      if (!targetColumns.length) return "";
+      if (sourceColumn && targetColumns.includes(sourceColumn)) return sourceColumn;
+      const source = String(sourceColumn || "").toLowerCase();
+      if (source === "id") {
+        const sourceTableBase = normalizeRelationName(state.selectedTable).replace(/s$/, "");
+        const candidates = [
+          state.selectedTable + "_id",
+          sourceTableBase + "_id",
+          "t_id",
+          "tid",
+          "id",
+        ].map((item) => item.toLowerCase());
+        return targetColumns.find((column) => candidates.includes(column.toLowerCase())) || targetColumns[0];
+      }
+      if (/(^|_)id$/.test(source)) {
+        const idColumn = targetColumns.find((column) => column.toLowerCase() === "id");
+        if (idColumn) return idColumn;
+      }
+      const targetTableBase = normalizeRelationName(targetTable?.name || "").replace(/s$/, "");
+      const tableIdColumn = targetColumns.find((column) => column.toLowerCase() === targetTableBase + "_id");
+      return tableIdColumn || targetColumns[0];
+    }
+
+    function normalizeRelationName(value) {
+      return String(value || "").split(".").pop().replace(/[^A-Za-z0-9_]+/g, "_").toLowerCase();
+    }
+
+    function updateRelationPreview() {
+      state.relationQuery.sourceColumn = relationSourceColumn.value;
+      state.relationQuery.targetTable = relationTargetTable.value;
+      state.relationQuery.targetColumn = relationTargetColumn.value;
+      const values = collectRelationSourceValues(state.relationQuery.sourceColumn);
+      const uniqueValues = dedupeRelationPreviewValues(values);
+      const missingRows = state.relationQuery.rowIndexes.length - values.length;
+      $("#confirmRelationQueryBtn").disabled = !state.relationQuery.sourceColumn || !state.relationQuery.targetTable || !state.relationQuery.targetColumn || !uniqueValues.length;
+      relationMeta.innerHTML = '已选择 <strong>' + state.relationQuery.rowIndexes.length + '</strong> 行，从当前表 <strong>' + escapeHtml(state.selectedTable) + '</strong> 取字段值，再到目标表字段执行 IN 查询。';
+      relationPreview.innerHTML = '<div>方向：<strong>' + escapeHtml(state.selectedTable + "." + state.relationQuery.sourceColumn) + '</strong> → <strong>' + escapeHtml(state.relationQuery.targetTable + "." + state.relationQuery.targetColumn) + '</strong></div>'
+        + '<div>可用值：' + uniqueValues.length + ' 个' + (missingRows > 0 ? '，' + missingRows + ' 行缺少该字段值' : '') + '</div>'
+        + '<div>预览：' + escapeHtml(uniqueValues.slice(0, 12).map(formatValue).join(", ") || "没有可用值") + (uniqueValues.length > 12 ? " ..." : "") + '</div>';
+    }
+
+    function rowSelectionHasColumnValue(column) {
+      return getContextRowIndexes().some((rowIndex) => Object.prototype.hasOwnProperty.call(state.currentResult?.rows?.[rowIndex] || {}, column));
+    }
+
+    function collectRelationSourceValues(column) {
+      return state.relationQuery.rowIndexes
+        .map((rowIndex) => state.currentResult?.rows?.[rowIndex])
+        .filter(Boolean)
+        .filter((row) => Object.prototype.hasOwnProperty.call(row, column))
+        .map((row) => row[column])
+        .filter((value) => value !== undefined);
+    }
+
+    function dedupeRelationPreviewValues(values) {
+      const seen = new Set();
+      const result = [];
+      values.forEach((value) => {
+        const key = typeof value + ":" + JSON.stringify(value);
+        if (seen.has(key)) return;
+        seen.add(key);
+        result.push(value);
+      });
+      return result;
+    }
+
+    function confirmRelationQuery() {
+      const values = collectRelationSourceValues(relationSourceColumn.value);
+      if (!values.length) {
+        setStatus("选中行里没有可用于关联查询的字段值。", true);
+        return;
+      }
+      const payload = {
+        type: "openRelationQuery",
+        sourceTable: state.selectedTable,
+        sourceColumn: relationSourceColumn.value,
+        targetTable: relationTargetTable.value,
+        targetColumn: relationTargetColumn.value,
+        values,
+      };
+      closeRelationQueryDialog();
+      setStatus("正在打开关联查询控制台...", false);
+      vscode.postMessage(payload);
     }
 
     function toggleQuickInsert() {
@@ -10248,6 +10569,18 @@ export class DatabaseWorkbenchPanel {
       renderAiTimeline();
     }
 
+    function setSqlEditorValue(sql, statusMessage) {
+      const editorSql = formatEditorText(sql);
+      sqlInput.value = editorSql;
+      updateSqlInputHighlight(sqlInput);
+      moveCursorToEnd(sqlInput);
+      state.lastSql = editorSql;
+      state.lastQueryMode = "sql";
+      preserveSqlInputOnNextResult = true;
+      openDrawer();
+      setStatus(statusMessage || "SQL 已放入编辑器。", false);
+    }
+
     function getExecutableSqlFromEditor() {
       const executableText = getLatestExecutableText(sqlInput.value);
       return executableText.trim();
@@ -10854,6 +11187,75 @@ function buildDeleteRowsSql(
     ? `${quoteIdentifier(type, primaryKeys[0])} IN (${rows.map((row) => toSqlLiteral(row[0])).join(", ")})`
     : `(${primaryKeys.map((primaryKey) => quoteIdentifier(type, primaryKey)).join(", ")}) IN (${rows.map((row) => `(${row.map(toSqlLiteral).join(", ")})`).join(", ")})`;
   return `DELETE FROM ${quoteIdentifier(type, table)} WHERE ${where};`;
+}
+
+export function buildRelationQuerySql(
+  type: DbConnectionConfig["type"],
+  sourceTable: string,
+  sourceColumn: string,
+  targetTable: string,
+  targetColumn: string,
+  values: unknown[]
+): string {
+  if (type !== "mysql" && type !== "postgres") {
+    throw new Error("关联查询暂时只支持 MySQL 和 PostgreSQL。");
+  }
+  const safeSourceTable = sourceTable.trim();
+  const safeSourceColumn = sourceColumn.trim();
+  const safeTargetTable = targetTable.trim();
+  const safeTargetColumn = targetColumn.trim();
+  if (!safeSourceTable || !safeSourceColumn || !safeTargetTable || !safeTargetColumn) {
+    throw new Error("请选择当前表字段、目标表和目标表字段。");
+  }
+
+  const uniqueValues = dedupeSqlValues(values.filter((value) => value !== undefined));
+  if (!uniqueValues.length) {
+    throw new Error("选中行里没有可用于关联查询的字段值。");
+  }
+
+  const nonNullValues = uniqueValues.filter((value) => value !== null);
+  const hasNull = uniqueValues.length !== nonNullValues.length;
+  const quotedTargetColumn = quoteIdentifier(type, safeTargetColumn);
+  const conditions: string[] = [];
+  if (nonNullValues.length) {
+    conditions.push(`${quotedTargetColumn} IN (${nonNullValues.map(toSqlLiteral).join(", ")})`);
+  }
+  if (hasNull) {
+    conditions.push(`${quotedTargetColumn} IS NULL`);
+  }
+  if (!conditions.length) {
+    throw new Error("选中行里只有空值，无法生成关联查询。");
+  }
+
+  return [
+    `SELECT *`,
+    `FROM ${quoteIdentifier(type, safeTargetTable)}`,
+    `WHERE ${conditions.join(" OR ")};`,
+  ].join("\n");
+}
+
+function dedupeSqlValues(values: unknown[]): unknown[] {
+  const seen = new Set<string>();
+  const result: unknown[] = [];
+  for (const value of values) {
+    const key = normalizeSqlValueKey(value);
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    result.push(value);
+  }
+  return result;
+}
+
+function normalizeSqlValueKey(value: unknown): string {
+  if (value instanceof Date) {
+    return `date:${value.toISOString()}`;
+  }
+  if (Buffer.isBuffer(value)) {
+    return `buffer:${value.toString("base64")}`;
+  }
+  return `${typeof value}:${JSON.stringify(value)}`;
 }
 
 function buildRollbackSql(type: DbConnectionConfig["type"], log: OperationLogEntry): RollbackPlan {
