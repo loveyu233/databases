@@ -4411,7 +4411,80 @@ export class DatabaseWorkbenchPanel {
 
 	    function formatConfirmSqlPreview(sql) {
 	      const formatted = formatSqlText(sql);
-	      return expandJsonSqlLiterals(formatted);
+	      return insertBlankLinesBetweenSqlStatements(expandJsonSqlLiterals(formatted));
+	    }
+
+	    function insertBlankLinesBetweenSqlStatements(sql) {
+	      const text = String(sql || "");
+	      let result = "";
+	      let quote = "";
+	      let lineComment = false;
+	      let blockComment = false;
+	      for (let index = 0; index < text.length; index += 1) {
+	        const char = text[index];
+	        const next = text[index + 1] || "";
+	        if (lineComment) {
+	          result += char;
+	          if (char === "\\n") lineComment = false;
+	          continue;
+	        }
+	        if (blockComment) {
+	          result += char;
+	          if (char === "*" && next === "/") {
+	            result += next;
+	            index += 1;
+	            blockComment = false;
+	          }
+	          continue;
+	        }
+	        if (quote) {
+	          result += char;
+	          if (char === String.fromCharCode(92) && next) {
+	            result += next;
+	            index += 1;
+	            continue;
+	          }
+	          if (char === quote) {
+	            if (next === quote && quote !== String.fromCharCode(96)) {
+	              result += next;
+	              index += 1;
+	              continue;
+	            }
+	            quote = "";
+	          }
+	          continue;
+	        }
+	        if (char === "-" && next === "-") {
+	          result += char + next;
+	          index += 1;
+	          lineComment = true;
+	          continue;
+	        }
+	        if (char === "/" && next === "*") {
+	          result += char + next;
+	          index += 1;
+	          blockComment = true;
+	          continue;
+	        }
+	        if (char === "'" || char === '"' || char === String.fromCharCode(96)) {
+	          quote = char;
+	          result += char;
+	          continue;
+	        }
+	        if (char === ";") {
+	          result += char;
+	          let lookahead = index + 1;
+	          while (lookahead < text.length && /\\s/.test(text[lookahead])) lookahead += 1;
+	          if (lookahead < text.length) {
+	            result = result.replace(/[ \\t]+$/g, "");
+	            result += "\\n\\n";
+	            index = lookahead - 1;
+	          }
+	          continue;
+	        }
+	        result += char;
+	      }
+	      return result.replace(/\\n{3,}/g, "\\n\\n").trim();
 	    }
 
 		    function renderHighlightedConfirmSql(sql, options = {}) {
