@@ -5912,6 +5912,8 @@ export class DatabaseWorkbenchPanel {
         originalName: column.name,
         comment: column.comment || "",
         type: column.type || "",
+        enumTypeName: column.enumTypeName || "",
+        enumValues: Array.isArray(column.enumValues) ? [...column.enumValues] : [],
         notNull: !column.nullable,
         primaryKey: column.key === "PRI",
         notEmptyString: canUseNotEmptyStringCheck(column) && hasNotEmptyStringCheck(checks, column.name),
@@ -11642,8 +11644,11 @@ function buildPostgresSchemaDraftSql(originalTable: TableInfo, draft: Record<str
     const originalDefault = originalColumn.defaultValue === null || originalColumn.defaultValue === undefined ? "" : String(originalColumn.defaultValue);
     const nextDefault = asString(column.defaultValue);
     let droppedDefaultForTypeChange = false;
-    if (normalizePostgresColumnType(workingTable, currentColumnName, asString(column.type)) !== normalizePostgresColumnType(workingTable, currentColumnName, originalColumn.type)) {
-      const typePlan = resolvePostgresColumnType(workingTable, currentColumnName, asString(column.type));
+    const preferredEnumTypeName = asString(column.enumTypeName) || originalColumn.enumTypeName || "";
+    const nextTypePlan = resolvePostgresColumnType(workingTable, currentColumnName, asString(column.type), preferredEnumTypeName);
+    const originalTypePlan = resolvePostgresColumnType(workingTable, currentColumnName, originalColumn.type, originalColumn.enumTypeName || "");
+    if (normalizeQualifiedIdentifier(nextTypePlan.actualType) !== normalizeQualifiedIdentifier(originalTypePlan.actualType)) {
+      const typePlan = nextTypePlan;
       pushUniqueStatement(statements, typePlan.createTypeSql);
       if (typePlan.inlineEnum && originalDefault) {
         statements.push(`ALTER TABLE ${quoteIdentifier("postgres", workingTable)} ALTER COLUMN ${quoteIdentifier("postgres", currentColumnName)} DROP DEFAULT;`);
@@ -11651,6 +11656,9 @@ function buildPostgresSchemaDraftSql(originalTable: TableInfo, draft: Record<str
       }
       const usingSql = typePlan.inlineEnum ? ` USING ${quoteIdentifier("postgres", currentColumnName)}::text::${typePlan.typeSql}` : "";
       statements.push(`ALTER TABLE ${quoteIdentifier("postgres", workingTable)} ALTER COLUMN ${quoteIdentifier("postgres", currentColumnName)} TYPE ${typePlan.typeSql}${usingSql};`);
+    }
+    for (const statement of buildPostgresEnumValueAlterSql(nextTypePlan, originalColumn)) {
+      statements.push(statement);
     }
     if ((column.notNull === true) !== !originalColumn.nullable) {
       statements.push(`ALTER TABLE ${quoteIdentifier("postgres", workingTable)} ALTER COLUMN ${quoteIdentifier("postgres", currentColumnName)} ${column.notNull === true ? "SET" : "DROP"} NOT NULL;`);
@@ -11809,23 +11817,25 @@ function buildPostgresColumnDefinitionFromDraft(column: Record<string, unknown>,
   return sql;
 }
 
-function resolvePostgresColumnType(table: string, column: string, rawType: string): {
+function resolvePostgresColumnType(table: string, column: string, rawType: string, preferredEnumTypeName = ""): {
   typeSql: string;
   actualType: string;
   createTypeSql?: string;
   inlineEnum: boolean;
+  enumValues?: string[];
 } {
   const type = String(rawType || "").trim() || "text";
   const enumValues = parseInlineEnumType(type);
   if (!enumValues) {
     return { typeSql: type, actualType: type, inlineEnum: false };
   }
-  const enumType = buildPostgresEnumTypeName(table, column);
+  const enumType = preferredEnumTypeName || buildPostgresEnumTypeName(table, column);
   return {
     typeSql: quoteIdentifier("postgres", enumType),
     actualType: enumType,
-    createTypeSql: `CREATE TYPE ${quoteIdentifier("postgres", enumType)} AS ENUM (${enumValues.map(toSqlLiteral).join(", ")});`,
+    createTypeSql: preferredEnumTypeName ? undefined : `CREATE TYPE ${quoteIdentifier("postgres", enumType)} AS ENUM (${enumValues.map(toSqlLiteral).join(", ")});`,
     inlineEnum: true,
+    enumValues,
   };
 }
 
@@ -11841,6 +11851,20 @@ function pushUniqueStatement(statements: string[], statement: string | undefined
 
 function normalizePostgresColumnType(table: string, column: string, rawType: string): string {
   return normalizeQualifiedIdentifier(resolvePostgresColumnType(table, column, rawType).actualType);
+}
+
+function buildPostgresEnumValueAlterSql(typePlan: ReturnType<typeof resolvePostgresColumnType>, originalColumn: TableInfo["columns"][number]): string[] {
+  if (!typePlan.inlineEnum || !typePlan.enumValues || !originalColumn.enumValues?.length) {
+    return [];
+  }
+  const originalValues = originalColumn.enumValues.map(String);
+  const missingValues = originalValues.filter((value) => !typePlan.enumValues!.includes(value));
+  if (missingValues.length) {
+    throw new Error("PostgreSQL 暂不支持通过 enum(...) 删除已有枚举值，请只追加新枚举值，或手动迁移到新的枚举类型。");
+  }
+  return typePlan.enumValues
+    .filter((value) => !originalValues.includes(value))
+    .map((value) => `ALTER TYPE ${quoteIdentifier("postgres", typePlan.actualType)} ADD VALUE IF NOT EXISTS ${toSqlLiteral(value)};`);
 }
 
 function normalizeQualifiedIdentifier(value: string): string {

@@ -140,4 +140,56 @@ assert.ok(editSql.includes("ALTER TABLE \"devices\" ALTER COLUMN \"status\" DROP
 assert.ok(editSql.includes("ALTER TABLE \"devices\" ALTER COLUMN \"status\" TYPE \"devices_status_enum\" USING \"status\"::text::\"devices_status_enum\";"), "修改字段应显式转换到生成的 enum 类型");
 assert.ok(editSql.includes("ALTER TABLE \"devices\" ALTER COLUMN \"status\" SET DEFAULT 'active';"), "修改 enum 类型后应恢复默认值");
 
+const existingEnumWorkbench = createWorkbench("devices");
+existingEnumWorkbench.schema = [{
+  name: "devices",
+  columns: [{
+    name: "status",
+    type: "enum('active','disabled')",
+    enumTypeName: "devices_status_enum",
+    enumValues: ["active", "disabled"],
+    nullable: false,
+    defaultValue: "active",
+    comment: "",
+  }],
+  indexes: [],
+  foreignKeys: [],
+  checks: [],
+  triggers: [],
+}];
+const unchangedEnumDraft = {
+  mode: "editTable",
+  table: { name: "devices", comment: "" },
+  columns: [{
+    name: "status",
+    originalName: "status",
+    type: "enum('active','disabled')",
+    enumTypeName: "devices_status_enum",
+    enumValues: ["active", "disabled"],
+    notNull: true,
+    defaultValue: "active",
+    comment: "",
+  }],
+  keys: [],
+  indexes: [],
+  foreignKeys: [],
+  checks: [],
+  triggers: [],
+  deletedItems: { columns: [], keys: [], foreignKeys: [], indexes: [], checks: [], triggers: [] },
+  columnOrderMoves: [],
+};
+assert.equal(existingEnumWorkbench.buildSchemaDraftStatements(unchangedEnumDraft).statements.length, 0, "已有 enum 字段用 enum(...) 展示时不应误判为类型修改");
+
+const addEnumValueDraft = {
+  ...unchangedEnumDraft,
+  columns: [{
+    ...unchangedEnumDraft.columns[0],
+    type: "enum('active','disabled','lost')",
+  }],
+};
+const addEnumValueSql = existingEnumWorkbench.buildSchemaDraftStatements(addEnumValueDraft).statements.join("\n");
+assert.ok(addEnumValueSql.includes("ALTER TYPE \"devices_status_enum\" ADD VALUE IF NOT EXISTS 'lost';"), "已有 enum 字段追加值时应生成 ALTER TYPE ADD VALUE");
+assert.ok(!addEnumValueSql.includes("CREATE TYPE \"devices_status_enum\""), "已有 enum 字段追加值时不应重复 CREATE TYPE");
+assert.ok(!addEnumValueSql.includes("ALTER COLUMN \"status\" TYPE"), "已有 enum 字段追加值时不应误改字段类型");
+
 console.log("ok - Workbench PostgreSQL enum 字段 SQL 生成");

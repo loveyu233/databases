@@ -51,6 +51,7 @@ export type TableColumn = {
   charset?: string;
   collation?: string;
   enumValues?: string[];
+  enumTypeName?: string;
 };
 
 export type TableSummary = {
