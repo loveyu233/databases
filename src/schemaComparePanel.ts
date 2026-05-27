@@ -362,10 +362,9 @@ export class SchemaComparePanel {
       return;
     }
 
-    for (let index = 0; index < statements.length; index += 1) {
-      this.post({ type: "loading", message: `正在执行同步 SQL：${directionText}（${index + 1}/${statements.length}）...` });
-      await this.databaseService.query(connection, database, statements[index], 1);
-    }
+    await this.databaseService.queryStatements(connection, database, statements, 1, (_statement, index) => {
+      this.post({ type: "loading", message: `正在事务中执行同步 SQL：${directionText}（${index + 1}/${statements.length}）...` });
+    });
     this.post({ type: "executeResult", ok: true, message: `执行完成：${directionText}，共 ${statements.length} 条 SQL。建议重新对比确认结果。` });
   }
 

@@ -94,16 +94,40 @@ export class DatabaseService {
     database: string,
     statements: string[],
     maxRows: number,
-    beforeEach?: (statement: string) => void
+    beforeEach?: (statement: string, index: number) => void
   ): Promise<QueryResult[]> {
     const executableStatements = statements.map((statement) => statement.trim()).filter(Boolean);
     return withClient(connection, database, async (client) => {
+      const transactionalClient = executableStatements.length > 1 && supportsClientTransactions(client) ? client : undefined;
       const results: QueryResult[] = [];
-      for (const statement of executableStatements) {
-        beforeEach?.(statement);
-        results.push(await client.query(statement, maxRows));
+      let transactionStarted = false;
+      let activeIndex = -1;
+      try {
+        if (transactionalClient) {
+          await transactionalClient.beginTransaction();
+          transactionStarted = true;
+        }
+        for (let index = 0; index < executableStatements.length; index += 1) {
+          const statement = executableStatements[index];
+          activeIndex = index;
+          beforeEach?.(statement, index);
+          results.push(await client.query(statement, maxRows));
+        }
+        if (transactionStarted) {
+          await transactionalClient?.commit();
+          transactionStarted = false;
+        }
+        return results;
+      } catch (error) {
+        if (transactionStarted) {
+          try {
+            await transactionalClient?.rollback();
+          } catch (rollbackError) {
+            throw new QueryStatementsError(error, activeIndex, executableStatements[activeIndex] || "", results, rollbackError);
+          }
+        }
+        throw new QueryStatementsError(error, activeIndex, executableStatements[activeIndex] || "", results);
       }
-      return results;
     });
   }
 
@@ -172,8 +196,38 @@ interface DbClient {
   loadSchema(): Promise<TableInfo[]>;
   getCreateTableSql(table: string): Promise<string>;
   query(sql: string, maxRows: number): Promise<QueryResult>;
+  beginTransaction?(): Promise<void>;
+  commit?(): Promise<void>;
+  rollback?(): Promise<void>;
   quoteIdentifier(identifier: string): string;
   dispose(): Promise<void>;
+}
+
+class QueryStatementsError extends Error {
+  readonly failedIndex: number;
+  readonly statement: string;
+  readonly results: QueryResult[];
+  readonly rollbackError?: unknown;
+
+  constructor(error: unknown, failedIndex: number, statement: string, results: QueryResult[], rollbackError?: unknown) {
+    super(getClientErrorMessage(error));
+    this.name = "QueryStatementsError";
+    this.cause = error;
+    this.failedIndex = failedIndex;
+    this.statement = statement;
+    this.results = results;
+    this.rollbackError = rollbackError;
+  }
+}
+
+function supportsClientTransactions(client: DbClient): client is DbClient & Required<Pick<DbClient, "beginTransaction" | "commit" | "rollback">> {
+  return typeof client.beginTransaction === "function"
+    && typeof client.commit === "function"
+    && typeof client.rollback === "function";
+}
+
+function getClientErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 async function withClient<T>(
@@ -572,6 +626,18 @@ class MySqlClient implements DbClient {
     }
   }
 
+  async beginTransaction(): Promise<void> {
+    await this.connection.query("START TRANSACTION");
+  }
+
+  async commit(): Promise<void> {
+    await this.connection.query("COMMIT");
+  }
+
+  async rollback(): Promise<void> {
+    await this.connection.query("ROLLBACK");
+  }
+
   quoteIdentifier(identifier: string): string {
     return `\`${identifier.replace(/`/g, "``")}\``;
   }
@@ -947,6 +1013,18 @@ class PostgresClient implements DbClient {
       command: result.command,
       elapsedMs,
     };
+  }
+
+  async beginTransaction(): Promise<void> {
+    await this.client.query("BEGIN");
+  }
+
+  async commit(): Promise<void> {
+    await this.client.query("COMMIT");
+  }
+
+  async rollback(): Promise<void> {
+    await this.client.query("ROLLBACK");
   }
 
   quoteIdentifier(identifier: string): string {

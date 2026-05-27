@@ -704,53 +704,71 @@ export class DatabaseWorkbenchPanel {
   private async runSqlStatements(connection: DbConnectionWithSecret, statements: string[], limit?: number): Promise<void> {
     const queryConfig = getQueryConfig();
     const safeLimit = clampLimit(limit ?? queryConfig.defaultLimit);
+    const plans = statements.map((statement) => buildSqlPaginationPlan(this.connection.type, statement, safeLimit));
     const rows: Record<string, unknown>[] = [];
-    const executedSql: string[] = [];
+    const executableSqlList = plans.map((plan) => plan.executableSql);
+    const logIds: Array<string | undefined> = [];
 
-    for (let index = 0; index < statements.length; index += 1) {
-      const statement = statements[index];
-      const plan = buildSqlPaginationPlan(this.connection.type, statement, safeLimit);
-      this.lastQueryErrorSql = plan.executableSql;
-      this.panel.webview.postMessage({ type: "loading", area: "query", message: `正在执行第 ${index + 1} / ${statements.length} 条 SQL...` });
-      let logId: string | undefined;
+    for (const plan of plans) {
       if (!plan.isSelect) {
-        logId = await this.createPendingOperationLog({
+        logIds.push(await this.createPendingOperationLog({
           connection: this.connection,
           database: this.database,
           table: this.selectedTable ?? "",
           operationType: "sql",
           sql: plan.executableSql,
-        });
+        }));
+      } else {
+        logIds.push(undefined);
       }
-      try {
-        const result = await this.databaseService.query(connection, this.database, plan.executableSql, plan.isSelect ? -1 : queryConfig.maxRows);
-        await this.operationLogService.completeLog(logId, "success");
-        executedSql.push(plan.executableSql);
+    }
+
+    let activeIndex = 0;
+    try {
+      const results = await this.databaseService.queryStatements(connection, this.database, executableSqlList, -1, (statement, index) => {
+        activeIndex = index;
+        this.lastQueryErrorSql = statement;
+        this.panel.webview.postMessage({ type: "loading", area: "query", message: `正在事务中执行第 ${index + 1} / ${plans.length} 条 SQL...` });
+      });
+
+      for (let index = 0; index < plans.length; index += 1) {
+        const plan = plans[index];
+        const result = results[index];
+        await this.operationLogService.completeLog(logIds[index], "success");
         rows.push({
           index: index + 1,
-          title: getSqlStatementTitle(statement) || `SQL ${index + 1}`,
+          title: getSqlStatementTitle(statements[index]) || `SQL ${index + 1}`,
           type: plan.isSelect ? "查询" : "修改",
-          affectedRows: result.affectedRows ?? result.rowCount ?? 0,
+          affectedRows: result?.affectedRows ?? result?.rowCount ?? 0,
           status: "成功",
         });
-      } catch (error) {
-        await this.completeFailedOperationLog(logId, error, plan.executableSql);
+      }
+    } catch (error) {
+      const failedIndex = getStatementErrorIndex(error, activeIndex);
+      const partialResults = getStatementPartialResults(error);
+      const errorMessage = `事务执行失败，已请求回滚：${getErrorMessage(error)}`;
+      for (let index = 0; index < plans.length; index += 1) {
+        const plan = plans[index];
+        const result = partialResults[index];
+        if (logIds[index]) {
+          await this.operationLogService.completeLog(logIds[index], "failed", { errorMessage });
+        }
         rows.push({
           index: index + 1,
-          title: getSqlStatementTitle(statement) || `SQL ${index + 1}`,
+          title: getSqlStatementTitle(statements[index]) || `SQL ${index + 1}`,
           type: plan.isSelect ? "查询" : "修改",
-          affectedRows: 0,
-          status: `失败：${getErrorMessage(error)}`,
+          affectedRows: result?.affectedRows ?? result?.rowCount ?? 0,
+          status: index < failedIndex ? "已请求回滚" : index === failedIndex ? `失败：${getErrorMessage(error)}` : "未执行",
         });
-        const summary: QueryResult = {
-          columns: ["index", "title", "type", "affectedRows", "status"],
-          rows,
-          rowCount: rows.length,
-          elapsedMs: 0,
-        };
-        this.panel.webview.postMessage({ type: "result", sql: executedSql.concat(plan.executableSql).join("\n"), result: summary });
-        throw error;
       }
+      const summary: QueryResult = {
+        columns: ["index", "title", "type", "affectedRows", "status"],
+        rows,
+        rowCount: rows.length,
+        elapsedMs: 0,
+      };
+      this.panel.webview.postMessage({ type: "result", sql: executableSqlList.join("\n"), result: summary });
+      throw error;
     }
 
     const summary: QueryResult = {
@@ -759,7 +777,7 @@ export class DatabaseWorkbenchPanel {
       rowCount: rows.length,
       elapsedMs: 0,
     };
-    this.panel.webview.postMessage({ type: "result", sql: executedSql.join("\n"), result: summary });
+    this.panel.webview.postMessage({ type: "result", sql: executableSqlList.join("\n"), result: summary });
   }
 
   private async pickSqlStatementToRun(sql: string): Promise<SqlStatementSelection | undefined> {
@@ -772,8 +790,8 @@ export class DatabaseWorkbenchPanel {
       [
         {
           label: "全部执行",
-          description: `${statements.length} 条 SQL 将按顺序执行`,
-          detail: "适合执行一组建表、改表或批量初始化 SQL。执行中遇到错误会停止。",
+          description: `${statements.length} 条 SQL 将在同一事务中按顺序执行`,
+          detail: "适合执行一组建表、改表或批量初始化 SQL。执行中遇到错误会请求回滚整组 SQL。",
           statements,
           mode: "all" as const,
         },
@@ -1230,10 +1248,9 @@ export class DatabaseWorkbenchPanel {
       })),
     });
     try {
-      for (const statement of statements) {
+      await this.databaseService.queryStatements(connection, this.database, statements, queryConfig.maxRows, (statement) => {
         this.lastQueryErrorSql = statement;
-        await this.databaseService.query(connection, this.database, statement, queryConfig.maxRows);
-      }
+      });
       const afterRows = await this.queryRowsByPrimaryKeys(connection, table, primaryKeys, primaryValuesList);
       await this.operationLogService.completeLog(logId, "success", {
         snapshots: primaryValuesList.map((primaryValues) => ({
@@ -1714,10 +1731,9 @@ export class DatabaseWorkbenchPanel {
       rollbackOfLogId: log.id,
     });
     try {
-      for (const statement of rollback.statements) {
+      await this.databaseService.queryStatements(connection, this.database, rollback.statements, queryConfig.maxRows, (statement) => {
         this.lastQueryErrorSql = statement;
-        await this.databaseService.query(connection, this.database, statement, queryConfig.maxRows);
-      }
+      });
       await this.operationLogService.completeLog(rollbackLogId, "success");
     } catch (error) {
       await this.completeFailedOperationLog(rollbackLogId, error, sqlPreview);
@@ -12086,6 +12102,16 @@ function normalizeComparableValue(value: unknown): string {
 
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function getStatementErrorIndex(error: unknown, fallbackIndex: number): number {
+  const value = Number((error as { failedIndex?: unknown })?.failedIndex);
+  return Number.isInteger(value) && value >= 0 ? value : Math.max(0, fallbackIndex);
+}
+
+function getStatementPartialResults(error: unknown): QueryResult[] {
+  const results = (error as { results?: unknown })?.results;
+  return Array.isArray(results) ? results as QueryResult[] : [];
 }
 
 function buildSchemaDraftSql(originalTable: TableInfo, draft: Record<string, unknown>, type: DbConnectionConfig["type"] = "mysql"): string[] {
