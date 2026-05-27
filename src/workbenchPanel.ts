@@ -3385,6 +3385,24 @@ export class DatabaseWorkbenchPanel {
       opacity: .92;
       cursor: text;
     }
+    .schema-code-preview {
+      min-height: 130px;
+      max-height: min(420px, 46vh);
+      margin: 0;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      box-sizing: border-box;
+      overflow: auto;
+      color: var(--fg);
+      background: rgba(127,127,127,.05);
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      font-family: var(--mono);
+      font-size: 12px;
+      line-height: 1.55;
+      tab-size: 2;
+    }
     .schema-checks { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; }
     .schema-checks label { display: inline-flex; align-items: center; gap: 7px; margin: 0; color: var(--fg); }
     .schema-table {
@@ -5116,10 +5134,10 @@ export class DatabaseWorkbenchPanel {
 	      return [
 		        "ADD", "AFTER", "ALL", "ALTER", "AND", "ANY", "ARRAY", "AS", "ASC", "BEGIN", "BETWEEN", "BIGSERIAL", "BY", "CASCADE", "CASE", "CAST", "CHANGE",
 		        "CHECK", "COLLATE", "COLUMN", "COMMENT", "COMMIT", "CONFLICT", "CONSTRAINT", "CREATE", "CROSS", "CURRENT_DATE", "CURRENT_TIMESTAMP", "DATABASE",
-		        "DEFAULT", "DELETE", "DESC", "DISTINCT", "DO", "DROP", "ELSE", "END", "ENGINE", "EXISTS", "EXPIRE", "FALSE", "FOREIGN", "FROM", "FULL", "GROUP",
-		        "HAVING", "IF", "ILIKE", "IN", "INDEX", "INNER", "INSERT", "INTERVAL", "INTO", "IS", "JOIN", "JSONB", "KEY", "LEFT", "LIKE", "LIMIT", "MODIFY",
+		        "DEFAULT", "DELETE", "DESC", "DISTINCT", "DO", "DROP", "ELSE", "END", "ENGINE", "ENUM", "EXCEPTION", "EXECUTE", "EXISTS", "EXPIRE", "FALSE", "FOREACH", "FOREIGN", "FROM", "FULL", "FUNCTION", "GROUP",
+		        "HAVING", "IF", "ILIKE", "IN", "INDEX", "INNER", "INSERT", "INTERVAL", "INTO", "IS", "JOIN", "JSONB", "KEY", "LANGUAGE", "LEFT", "LIKE", "LIMIT", "LOOP", "MODIFY",
 		        "NOT", "NOTHING", "NULL", "OFFSET", "ON", "OR", "ORDER", "OUTER", "OVER", "PARTITION", "PERSIST", "PRIMARY", "RECURSIVE", "REFERENCES", "RENAME",
-		        "RETURNING", "RIGHT", "ROLLBACK", "SELECT", "SERIAL", "SET", "START", "TABLE", "THEN", "TO", "TRANSACTION", "TRUE", "TRUNCATE", "UNION", "UNIQUE", "UNLINK", "UPDATE", "USING",
+		        "REPLACE", "RETURN", "RETURNING", "RETURNS", "RIGHT", "ROLLBACK", "SELECT", "SERIAL", "SET", "START", "TABLE", "THEN", "TO", "TRANSACTION", "TRIGGER", "TRUE", "TRUNCATE", "TYPE", "UNION", "UNIQUE", "UNLINK", "UPDATE", "USING",
 		        "VALUES", "WHEN", "WHERE", "WINDOW", "WITH"
 	      ].includes(upper);
 	    }
@@ -7734,7 +7752,7 @@ export class DatabaseWorkbenchPanel {
         + '<div class="schema-form">'
         + schemaInputRow("名称", "customFunctions." + index + ".name", item.name, "", true)
         + schemaInputRow("语言", "customFunctions." + index + ".language", item.language || "", "", true)
-        + schemaTextareaRow("方法内容", "customFunctions." + index + ".definition", item.definition || "", "", true)
+        + schemaSqlPreviewRow("方法内容", item.definition || "")
         + '</div>';
     }
 
@@ -7755,8 +7773,8 @@ export class DatabaseWorkbenchPanel {
         + '<div class="schema-form">'
         + schemaInputRow("名称", "customTypes." + index + ".name", item.name, "", true)
         + schemaInputRow("类型", "customTypes." + index + ".kind", item.kind || "", "", true)
-        + schemaTextareaRow("值", "customTypes." + index + ".values", (item.values || []).join("\\n"), "", true)
-        + schemaTextareaRow("定义", "customTypes." + index + ".definition", item.definition || "", "", true)
+        + schemaSqlPreviewRow("值", item.values || [], { enumValues: true })
+        + schemaSqlPreviewRow("定义", item.definition || "")
         + '</div>';
     }
 
@@ -7858,6 +7876,132 @@ export class DatabaseWorkbenchPanel {
 
     function schemaTextareaRow(label, path, value, placeholder = "", readonly = false) {
       return '<div class="schema-form-row schema-form-row-top"><label>' + escapeHtml(label) + '</label><textarea class="field schema-code-field" data-schema-path="' + path + '" spellcheck="false" placeholder="' + escapeHtml(placeholder) + '"' + (readonly ? " readonly" : "") + '>' + escapeHtml(value || "") + '</textarea></div>';
+    }
+
+    function schemaSqlPreviewRow(label, value, options = {}) {
+      const formatted = options.enumValues ? formatSchemaEnumValues(value) : formatSchemaObjectSql(value);
+      const html = formatted ? renderHighlightedConfirmSql(formatted) : '<span class="schema-muted">暂无内容</span>';
+      return '<div class="schema-form-row schema-form-row-top"><label>' + escapeHtml(label) + '</label><pre class="schema-code-preview sql-highlight-code" tabindex="0">' + html + '</pre></div>';
+    }
+
+    function formatSchemaEnumValues(value) {
+      const values = Array.isArray(value)
+        ? value
+        : String(value || "").split(/\\r?\\n|,/).map((item) => item.trim()).filter(Boolean);
+      return values.map((item) => formatInlineEnumValue(unquoteSqlLiteral(String(item).trim()))).join(",\\n");
+    }
+
+    function formatSchemaObjectSql(value) {
+      const text = String(value || "").replace(/\\r\\n?/g, "\\n").trim();
+      if (!text) return "";
+      const enumSql = formatSchemaCreateTypeEnumSql(text);
+      if (enumSql) return enumSql;
+      const functionSql = formatSchemaDollarQuotedSql(text);
+      if (functionSql) return functionSql;
+      return insertBlankLinesBetweenSqlStatements(formatSqlText(text));
+    }
+
+    function formatSchemaCreateTypeEnumSql(sql) {
+      const match = String(sql || "").trim().match(/^(CREATE\\s+TYPE\\s+[\\s\\S]+?\\s+AS\\s+ENUM)\\s*\\(([\\s\\S]*)\\)\\s*;?$/i);
+      if (!match) return "";
+      const header = normalizeSchemaSqlSpace(match[1]);
+      const values = parseSqlStringList(match[2]);
+      const formattedValues = values.length
+        ? values.map((item) => "  " + formatInlineEnumValue(item)).join(",\\n")
+        : "  " + match[2].trim();
+      return header + " (\\n" + formattedValues + "\\n);";
+    }
+
+    function formatSchemaDollarQuotedSql(sql) {
+      const text = String(sql || "").trim();
+      const openMatch = text.match(/\\$[A-Za-z0-9_]*\\$/);
+      if (!openMatch || openMatch.index === undefined) return "";
+      const tag = openMatch[0];
+      const openStart = openMatch.index;
+      const bodyStart = openStart + tag.length;
+      const closeStart = text.indexOf(tag, bodyStart);
+      if (closeStart < 0) return "";
+      const header = normalizeSchemaFunctionHeader(text.slice(0, openStart));
+      const body = formatSchemaFunctionBody(text.slice(bodyStart, closeStart));
+      const footer = normalizeSchemaSqlSpace(text.slice(closeStart + tag.length));
+      const headerWithTag = header.endsWith(" AS") ? header + " " + tag : header + "\\n" + tag;
+      return [headerWithTag, body, tag + (footer ? "\\n" + footer : "")].filter(Boolean).join("\\n");
+    }
+
+    function normalizeSchemaFunctionHeader(value) {
+      return normalizeSchemaSqlSpace(value)
+        .replace(/\\s+(RETURNS)\\s+/i, "\\n$1 ")
+        .replace(/\\s+(LANGUAGE)\\s+/i, "\\n$1 ")
+        .replace(/\\s+(SECURITY\\s+(?:DEFINER|INVOKER))\\b/i, "\\n$1")
+        .replace(/\\s+(IMMUTABLE|STABLE|VOLATILE|STRICT)\\b/gi, "\\n$1");
+    }
+
+    function formatSchemaFunctionBody(value) {
+      const body = String(value || "").replace(/\\r\\n?/g, "\\n").trim();
+      if (!body) return "";
+      const rawLines = body.includes("\\n") ? body.split("\\n") : splitSchemaSqlBodyStatements(body);
+      const lines = [];
+      let depth = 0;
+      rawLines.flatMap(expandSchemaFunctionBodyLine).forEach((line) => {
+        const upper = line.toUpperCase();
+        if (/^(END\\b|ELSE\\b|ELSIF\\b|EXCEPTION\\b|WHEN\\b)/.test(upper)) depth = Math.max(0, depth - 1);
+        lines.push("  ".repeat(depth) + line);
+        if (/^(BEGIN\\b|IF\\b|LOOP\\b|CASE\\b)/.test(upper) && !/^END\\b/.test(upper)) depth += 1;
+        if (/^(ELSE\\b|ELSIF\\b|EXCEPTION\\b|WHEN\\b)/.test(upper)) depth += 1;
+      });
+      return lines.join("\\n");
+    }
+
+    function expandSchemaFunctionBodyLine(value) {
+      const line = String(value || "").trim();
+      if (!line) return [];
+      const beginMatch = line.match(/^BEGIN\\b\\s+([\\s\\S]+)$/i);
+      if (beginMatch) return ["BEGIN", beginMatch[1].trim()].filter(Boolean);
+      return [line];
+    }
+
+    function splitSchemaSqlBodyStatements(value) {
+      const lines = [];
+      let current = "";
+      let quote = "";
+      const text = String(value || "");
+      for (let index = 0; index < text.length; index += 1) {
+        const char = text[index];
+        const next = text[index + 1] || "";
+        current += char;
+        if (quote) {
+          if (char === String.fromCharCode(92) && next) {
+            current += next;
+            index += 1;
+            continue;
+          }
+          if (char === quote) {
+            if (next === quote && quote !== String.fromCharCode(96)) {
+              current += next;
+              index += 1;
+              continue;
+            }
+            quote = "";
+          }
+          continue;
+        }
+        if (char === "'" || char === '"' || char === String.fromCharCode(96)) {
+          quote = char;
+          continue;
+        }
+        if (char === ";") {
+          const statement = current.trim();
+          if (statement) lines.push(statement);
+          current = "";
+        }
+      }
+      const tail = current.trim();
+      if (tail) lines.push(tail);
+      return lines;
+    }
+
+    function normalizeSchemaSqlSpace(value) {
+      return String(value || "").replace(/\\s+/g, " ").trim();
     }
 
     function postgresSchemaInputRow(editor) {
