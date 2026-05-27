@@ -6453,7 +6453,7 @@ export class DatabaseWorkbenchPanel {
             autoIncrement: false,
             autoIncrementValue: "",
             defaultValue: "CURRENT_TIMESTAMP",
-            onUpdate: state.connectionType === "postgres" ? "" : "CURRENT_TIMESTAMP",
+            onUpdate: "CURRENT_TIMESTAMP",
             key: "",
           },
           {
@@ -7501,7 +7501,7 @@ export class DatabaseWorkbenchPanel {
         + '<input class="field" data-schema-path="columns.' + index + '.autoIncrementValue" placeholder="自增值" value="' + escapeHtml(column.autoIncrementValue) + '" />'
         + '</div></div>'
         + schemaInputRow("默认值", "columns." + index + ".defaultValue", column.defaultValue, "例如 CURRENT_TIMESTAMP")
-        + schemaInputRow("更新时", "columns." + index + ".onUpdate", column.onUpdate, "例如 CURRENT_TIMESTAMP")
+        + schemaInputRow("更新时", "columns." + index + ".onUpdate", column.onUpdate, state.connectionType === "postgres" ? "例如 CURRENT_TIMESTAMP，PG 会生成 BEFORE UPDATE 触发器" : "例如 CURRENT_TIMESTAMP")
         + '</div>';
       bindSchemaInputs();
     }
@@ -12618,6 +12618,7 @@ function buildPostgresSchemaDraftSql(originalTable: TableInfo, draft: Record<str
       if (comment) {
         statements.push(`COMMENT ON COLUMN ${quoteIdentifier("postgres", workingTable)}.${quoteIdentifier("postgres", asString(column.name))} IS ${toSqlLiteral(comment)};`);
       }
+      pushPostgresColumnOnUpdateStatements(statements, workingTable, asString(column.name), asString(column.onUpdate));
       continue;
     }
 
@@ -12681,6 +12682,7 @@ function buildPostgresSchemaDraftSql(originalTable: TableInfo, draft: Record<str
       const comment = asString(column.comment);
       statements.push(`COMMENT ON COLUMN ${quoteIdentifier("postgres", workingTable)}.${quoteIdentifier("postgres", currentColumnName)} IS ${comment ? toSqlLiteral(comment) : "NULL"};`);
     }
+    pushPostgresColumnOnUpdateStatements(statements, workingTable, currentColumnName, asString(column.onUpdate));
   }
 
   if (primaryChanged && nextPrimaryKeys.length) {
@@ -12786,6 +12788,9 @@ function buildPostgresCreateTableDraftSql(draft: Record<string, unknown>): strin
     if (!statement) continue;
     statements.push(`CREATE TRIGGER ${quoteIdentifier("postgres", asString(triggerDraft.name) || "trg_new")} ${asString(triggerDraft.timing) || "BEFORE"} ${asString(triggerDraft.event) || "INSERT"} ON ${quoteIdentifier("postgres", tableName)} FOR EACH ROW ${statement};`);
   }
+  for (const column of columns) {
+    pushPostgresColumnOnUpdateStatements(statements, tableName, asString(column.name), asString(column.onUpdate));
+  }
   return statements;
 }
 
@@ -12837,6 +12842,53 @@ function pushUniqueStatement(statements: string[], statement: string | undefined
   if (statement && !statements.includes(statement)) {
     statements.push(statement);
   }
+}
+
+function pushPostgresColumnOnUpdateStatements(statements: string[], table: string, column: string, rawExpression: string): void {
+  const expression = stripTrailingSemicolon(rawExpression).trim();
+  if (!table || !column || !expression) {
+    return;
+  }
+  const plan = buildPostgresColumnOnUpdatePlan(table, column);
+  const body = [
+    "BEGIN",
+    `  NEW.${quoteIdentifier("postgres", column)} := ${expression};`,
+    "  RETURN NEW;",
+    "END;",
+  ].join("\n");
+  const quotedBody = toPostgresDollarQuotedBody(body);
+  pushUniqueStatement(
+    statements,
+    `CREATE OR REPLACE FUNCTION ${quoteIdentifier("postgres", plan.functionName)}()\nRETURNS trigger AS ${quotedBody}\nLANGUAGE plpgsql;`
+  );
+  statements.push(`DROP TRIGGER IF EXISTS ${quoteIdentifier("postgres", plan.triggerName)} ON ${quoteIdentifier("postgres", table)};`);
+  statements.push(`CREATE TRIGGER ${quoteIdentifier("postgres", plan.triggerName)} BEFORE UPDATE ON ${quoteIdentifier("postgres", table)} FOR EACH ROW EXECUTE FUNCTION ${quoteIdentifier("postgres", plan.functionName)}();`);
+}
+
+function buildPostgresColumnOnUpdatePlan(table: string, column: string): { functionName: string; triggerName: string } {
+  const parts = splitPostgresQualifiedName(table);
+  const tableName = parts.pop() || "table";
+  const schema = parts.join(".");
+  const tablePart = toPostgresIdentifierPart(tableName);
+  const columnPart = toPostgresIdentifierPart(column);
+  const functionBase = shortenPostgresIdentifier(`dbw_${tablePart}_${columnPart}_on_update_fn`);
+  const triggerName = shortenPostgresIdentifier(`dbw_${tablePart}_${columnPart}_on_update_trg`);
+  return {
+    functionName: schema ? `${schema}.${functionBase}` : functionBase,
+    triggerName,
+  };
+}
+
+function toPostgresDollarQuotedBody(body: string): string {
+  let tag = "dbw";
+  let delimiter = `$${tag}$`;
+  let index = 0;
+  while (body.includes(delimiter)) {
+    index += 1;
+    tag = `dbw_${index}`;
+    delimiter = `$${tag}$`;
+  }
+  return `${delimiter}\n${body}\n${delimiter}`;
 }
 
 function withPostgresDdlRole(statements: string[], draft: Record<string, unknown>): string[] {

@@ -133,6 +133,18 @@ assert.ok(schemaCreateSql.includes("CREATE TYPE \"type_lab\".\"devices_status_en
 assert.ok(schemaCreateSql.includes("CREATE TABLE \"type_lab\".\"devices\""), "指定 schema 建表时应生成 schema 限定表名");
 assert.ok(schemaCreateSql.includes("\"status\" \"type_lab\".\"devices_status_enum\" NOT NULL DEFAULT 'active'"), "指定 schema 建表时字段应引用同 schema 的 enum 类型");
 
+const onUpdateCreateSql = createWorkbench().buildSchemaDraftStatements({
+  ...schemaCreateDraft,
+  columns: [
+    ...schemaCreateDraft.columns,
+    { name: "updated_at", type: "timestamp", notNull: true, defaultValue: "CURRENT_TIMESTAMP", onUpdate: "CURRENT_TIMESTAMP" },
+  ],
+}).statements.join("\n");
+assert.ok(onUpdateCreateSql.includes("CREATE OR REPLACE FUNCTION \"type_lab\".\"dbw_devices_updated_at_on_update_fn\"()"), "PG 更新时字段应在同 schema 生成触发器函数");
+assert.ok(onUpdateCreateSql.includes("NEW.\"updated_at\" := CURRENT_TIMESTAMP;"), "PG 更新时字段函数应写入指定表达式");
+assert.ok(onUpdateCreateSql.includes("DROP TRIGGER IF EXISTS \"dbw_devices_updated_at_on_update_trg\" ON \"type_lab\".\"devices\";"), "PG 更新时字段应先清理同名触发器避免重复创建");
+assert.ok(onUpdateCreateSql.includes("CREATE TRIGGER \"dbw_devices_updated_at_on_update_trg\" BEFORE UPDATE ON \"type_lab\".\"devices\" FOR EACH ROW EXECUTE FUNCTION \"type_lab\".\"dbw_devices_updated_at_on_update_fn\"();"), "PG 更新时字段应生成 BEFORE UPDATE 触发器");
+
 const roleCreateStatements = createWorkbench().buildSchemaDraftStatements({
   ...createDraft,
   ddlRole: "xtj_smart_pen_owner",
@@ -176,6 +188,30 @@ assert.ok(editSql.includes("CREATE TYPE \"devices_status_enum\" AS ENUM ('active
 assert.ok(editSql.includes("ALTER TABLE \"devices\" ALTER COLUMN \"status\" DROP DEFAULT;"), "修改 enum 类型前应先移除默认值");
 assert.ok(editSql.includes("ALTER TABLE \"devices\" ALTER COLUMN \"status\" TYPE \"devices_status_enum\" USING \"status\"::text::\"devices_status_enum\";"), "修改字段应显式转换到生成的 enum 类型");
 assert.ok(editSql.includes("ALTER TABLE \"devices\" ALTER COLUMN \"status\" SET DEFAULT 'active';"), "修改 enum 类型后应恢复默认值");
+
+const editOnUpdateWorkbench = createWorkbench("devices");
+editOnUpdateWorkbench.schema = [{
+  name: "devices",
+  columns: [{ name: "updated_at", type: "timestamp", nullable: false, defaultValue: "CURRENT_TIMESTAMP", comment: "" }],
+  indexes: [],
+  foreignKeys: [],
+  checks: [],
+  triggers: [],
+}];
+const editOnUpdateSql = editOnUpdateWorkbench.buildSchemaDraftStatements({
+  mode: "editTable",
+  table: { name: "devices", comment: "" },
+  columns: [{ name: "updated_at", originalName: "updated_at", type: "timestamp", notNull: true, defaultValue: "CURRENT_TIMESTAMP", onUpdate: "CURRENT_TIMESTAMP", comment: "" }],
+  keys: [],
+  indexes: [],
+  foreignKeys: [],
+  checks: [],
+  triggers: [],
+  deletedItems: { columns: [], keys: [], foreignKeys: [], indexes: [], checks: [], triggers: [] },
+  columnOrderMoves: [],
+}).statements.join("\n");
+assert.ok(editOnUpdateSql.includes("CREATE OR REPLACE FUNCTION \"dbw_devices_updated_at_on_update_fn\"()"), "PG 修改表结构时更新时字段应生成触发器函数");
+assert.ok(editOnUpdateSql.includes("CREATE TRIGGER \"dbw_devices_updated_at_on_update_trg\" BEFORE UPDATE ON \"devices\" FOR EACH ROW EXECUTE FUNCTION \"dbw_devices_updated_at_on_update_fn\"();"), "PG 修改表结构时更新时字段应生成触发器");
 
 const existingEnumWorkbench = createWorkbench("devices");
 existingEnumWorkbench.schema = [{
