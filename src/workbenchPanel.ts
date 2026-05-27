@@ -2130,6 +2130,15 @@ export class DatabaseWorkbenchPanel {
       padding: 8px 10px;
       outline: none;
     }
+    .field:-webkit-autofill,
+    .field:-webkit-autofill:hover,
+    .field:-webkit-autofill:focus,
+    .field:-webkit-autofill:active {
+      -webkit-text-fill-color: var(--fg);
+      caret-color: var(--fg);
+      box-shadow: 0 0 0 1000px var(--input) inset;
+      transition: background-color 9999s ease-out;
+    }
     input[type="number"] {
       appearance: textfield;
       -moz-appearance: textfield;
