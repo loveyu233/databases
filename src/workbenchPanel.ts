@@ -3416,6 +3416,20 @@ export class DatabaseWorkbenchPanel {
     .ai-create-table-subtitle { margin-top: 4px; color: var(--muted); font-size: 12px; }
     .ai-create-table-body { padding: 14px 16px; display: grid; gap: 10px; }
     .ai-create-table-body textarea { min-height: 190px; resize: vertical; }
+    .sql-create-table-card {
+      width: min(960px, 94vw);
+      max-height: min(86vh, 760px);
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr) auto;
+    }
+    .sql-create-table-body { min-height: 0; }
+    .sql-create-table-body textarea {
+      min-height: min(54vh, 460px);
+      max-height: 62vh;
+      font-family: var(--mono);
+      line-height: 1.55;
+      white-space: pre;
+    }
     .ai-create-table-loading {
       display: none;
       align-items: center;
@@ -3769,11 +3783,29 @@ export class DatabaseWorkbenchPanel {
       <div class="schema-footer">
         <span class="schema-footer-error" id="schemaSubmitError" title=""></span>
         <div class="schema-footer-actions">
+          <button class="secondary ai-schema-button hidden" id="sqlCreateTableBtn">SQL 建表</button>
           <button class="secondary ai-schema-button hidden" id="aiCreateTableBtn">AI 辅助建表</button>
           <button class="secondary" id="resetSchemaDraftBtn">重置草案</button>
           <button class="secondary" id="copySchemaChangeSqlBtn">复制修改 SQL</button>
           <button id="applySchemaDraftBtn">提交修改</button>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ai-create-table-overlay" id="sqlCreateTableOverlay" role="dialog" aria-modal="true" aria-labelledby="sqlCreateTableTitle">
+    <div class="ai-create-table-card sql-create-table-card">
+      <div class="ai-create-table-head">
+        <div class="ai-create-table-title" id="sqlCreateTableTitle">SQL 建表导入</div>
+        <div class="ai-create-table-subtitle">粘贴 CREATE TABLE SQL，确认后会解析成添加表草案，方便继续用可视化方式二次修改。</div>
+      </div>
+      <div class="ai-create-table-body sql-create-table-body">
+        <textarea id="sqlCreateTableInput" spellcheck="false" placeholder="例如：&#10;CREATE TABLE users (&#10;  id BIGINT PRIMARY KEY AUTO_INCREMENT,&#10;  name VARCHAR(64) NOT NULL COMMENT '用户名',&#10;  status ENUM('active','disabled') DEFAULT 'active',&#10;  created_at DATETIME DEFAULT CURRENT_TIMESTAMP&#10;) COMMENT='用户表';&#10;&#10;PostgreSQL 的 COMMENT ON TABLE / COMMENT ON COLUMN 也会一起识别。"></textarea>
+        <div class="hint">提示：支持 MySQL / PostgreSQL 常见字段、主键、索引、唯一索引、外键、检查约束和注释。解析后请再检查一遍字段类型、默认值和约束。</div>
+      </div>
+      <div class="ai-create-table-actions">
+        <button class="secondary" id="cancelSqlCreateTableBtn">取消</button>
+        <button id="confirmSqlCreateTableBtn">确认导入</button>
       </div>
     </div>
   </div>
@@ -3980,6 +4012,10 @@ export class DatabaseWorkbenchPanel {
     const schemaOverlay = $("#schemaOverlay");
     const schemaTree = $("#schemaTree");
     const schemaDetail = $("#schemaDetail");
+    const sqlCreateTableOverlay = $("#sqlCreateTableOverlay");
+    const sqlCreateTableInput = $("#sqlCreateTableInput");
+    const cancelSqlCreateTableBtn = $("#cancelSqlCreateTableBtn");
+    const confirmSqlCreateTableBtn = $("#confirmSqlCreateTableBtn");
     const aiCreateTableOverlay = $("#aiCreateTableOverlay");
     const aiCreateTablePrompt = $("#aiCreateTablePrompt");
     const aiCreateTableLoading = $("#aiCreateTableLoading");
@@ -4333,6 +4369,9 @@ export class DatabaseWorkbenchPanel {
       }
     });
     $("#closeSchemaEditorBtn").addEventListener("click", () => closeSchemaEditor());
+    $("#sqlCreateTableBtn").addEventListener("click", () => openSqlCreateTableDialog());
+    cancelSqlCreateTableBtn.addEventListener("click", () => closeSqlCreateTableDialog());
+    confirmSqlCreateTableBtn.addEventListener("click", () => submitSqlCreateTableDraft());
     $("#aiCreateTableBtn").addEventListener("click", () => openAiCreateTableDialog());
     cancelAiCreateTableBtn.addEventListener("click", () => closeAiCreateTableDialog());
     confirmAiCreateTableBtn.addEventListener("click", () => submitAiCreateTablePrompt());
@@ -4340,6 +4379,19 @@ export class DatabaseWorkbenchPanel {
     $("#confirmSchemaApplyBtn").addEventListener("click", () => confirmSchemaDraftApply());
     aiCreateTableOverlay.addEventListener("click", (event) => {
       if (event.target === aiCreateTableOverlay) closeAiCreateTableDialog();
+    });
+    sqlCreateTableOverlay.addEventListener("click", (event) => {
+      if (event.target === sqlCreateTableOverlay) closeSqlCreateTableDialog();
+    });
+    sqlCreateTableInput.addEventListener("keydown", (event) => {
+      if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+        event.preventDefault();
+        submitSqlCreateTableDraft();
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeSqlCreateTableDialog();
+      }
     });
     schemaConfirmOverlay.addEventListener("click", (event) => {
       if (event.target === schemaConfirmOverlay) closeSchemaConfirmDialog();
@@ -5966,6 +6018,41 @@ export class DatabaseWorkbenchPanel {
       renderSchemaEditor();
     }
 
+    function openSqlCreateTableDialog() {
+      if (state.schemaEditor?.mode !== "createTable") return;
+      setSchemaSubmitError("");
+      sqlCreateTableOverlay.classList.add("open");
+      window.setTimeout(() => sqlCreateTableInput.focus(), 0);
+    }
+
+    function closeSqlCreateTableDialog() {
+      sqlCreateTableOverlay.classList.remove("open");
+    }
+
+    function submitSqlCreateTableDraft() {
+      if (state.schemaEditor?.mode !== "createTable") return;
+      const sql = sqlCreateTableInput.value.trim();
+      if (!sql) {
+        setSchemaSubmitError("请先输入 CREATE TABLE SQL。");
+        sqlCreateTableInput.focus();
+        return;
+      }
+      try {
+        const previousRole = state.schemaEditor?.ddlRole || "";
+        const draft = parseCreateTableSqlToDraft(sql);
+        draft.ddlRole = previousRole;
+        state.schemaEditor = draft;
+        closeSqlCreateTableDialog();
+        setSchemaSubmitError("");
+        renderSchemaEditor();
+        setStatus("已从 SQL 解析出建表草案，已映射到添加表页面。请检查字段类型、索引和约束后再创建。", false);
+      } catch (error) {
+        setSchemaSubmitError("SQL 建表解析失败：" + (error && error.message ? error.message : String(error)));
+        setStatus("SQL 建表解析失败，请检查 CREATE TABLE 语法后重试。", true);
+        sqlCreateTableInput.focus();
+      }
+    }
+
     function openAiCreateTableDialog() {
       if (state.schemaEditor?.mode !== "createTable") return;
       setAiCreateTableLoading(false);
@@ -6139,6 +6226,8 @@ export class DatabaseWorkbenchPanel {
     function closeSchemaEditor() {
       const shouldClosePanel = state.schemaEditor?.mode === "createTable";
       closeSchemaConfirmDialog();
+      closeSqlCreateTableDialog();
+      closeAiCreateTableDialog();
       schemaOverlay.classList.remove("open");
       if (shouldClosePanel) {
         state.schemaEditor = null;
@@ -6317,6 +6406,7 @@ export class DatabaseWorkbenchPanel {
       const body = text.slice(openIndex + 1, closeIndex);
       const tail = text.slice(closeIndex + 1);
       const commentMaps = parsePostgresCommentStatements(text);
+      const postgresEnumTypes = parsePostgresCreateTypeEnums(text);
       const table = {
         ...(tableSchema ? { schema: tableSchema } : {}),
         name: uniqueTableName(tableName, tableSchema),
@@ -6367,7 +6457,7 @@ export class DatabaseWorkbenchPanel {
           });
           return;
         }
-        const column = parseCreateTableColumn(item);
+        const column = parseCreateTableColumn(item, postgresEnumTypes);
         if (column) {
           columns.push(column);
           if (/\\bunique\\b/i.test(item)) {
@@ -6426,15 +6516,16 @@ export class DatabaseWorkbenchPanel {
       };
     }
 
-    function parseCreateTableColumn(item) {
+    function parseCreateTableColumn(item, postgresEnumTypes = new Map()) {
       const leading = readLeadingSqlIdentifier(item);
       if (!leading.name) return null;
       const rest = leading.rest.trim();
       if (!rest) return null;
       const typeEnd = findFirstSqlKeyword(rest, ["character set", "collate", "not null", "null", "default", "comment", "auto_increment", "generated", "primary key", "unique", "references", "check", "on update"]);
-      const type = (typeEnd >= 0 ? rest.slice(0, typeEnd) : rest).trim();
+      const rawType = (typeEnd >= 0 ? rest.slice(0, typeEnd) : rest).trim();
+      const type = resolveImportedCreateTableColumnType(rawType, postgresEnumTypes);
       const inlinePrimary = /\\bprimary\\s+key\\b/i.test(rest);
-      const autoIncrement = /\\bauto_increment\\b/i.test(rest) || /\\bgenerated\\b[\\s\\S]*\\bidentity\\b/i.test(rest) || /\\bserial\\b/i.test(type);
+      const autoIncrement = /\\bauto_increment\\b/i.test(rest) || /\\bgenerated\\b[\\s\\S]*\\bidentity\\b/i.test(rest) || /\\bserial\\b/i.test(rawType);
       const comment = extractSqlComment(rest);
       return {
         name: leading.name,
@@ -6452,6 +6543,19 @@ export class DatabaseWorkbenchPanel {
         onUpdate: extractClauseValue(rest, "on update", ["comment", "primary key", "unique", "references", "check"]),
         key: inlinePrimary ? "PRI" : "",
       };
+    }
+
+    function resolveImportedCreateTableColumnType(rawType, postgresEnumTypes) {
+      const type = String(rawType || "").trim();
+      if (state.connectionType !== "postgres" || !postgresEnumTypes?.size) return type;
+      const path = normalizeSqlIdentifierPath(type);
+      const values = postgresEnumTypes.get(path) || postgresEnumTypes.get(normalizeSqlIdentifier(type));
+      if (!values) return type;
+      return "enum(" + values.map(formatInlineEnumValue).join(",") + ")";
+    }
+
+    function formatInlineEnumValue(value) {
+      return "'" + String(value ?? "").replace(/'/g, "''") + "'";
     }
 
     function stripMarkdownSqlFenceText(sql) {
@@ -6483,6 +6587,10 @@ export class DatabaseWorkbenchPanel {
         text = text.slice(1, -1);
       }
       return text.replace(/""/g, '"').replace(new RegExp(String.fromCharCode(96) + String.fromCharCode(96), "g"), String.fromCharCode(96)).trim();
+    }
+
+    function normalizeSqlIdentifierPath(value) {
+      return splitSqlIdentifierPath(value).map(normalizeSqlIdentifier).filter(Boolean).join(".");
     }
 
     function splitSqlIdentifierPath(value) {
@@ -6700,6 +6808,26 @@ export class DatabaseWorkbenchPanel {
       return { tableComments, columnComments };
     }
 
+    function parsePostgresCreateTypeEnums(sql) {
+      const enumTypes = new Map();
+      if (state.connectionType !== "postgres") return enumTypes;
+      const identifier = '(?:"(?:[^"]|"")+"|[A-Za-z_][A-Za-z0-9_$]*)';
+      const regex = new RegExp("create\\\\s+type\\\\s+(" + identifier + "(?:\\\\s*\\\\.\\\\s*" + identifier + ")*)\\\\s+as\\\\s+enum\\\\s*\\\\(", "gi");
+      let match;
+      while ((match = regex.exec(sql)) !== null) {
+        const open = regex.lastIndex - 1;
+        const close = findMatchingParen(sql, open);
+        if (close < 0) continue;
+        const values = splitTopLevelComma(sql.slice(open + 1, close)).map(unquoteSqlLiteral);
+        if (!values.length) continue;
+        const fullName = normalizeSqlIdentifierPath(match[1]);
+        const parts = fullName.split(".").filter(Boolean);
+        if (fullName) enumTypes.set(fullName, values);
+        if (parts.length) enumTypes.set(parts[parts.length - 1], values);
+      }
+      return enumTypes;
+    }
+
     function getPostgresTableSchemaName(table) {
       if (table?.schema) return table.schema;
       const parts = splitSqlIdentifierPath(table?.name || "").map(normalizeSqlIdentifier).filter(Boolean);
@@ -6823,6 +6951,7 @@ export class DatabaseWorkbenchPanel {
       $("#schemaDialogTitle").textContent = createMode ? "添加表" : "修改表结构";
       $("#schemaDialogMeta").textContent = state.connectionName + " / " + state.database + " / " + state.schemaEditor.table.name;
       $("#applySchemaDraftBtn").textContent = createMode ? "创建表" : "提交修改";
+      $("#sqlCreateTableBtn").classList.toggle("hidden", !createMode);
       $("#aiCreateTableBtn").classList.toggle("hidden", !createMode);
       renderSchemaTree();
       renderSchemaDetail();
