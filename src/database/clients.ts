@@ -818,30 +818,58 @@ class PostgresClient implements DbClient {
       timing: string;
       event: string;
       statement: string;
+      function_name: string | null;
+      function_language: string | null;
+      function_definition: string | null;
     }>(
-      `SELECT CASE WHEN event_object_schema = 'public' THEN event_object_table ELSE event_object_schema || '.' || event_object_table END AS table_name,
-              trigger_name,
-              action_timing AS timing,
-              event_manipulation AS event,
-              action_statement AS statement
-       FROM information_schema.triggers
-       WHERE trigger_schema NOT IN ('pg_catalog', 'information_schema') AND trigger_schema NOT LIKE 'pg_toast%' AND trigger_schema NOT LIKE 'pg_temp_%'
-       ORDER BY event_object_schema, event_object_table, trigger_name`
+      `SELECT CASE WHEN tn.nspname = 'public' THEN tbl.relname ELSE tn.nspname || '.' || tbl.relname END AS table_name,
+              trg.tgname AS trigger_name,
+              CASE
+                WHEN (trg.tgtype::int & 2) <> 0 THEN 'BEFORE'
+                WHEN (trg.tgtype::int & 64) <> 0 THEN 'INSTEAD OF'
+                ELSE 'AFTER'
+              END AS timing,
+              concat_ws(' OR ',
+                CASE WHEN (trg.tgtype::int & 4) <> 0 THEN 'INSERT' END,
+                CASE WHEN (trg.tgtype::int & 8) <> 0 THEN 'DELETE' END,
+                CASE WHEN (trg.tgtype::int & 16) <> 0 THEN 'UPDATE' END,
+                CASE WHEN (trg.tgtype::int & 32) <> 0 THEN 'TRUNCATE' END
+              ) AS event,
+              pg_get_triggerdef(trg.oid, true) AS statement,
+              CASE WHEN pn.nspname = 'public' THEN p.proname ELSE pn.nspname || '.' || p.proname END AS function_name,
+              lang.lanname AS function_language,
+              pg_get_functiondef(p.oid) AS function_definition
+       FROM pg_trigger trg
+       JOIN pg_class tbl ON tbl.oid = trg.tgrelid
+       JOIN pg_namespace tn ON tn.oid = tbl.relnamespace
+       JOIN pg_proc p ON p.oid = trg.tgfoid
+       JOIN pg_namespace pn ON pn.oid = p.pronamespace
+       JOIN pg_language lang ON lang.oid = p.prolang
+       WHERE NOT trg.tgisinternal
+         AND tn.nspname NOT IN ('pg_catalog', 'information_schema')
+         AND tn.nspname NOT LIKE 'pg_toast%'
+         AND tn.nspname NOT LIKE 'pg_temp_%'
+       ORDER BY tn.nspname, tbl.relname, trg.tgname`
     );
     const enumRows = await this.client.query<{
       table_name: string;
       column_name: string;
+      type_schema: string;
+      type_name: string;
       enum_values: unknown;
     }>(
       `SELECT CASE WHEN n.nspname = 'public' THEN c.relname ELSE n.nspname || '.' || c.relname END AS table_name,
               n.nspname AS table_schema,
               c.relname AS raw_table_name,
               a.attname AS column_name,
+              typn.nspname AS type_schema,
+              typ.typname AS type_name,
               json_agg(e.enumlabel ORDER BY e.enumsortorder) AS enum_values
        FROM pg_class c
        JOIN pg_namespace n ON n.oid = c.relnamespace
        JOIN pg_attribute a ON a.attrelid = c.oid
        JOIN pg_type typ ON typ.oid = a.atttypid
+       JOIN pg_namespace typn ON typn.oid = typ.typnamespace
        JOIN pg_enum e ON e.enumtypid = typ.oid
        WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
          AND n.nspname NOT LIKE 'pg_toast%'
@@ -849,7 +877,7 @@ class PostgresClient implements DbClient {
          AND c.relkind IN ('r', 'p')
          AND a.attnum > 0
          AND NOT a.attisdropped
-       GROUP BY n.nspname, c.relname, a.attname, a.attnum
+       GROUP BY n.nspname, c.relname, a.attname, a.attnum, typn.nspname, typ.typname
        ORDER BY n.nspname, c.relname, a.attnum`
     );
 
@@ -862,6 +890,20 @@ class PostgresClient implements DbClient {
       `${row.table_name}\u0000${row.column_name}`,
       normalizePostgresEnumValues(row.enum_values),
     ]));
+    const customTypesByTable = new Map<string, Map<string, { name: string; kind: string; values: string[]; definition: string }>>();
+    for (const row of enumRows.rows) {
+      const values = normalizePostgresEnumValues(row.enum_values);
+      if (!values.length) continue;
+      const tableTypes = customTypesByTable.get(row.table_name) ?? new Map<string, { name: string; kind: string; values: string[]; definition: string }>();
+      const typeName = formatPostgresCustomTypeName(row.type_schema, row.type_name);
+      tableTypes.set(typeName, {
+        name: typeName,
+        kind: "enum",
+        values,
+        definition: `CREATE TYPE ${quotePostgresIdentifier(typeName)} AS ENUM (${values.map(toPostgresSqlLiteral).join(", ")});`,
+      });
+      customTypesByTable.set(row.table_name, tableTypes);
+    }
     for (const row of result.rows) {
       const columns = byTable.get(row.table_name) ?? [];
       tableSchemas.set(row.table_name, row.table_schema);
@@ -919,11 +961,27 @@ class PostgresClient implements DbClient {
       checksByTable.set(row.table_name, checks);
     }
 
-    const triggersByTable = new Map<string, Array<{ name: string; timing: string; event: string; statement: string }>>();
+    const triggersByTable = new Map<string, Array<{ name: string; timing: string; event: string; statement: string; functionName?: string; functionDefinition?: string }>>();
+    const customFunctionsByTable = new Map<string, Map<string, { name: string; language?: string; definition: string }>>();
     for (const row of triggerRows.rows) {
       const triggers = triggersByTable.get(row.table_name) ?? [];
-      triggers.push({ name: row.trigger_name, timing: row.timing || "", event: row.event || "", statement: row.statement || "" });
+      const statement = extractPostgresTriggerStatement(row.statement || "");
+      const functionName = row.function_name || "";
+      const functionDefinition = row.function_definition || "";
+      triggers.push({
+        name: row.trigger_name,
+        timing: row.timing || "",
+        event: row.event || "",
+        statement,
+        functionName: functionName || undefined,
+        functionDefinition: functionDefinition || undefined,
+      });
       triggersByTable.set(row.table_name, triggers);
+      if (functionName && functionDefinition) {
+        const tableFunctions = customFunctionsByTable.get(row.table_name) ?? new Map<string, { name: string; language?: string; definition: string }>();
+        tableFunctions.set(functionName, { name: functionName, language: row.function_language || "", definition: functionDefinition });
+        customFunctionsByTable.set(row.table_name, tableFunctions);
+      }
     }
 
     return [...byTable.entries()].map(([name, columns]) => ({
@@ -937,6 +995,8 @@ class PostgresClient implements DbClient {
       foreignKeys: [...(foreignKeysByTable.get(name)?.values() ?? [])],
       checks: checksByTable.get(name) ?? [],
       triggers: triggersByTable.get(name) ?? [],
+      customFunctions: [...(customFunctionsByTable.get(name)?.values() ?? [])],
+      customTypes: [...(customTypesByTable.get(name)?.values() ?? [])],
     }));
   }
 
@@ -990,6 +1050,11 @@ class PostgresClient implements DbClient {
       const unique = index.unique ? "UNIQUE " : "";
       statements.push(`CREATE ${unique}INDEX ${this.quoteIdentifier(index.name)} ON ${this.quoteIdentifier(table)} (${index.columns.map((column) => this.quoteIdentifier(column)).join(", ")});`);
     }
+    for (const customFunction of tableInfo.customFunctions || []) {
+      if (customFunction.definition && !statements.includes(customFunction.definition)) {
+        statements.push(customFunction.definition.trim().replace(/;\s*$/, ";"));
+      }
+    }
     for (const trigger of tableInfo.triggers || []) {
       if (trigger.statement) {
         statements.push(`CREATE TRIGGER ${this.quoteIdentifier(trigger.name)} ${trigger.timing || "BEFORE"} ${trigger.event || "INSERT"} ON ${this.quoteIdentifier(table)} FOR EACH ROW ${trigger.statement};`);
@@ -1042,6 +1107,16 @@ function quotePostgresIdentifier(identifier: string): string {
     .split(".")
     .map((part) => `"${part.replace(/"/g, "\"\"")}"`)
     .join(".");
+}
+
+function formatPostgresCustomTypeName(schema: string, name: string): string {
+  return schema && schema !== "public" ? `${schema}.${name}` : name;
+}
+
+function extractPostgresTriggerStatement(triggerDefinition: string): string {
+  const text = String(triggerDefinition || "").trim().replace(/;\s*$/, "");
+  const match = text.match(/\bEXECUTE\s+(?:FUNCTION|PROCEDURE)\s+[\s\S]+$/i);
+  return match ? match[0].trim() : text;
 }
 
 function formatPostgresInlineEnumType(values: string[]): string {

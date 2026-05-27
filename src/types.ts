@@ -93,6 +93,19 @@ export type TableInfo = {
     timing: string;
     event: string;
     statement: string;
+    functionName?: string;
+    functionDefinition?: string;
+  }>;
+  customFunctions?: Array<{
+    name: string;
+    language?: string;
+    definition: string;
+  }>;
+  customTypes?: Array<{
+    name: string;
+    kind: string;
+    values?: string[];
+    definition?: string;
   }>;
 };
 

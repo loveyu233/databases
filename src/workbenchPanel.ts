@@ -3367,7 +3367,24 @@ export class DatabaseWorkbenchPanel {
       gap: 10px;
       align-items: center;
     }
+    .schema-form-row-top { align-items: start; }
     .schema-form-row label { margin: 0; }
+    .schema-code-field {
+      min-height: 130px;
+      resize: vertical;
+      font-family: var(--mono);
+      font-size: 12px;
+      line-height: 1.55;
+      white-space: pre;
+      overflow: auto;
+      text-decoration: none;
+    }
+    .schema-code-field[readonly] {
+      color: var(--fg);
+      background: rgba(127,127,127,.05);
+      opacity: .92;
+      cursor: text;
+    }
     .schema-checks { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; }
     .schema-checks label { display: inline-flex; align-items: center; gap: 7px; margin: 0; color: var(--fg); }
     .schema-table {
@@ -4089,6 +4106,12 @@ export class DatabaseWorkbenchPanel {
       "date", "time", "numeric(10,2)", "double precision", "real", "enum('active','disabled')"
     ];
     const mysqlDefaultValues = ["NULL", "CURRENT_TIMESTAMP", "CURRENT_DATE", "CURRENT_TIME", "0", "1", "''"];
+    const postgresDefaultValues = ["NULL", "CURRENT_TIMESTAMP", "CURRENT_DATE", "CURRENT_TIME", "now()", "true", "false", "''", "'{}'::jsonb"];
+    const mysqlTriggerTimings = ["BEFORE", "AFTER"];
+    const postgresTriggerTimings = ["BEFORE", "AFTER", "INSTEAD OF"];
+    const mysqlTriggerEvents = ["INSERT", "UPDATE", "DELETE"];
+    const postgresTriggerEvents = ["INSERT", "UPDATE", "DELETE", "TRUNCATE", "INSERT OR UPDATE", "INSERT OR DELETE", "UPDATE OR DELETE", "INSERT OR UPDATE OR DELETE"];
+    const foreignKeyActions = ["NO ACTION", "RESTRICT", "CASCADE", "SET NULL", "SET DEFAULT"];
     const postgresKeywords = [
       "SELECT", "DISTINCT", "FROM", "WHERE", "AND", "OR", "NOT", "NULL", "IS", "IS NULL", "IS NOT NULL", "IN", "LIKE", "ILIKE", "BETWEEN", "EXISTS",
       "JOIN", "LEFT JOIN", "RIGHT JOIN", "INNER JOIN", "FULL JOIN", "CROSS JOIN", "ON", "AS", "GROUP BY", "HAVING",
@@ -5210,8 +5233,12 @@ export class DatabaseWorkbenchPanel {
 
     function attachSchemaAutocomplete(input) {
       const path = input.getAttribute("data-schema-path") || "";
+      if (/^triggers\\.\\d+\\.timing$/.test(path)) return attachSqlAutocomplete(input, "schema-trigger-timing");
+      if (/^triggers\\.\\d+\\.event$/.test(path)) return attachSqlAutocomplete(input, "schema-trigger-event");
+      if (/^triggers\\.\\d+\\.statement$/.test(path)) return attachSqlAutocomplete(input, "schema-trigger-statement");
+      if (/^foreignKeys\\.\\d+\\.(onUpdate|onDelete)$/.test(path)) return attachSqlAutocomplete(input, "schema-fk-action");
       if (/\\.type$/.test(path)) return attachSqlAutocomplete(input, "schema-type");
-      if (/\\.(defaultValue|onUpdate)$/.test(path)) return attachSqlAutocomplete(input, "schema-default");
+      if (/^columns\\.\\d+\\.(defaultValue|onUpdate)$/.test(path)) return attachSqlAutocomplete(input, "schema-default");
       if (/\\.referenceTable$/.test(path)) return attachSqlAutocomplete(input, "schema-table");
       if (/\\.(referenceColumns|expression|statement)$/.test(path)) return attachSqlAutocomplete(input, "schema-sql");
       return undefined;
@@ -5355,6 +5382,14 @@ export class DatabaseWorkbenchPanel {
       const prefix = dotIndex >= 0 ? cleanSqlIdentifier(token.slice(dotIndex + 1)) : cleanSqlIdentifier(token);
       const replaceStart = dotIndex >= 0 ? cursor - cleanSqlIdentifier(token.slice(dotIndex + 1)).length : cursor - token.length;
       const tableContext = isSqlTableContext(before.slice(0, before.length - token.length));
+      if (mode === "schema-trigger-timing" || mode === "schema-trigger-event" || mode === "schema-trigger-statement" || mode === "schema-fk-action") {
+        const items = buildSchemaSpecialCompletionItems(mode);
+        return {
+          items: sortCompletionItemsByRecentUse(dedupeCompletionItems(filterCompletionItems(items, prefix, force))).slice(0, 80),
+          replaceStart,
+          replaceEnd: cursor,
+        };
+      }
       if (aiTag && !force && !prefix && dotIndex < 0) return { items: [], replaceStart, replaceEnd: cursor };
       if (!force && !prefix && dotIndex < 0 && !tableContext && !aiTag) return { items: [], replaceStart, replaceEnd: cursor };
 
@@ -5380,7 +5415,10 @@ export class DatabaseWorkbenchPanel {
       } else if (mode === "schema-type") {
         items = (state.connectionType === "postgres" ? postgresDataTypes : mysqlDataTypes).map((value) => completionItem(value, value, "类型"));
       } else if (mode === "schema-default") {
-        items = [...mysqlDefaultValues, "JSON_OBJECT()", "JSON_ARRAY()", "UUID()"].map((value) => completionItem(value, value, "默认值"));
+        const values = state.connectionType === "postgres"
+          ? [...postgresDefaultValues, "gen_random_uuid()", "uuid_generate_v4()"]
+          : [...mysqlDefaultValues, "JSON_OBJECT()", "JSON_ARRAY()", "UUID()"];
+        items = values.map((value) => completionItem(value, value, "默认值"));
       } else if (mode === "schema-table") {
         items = getTableCompletions();
       } else if (aiTag && owner) {
@@ -5405,6 +5443,69 @@ export class DatabaseWorkbenchPanel {
         replaceStart,
         replaceEnd: cursor,
       };
+    }
+
+    function buildSchemaSpecialCompletionItems(mode) {
+      if (mode === "schema-trigger-timing") {
+        return (state.connectionType === "postgres" ? postgresTriggerTimings : mysqlTriggerTimings)
+          .map((value) => completionItem(value, value, state.connectionType === "postgres" ? "PG 触发器时机" : "MySQL 触发器时机"));
+      }
+      if (mode === "schema-trigger-event") {
+        return (state.connectionType === "postgres" ? postgresTriggerEvents : mysqlTriggerEvents)
+          .map((value) => completionItem(value, value, state.connectionType === "postgres" ? "PG 触发器事件" : "MySQL 触发器事件"));
+      }
+      if (mode === "schema-fk-action") {
+        return foreignKeyActions.map((value) => completionItem(value, value, "外键动作"));
+      }
+      if (mode === "schema-trigger-statement") {
+        return state.connectionType === "postgres" ? getPostgresTriggerStatementCompletions() : getMysqlTriggerStatementCompletions();
+      }
+      return [];
+    }
+
+    function getPostgresTriggerStatementCompletions() {
+      const tableName = state.schemaEditor?.table?.name || getTableDisplayName(findSchemaTable(state.selectedTable)) || "table";
+      const schema = state.schemaEditor?.table?.schema || "";
+      const tableForFunction = schema && !String(tableName).includes(".") ? schema + "." + tableName : tableName;
+      const updatedAtColumn = (state.schemaEditor?.columns || []).find((column) => /^updated?_at$/i.test(column.name || ""))?.name || "updated_at";
+      const generatedFunctionName = buildPostgresCompletionOnUpdateFunctionName(tableForFunction, updatedAtColumn);
+      const functionItems = getSchemaCustomFunctions(state.schemaEditor || {}).map((item) => completionItem(
+        "EXECUTE FUNCTION " + item.name + "()",
+        "EXECUTE FUNCTION " + item.name + "()",
+        "PG 触发器语句",
+        item.language || "自定义方法"
+      ));
+      return [
+        completionItem("EXECUTE FUNCTION", "EXECUTE FUNCTION ", "PG 触发器语句", "调用已有 trigger function"),
+        completionItem("更新时间方法", "EXECUTE FUNCTION " + generatedFunctionName + "()", "PG 触发器语句", "配合“更新时”字段生成的方法"),
+        ...functionItems,
+      ];
+    }
+
+    function getMysqlTriggerStatementCompletions() {
+      const updatedAtColumn = (state.schemaEditor?.columns || []).find((column) => /^updated?_at$/i.test(column.name || ""))?.name || "updated_at";
+      const currentColumns = (state.schemaEditor?.columns || []).slice(0, 20).flatMap((column) => [
+        completionItem("NEW." + column.name, "NEW." + quoteCompletionIdentifier(column.name), "MySQL NEW 字段", column.comment || ""),
+        completionItem("OLD." + column.name, "OLD." + quoteCompletionIdentifier(column.name), "MySQL OLD 字段", column.comment || ""),
+      ]);
+      return [
+        completionItem("设置更新时间", "SET NEW." + quoteCompletionIdentifier(updatedAtColumn) + " = CURRENT_TIMESTAMP", "MySQL 触发器语句"),
+        completionItem("BEGIN END", "BEGIN\\n  SET NEW." + quoteCompletionIdentifier(updatedAtColumn) + " = CURRENT_TIMESTAMP;\\nEND", "MySQL 触发器语句"),
+        ...currentColumns,
+      ];
+    }
+
+    function buildPostgresCompletionOnUpdateFunctionName(table, column) {
+      const parts = String(table || "").split(".");
+      const tableName = parts.pop() || "table";
+      const schema = parts.join(".");
+      const functionName = "dbw_" + toCompletionIdentifierPart(tableName) + "_" + toCompletionIdentifierPart(column) + "_on_update_fn";
+      return schema ? schema + "." + functionName : functionName;
+    }
+
+    function toCompletionIdentifierPart(value) {
+      const text = String(value || "").trim().replace(/^"|"$/g, "").replace(/[^A-Za-z0-9_]+/g, "_").replace(/^_+|_+$/g, "").toLowerCase();
+      return /^[0-9]/.test(text) ? "_" + text : (text || "field");
     }
 
     function buildRedisCompletionItems(mode) {
@@ -6391,6 +6492,8 @@ export class DatabaseWorkbenchPanel {
         indexes,
         checks,
         triggers: (table.triggers || []).map((trigger) => ({ ...trigger, originalName: trigger.name })),
+        customFunctions: (table.customFunctions || []).map((item) => ({ ...item, originalName: item.name })),
+        customTypes: (table.customTypes || []).map((item) => ({ ...item, originalName: item.name })),
         originalColumns: columns.map((column) => column.name),
         columnOrderMoves: [],
         deletedItems: { columns: [], keys: [], foreignKeys: [], indexes: [], checks: [], triggers: [] },
@@ -6478,6 +6581,8 @@ export class DatabaseWorkbenchPanel {
         indexes: [],
         checks: [],
         triggers: [],
+        customFunctions: [],
+        customTypes: [],
         originalColumns: [],
         columnOrderMoves: [],
         deletedItems: { columns: [], keys: [], foreignKeys: [], indexes: [], checks: [], triggers: [] },
@@ -6610,6 +6715,8 @@ export class DatabaseWorkbenchPanel {
         indexes,
         checks,
         triggers,
+        customFunctions: [],
+        customTypes: [],
         originalColumns: [],
         columnOrderMoves: [],
         deletedItems: { columns: [], keys: [], foreignKeys: [], indexes: [], checks: [], triggers: [] },
@@ -7124,6 +7231,10 @@ export class DatabaseWorkbenchPanel {
         ["indexes", "索引", editor.indexes],
         ["checks", "检查", editor.checks],
         ["triggers", "触发器", editor.triggers],
+        ...(state.connectionType === "postgres" ? [
+          ["customFunctions", "自定义方法", getSchemaCustomFunctions(editor)],
+          ["customTypes", "自定义类型", getSchemaCustomTypes(editor)],
+        ] : []),
       ];
       const html = [
         schemaNodeHtml("table", "", editor.table.name, "", active.kind === "table", "root"),
@@ -7158,14 +7269,19 @@ export class DatabaseWorkbenchPanel {
 
     function schemaNodeHtml(kind, index, label, count, active, extraClass, item = null) {
       const pendingDelete = Boolean(item?.pendingDelete);
-      const add = extraClass === "section" ? '<span class="schema-action schema-add" data-add-kind="' + kind + '" title="新增' + escapeHtml(label) + '">+</span>' : "";
+      const canEditItems = isEditableSchemaSection(kind);
+      const add = extraClass === "section" && canEditItems ? '<span class="schema-action schema-add" data-add-kind="' + kind + '" title="新增' + escapeHtml(label) + '">+</span>' : "";
       const deleteTitle = pendingDelete ? "撤回删除：" : "删除";
       const deleteSymbol = pendingDelete ? "↩" : "-";
-      const remove = extraClass === "child" ? '<span class="schema-action schema-delete" data-delete-kind="' + kind + '" data-delete-index="' + index + '" title="' + deleteTitle + escapeHtml(label) + '">' + deleteSymbol + '</span>' : "";
+      const remove = extraClass === "child" && canEditItems ? '<span class="schema-action schema-delete" data-delete-kind="' + kind + '" data-delete-index="' + index + '" title="' + deleteTitle + escapeHtml(label) + '">' + deleteSymbol + '</span>' : "";
       const titlePrefix = pendingDelete ? "待删除 · " : "";
       const title = kind === "columns" && extraClass === "child" ? titlePrefix + label + " · 拖拽调整列顺序" : titlePrefix + label;
       const drag = kind === "columns" && extraClass === "child" ? ' draggable="true"' : "";
       return '<button class="schema-node ' + extraClass + (active ? ' active' : '') + (pendingDelete ? ' pending-delete' : '') + '" data-kind="' + kind + '" data-index="' + index + '" title="' + escapeHtml(title) + '"' + drag + '><span class="schema-label">' + escapeHtml(truncateSchemaLabel(label)) + '</span>' + (count ? '<span class="schema-count">' + count + '</span>' : '') + add + remove + '</button>';
+    }
+
+    function isEditableSchemaSection(kind) {
+      return !["customFunctions", "customTypes"].includes(String(kind || ""));
     }
 
     function truncateSchemaLabel(label) {
@@ -7178,6 +7294,7 @@ export class DatabaseWorkbenchPanel {
       if (kind === "columns") return getColumnSchemaLabel(item);
       if (kind === "keys") return item.name || "未命名键";
       if (kind === "indexes") return item.name || "未命名索引";
+      if (kind === "customTypes") return (item.kind ? item.kind + " · " : "") + (item.name || "未命名类型");
       return item.name || "未命名";
     }
 
@@ -7445,6 +7562,10 @@ export class DatabaseWorkbenchPanel {
       if (active.kind === "checks") return renderExpressionDetail(editor, active.index, "checks", "检查", "expression", "表达式");
       if (active.kind === "triggers" && active.index === undefined) return renderTriggersOverview(editor);
       if (active.kind === "triggers") return renderTriggerDetail(editor, active.index);
+      if (active.kind === "customFunctions" && active.index === undefined) return renderCustomFunctionsOverview(editor);
+      if (active.kind === "customFunctions") return renderCustomFunctionDetail(editor, active.index);
+      if (active.kind === "customTypes" && active.index === undefined) return renderCustomTypesOverview(editor);
+      if (active.kind === "customTypes") return renderCustomTypeDetail(editor, active.index);
       return renderEmptySchemaSection(active.kind);
     }
 
@@ -7582,14 +7703,139 @@ export class DatabaseWorkbenchPanel {
       const item = editor.triggers[index];
       if (!item) return renderTriggersOverview(editor);
       const statementPlaceholder = state.connectionType === "postgres" ? "例如 EXECUTE FUNCTION update_updated_at()" : "例如 SET NEW.updated_at = CURRENT_TIMESTAMP";
+      const functionSummary = state.connectionType === "postgres" && item.functionName
+        ? '<div class="schema-muted">当前触发器调用方法：' + escapeHtml(item.functionName) + '，可在左侧“自定义方法”查看方法内容。</div>'
+        : "";
       schemaDetail.innerHTML = '<div class="schema-detail-title"><h3>触发器：' + escapeHtml(item.name) + '</h3><span>触发器草案</span></div>'
         + '<div class="schema-form">'
         + schemaInputRow("名称", "triggers." + index + ".name", item.name)
         + schemaInputRow("时机", "triggers." + index + ".timing", item.timing, "BEFORE / AFTER")
         + schemaInputRow("事件", "triggers." + index + ".event", item.event, "INSERT / UPDATE / DELETE")
-        + schemaInputRow("语句", "triggers." + index + ".statement", item.statement, statementPlaceholder)
+        + schemaTextareaRow("语句", "triggers." + index + ".statement", item.statement, statementPlaceholder)
+        + functionSummary
         + '</div>';
       bindSchemaInputs();
+    }
+
+    function renderCustomFunctionsOverview(editor) {
+      const items = getSchemaCustomFunctions(editor);
+      const rows = items.length
+        ? items.map((item, index) => '<tr data-schema-kind="customFunctions" data-schema-index="' + index + '"><td>' + escapeHtml(item.name || "") + '</td><td>' + escapeHtml(item.language || "") + '</td></tr>').join("")
+        : '<tr><td colspan="2" class="schema-muted">当前表没有读取到触发器关联的自定义方法。</td></tr>';
+      schemaDetail.innerHTML = '<div class="schema-detail-title"><h3>自定义方法</h3><span>展示 PostgreSQL 触发器调用的方法内容</span></div>'
+        + '<table class="schema-table"><thead><tr><th>名称</th><th>语言</th></tr></thead><tbody>' + rows + '</tbody></table>';
+      bindSchemaRowNavigation();
+    }
+
+    function renderCustomFunctionDetail(editor, index) {
+      const item = getSchemaCustomFunctions(editor)[index];
+      if (!item) return renderCustomFunctionsOverview(editor);
+      schemaDetail.innerHTML = '<div class="schema-detail-title"><h3>自定义方法：' + escapeHtml(item.name || "") + '</h3><span>只读展示</span></div>'
+        + '<div class="schema-form">'
+        + schemaInputRow("名称", "customFunctions." + index + ".name", item.name, "", true)
+        + schemaInputRow("语言", "customFunctions." + index + ".language", item.language || "", "", true)
+        + schemaTextareaRow("方法内容", "customFunctions." + index + ".definition", item.definition || "", "", true)
+        + '</div>';
+    }
+
+    function renderCustomTypesOverview(editor) {
+      const items = getSchemaCustomTypes(editor);
+      const rows = items.length
+        ? items.map((item, index) => '<tr data-schema-kind="customTypes" data-schema-index="' + index + '"><td>' + escapeHtml(item.name || "") + '</td><td>' + escapeHtml(item.kind || "") + '</td><td>' + escapeHtml((item.values || []).join(", ")) + '</td></tr>').join("")
+        : '<tr><td colspan="3" class="schema-muted">当前表没有读取到自定义类型；PostgreSQL enum 类型会在这里展示。</td></tr>';
+      schemaDetail.innerHTML = '<div class="schema-detail-title"><h3>自定义类型</h3><span>展示当前表字段使用的 PostgreSQL 自定义类型</span></div>'
+        + '<table class="schema-table"><thead><tr><th>名称</th><th>类型</th><th>值</th></tr></thead><tbody>' + rows + '</tbody></table>';
+      bindSchemaRowNavigation();
+    }
+
+    function renderCustomTypeDetail(editor, index) {
+      const item = getSchemaCustomTypes(editor)[index];
+      if (!item) return renderCustomTypesOverview(editor);
+      schemaDetail.innerHTML = '<div class="schema-detail-title"><h3>自定义类型：' + escapeHtml(item.name || "") + '</h3><span>只读展示</span></div>'
+        + '<div class="schema-form">'
+        + schemaInputRow("名称", "customTypes." + index + ".name", item.name, "", true)
+        + schemaInputRow("类型", "customTypes." + index + ".kind", item.kind || "", "", true)
+        + schemaTextareaRow("值", "customTypes." + index + ".values", (item.values || []).join("\\n"), "", true)
+        + schemaTextareaRow("定义", "customTypes." + index + ".definition", item.definition || "", "", true)
+        + '</div>';
+    }
+
+    function getSchemaCustomFunctions(editor) {
+      if (state.connectionType !== "postgres") return [];
+      const table = getSchemaEditorQualifiedTableName(editor);
+      const items = [...(editor.customFunctions || [])];
+      (editor.columns || []).forEach((column) => {
+        const expression = String(column.onUpdate || "").trim().replace(/;\\s*$/, "");
+        if (!expression || !column.name) return;
+        const name = buildPostgresCompletionOnUpdateFunctionName(table, column.name);
+        const body = [
+          "BEGIN",
+          "  NEW." + quotePostgresEditorIdentifier(column.name) + " := " + expression + ";",
+          "  RETURN NEW;",
+          "END;",
+        ].join("\\n");
+        items.push({
+          name,
+          language: "plpgsql",
+          definition: "CREATE OR REPLACE FUNCTION " + quotePostgresEditorIdentifierPath(name) + "()\\nRETURNS trigger AS $dbw$\\n" + body + "\\n$dbw$\\nLANGUAGE plpgsql;",
+        });
+      });
+      return dedupeSchemaNamedItems(items);
+    }
+
+    function getSchemaCustomTypes(editor) {
+      if (state.connectionType !== "postgres") return [];
+      const table = getSchemaEditorQualifiedTableName(editor);
+      const items = [...(editor.customTypes || [])];
+      (editor.columns || []).forEach((column) => {
+        const values = parseInlineEnumValuesForSchema(column.type);
+        if (!values.length || !column.name) return;
+        const name = buildPostgresCompletionEnumTypeName(table, column.name);
+        items.push({
+          name,
+          kind: "enum",
+          values,
+          definition: "CREATE TYPE " + quotePostgresEditorIdentifierPath(name) + " AS ENUM (" + values.map(formatInlineEnumValue).join(", ") + ");",
+        });
+      });
+      return dedupeSchemaNamedItems(items);
+    }
+
+    function dedupeSchemaNamedItems(items) {
+      const seen = new Set();
+      return items.filter((item) => {
+        const key = String(item.name || "").toLowerCase();
+        if (!key || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    }
+
+    function getSchemaEditorQualifiedTableName(editor) {
+      const tableName = editor?.table?.name || "table";
+      const schema = editor?.table?.schema || "";
+      return schema && !String(tableName).includes(".") ? schema + "." + tableName : tableName;
+    }
+
+    function parseInlineEnumValuesForSchema(type) {
+      const match = String(type || "").trim().match(/^enum\\((.*)\\)$/i);
+      return match ? parseSqlStringList(match[1]) : [];
+    }
+
+    function buildPostgresCompletionEnumTypeName(table, column) {
+      const parts = String(table || "").split(".");
+      const tableName = parts.pop() || "table";
+      const schema = parts.join(".");
+      const typeName = toCompletionIdentifierPart(tableName) + "_" + toCompletionIdentifierPart(column) + "_enum";
+      return schema ? schema + "." + typeName : typeName;
+    }
+
+    function quotePostgresEditorIdentifierPath(value) {
+      return String(value || "").split(".").map(quotePostgresEditorIdentifier).join(".");
+    }
+
+    function quotePostgresEditorIdentifier(value) {
+      return '"' + String(value || "").replace(/"/g, '""') + '"';
     }
 
     function bindSchemaRowNavigation() {
@@ -7602,12 +7848,16 @@ export class DatabaseWorkbenchPanel {
     }
 
     function renderEmptySchemaSection(kind) {
-      const labels = { foreignKeys: "外键", checks: "检查", triggers: "触发器" };
+      const labels = { foreignKeys: "外键", checks: "检查", triggers: "触发器", customFunctions: "自定义方法", customTypes: "自定义类型" };
       schemaDetail.innerHTML = '<div class="schema-detail-title"><h3>' + escapeHtml(labels[kind] || kind) + '</h3><span>结构草案</span></div><p class="schema-muted">当前 schema 读取结果里没有该类型对象。后续可以在这里继续扩展新增和修改能力。</p>';
     }
 
-    function schemaInputRow(label, path, value, placeholder = "") {
-      return '<div class="schema-form-row"><label>' + escapeHtml(label) + '</label><input class="field" data-schema-path="' + path + '" value="' + escapeHtml(value || "") + '" placeholder="' + escapeHtml(placeholder) + '" /></div>';
+    function schemaInputRow(label, path, value, placeholder = "", readonly = false) {
+      return '<div class="schema-form-row"><label>' + escapeHtml(label) + '</label><input class="field" data-schema-path="' + path + '" value="' + escapeHtml(value || "") + '" placeholder="' + escapeHtml(placeholder) + '"' + (readonly ? " readonly" : "") + ' /></div>';
+    }
+
+    function schemaTextareaRow(label, path, value, placeholder = "", readonly = false) {
+      return '<div class="schema-form-row schema-form-row-top"><label>' + escapeHtml(label) + '</label><textarea class="field schema-code-field" data-schema-path="' + path + '" spellcheck="false" placeholder="' + escapeHtml(placeholder) + '"' + (readonly ? " readonly" : "") + '>' + escapeHtml(value || "") + '</textarea></div>';
     }
 
     function postgresSchemaInputRow(editor) {
@@ -7653,6 +7903,7 @@ export class DatabaseWorkbenchPanel {
           input.addEventListener("click", () => window.setTimeout(() => toggleJsonObjectColumn(input), 0));
           return;
         }
+        if (input.readOnly) return;
         if (input.type !== "checkbox") {
           input.addEventListener("input", () => updateSchemaDraftInput(input, !/^columns\.\d+\.type$/.test(input.getAttribute("data-schema-path") || "")));
           attachSchemaAutocomplete(input);

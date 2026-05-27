@@ -298,4 +298,54 @@ assert.equal(copiedUserTypeColumn.defaultValue, "pen", "导入 PG 复制表结�
 assert.equal(copiedStatusColumn.type, "enum('active','disabled','lost','retired')");
 assert.equal(copiedStatusColumn.defaultValue, "active");
 
+vm.runInContext(`
+state.connectionName = "pg";
+state.database = "pg_type_test";
+state.connectionType = "postgres";
+state.schemaEditor = {
+  table: { schema: "public", name: "mqtt_user", comment: "" },
+  columns: [{ name: "updated_at", type: "timestamp", defaultValue: "CURRENT_TIMESTAMP", onUpdate: "CURRENT_TIMESTAMP" }],
+  keys: [],
+  foreignKeys: [],
+  indexes: [],
+  checks: [],
+  triggers: [{
+    name: "dbw_mqtt_user_updated_at_on_update_trg",
+    timing: "BEFORE",
+    event: "UPDATE",
+    statement: "EXECUTE FUNCTION dbw_mqtt_user_updated_at_on_update_fn()",
+    functionName: "dbw_mqtt_user_updated_at_on_update_fn"
+  }],
+  customFunctions: [{
+    name: "dbw_mqtt_user_updated_at_on_update_fn",
+    language: "plpgsql",
+    definition: "CREATE OR REPLACE FUNCTION dbw_mqtt_user_updated_at_on_update_fn() RETURNS trigger AS $$ BEGIN NEW.updated_at := CURRENT_TIMESTAMP; RETURN NEW; END; $$ LANGUAGE plpgsql;"
+  }],
+  customTypes: [{
+    name: "mqtt_user_status",
+    kind: "enum",
+    values: ["active", "disabled"],
+    definition: "CREATE TYPE mqtt_user_status AS ENUM ('active', 'disabled');"
+  }],
+  deletedItems: { columns: [], keys: [], foreignKeys: [], indexes: [], checks: [], triggers: [] },
+  active: { kind: "table" }
+};
+renderSchemaEditor();
+`, context);
+assert.ok(context.document.querySelector("#schemaTree").innerHTML.includes("自定义方法"), "PG schema 树应展示自定义方法分组");
+assert.ok(context.document.querySelector("#schemaTree").innerHTML.includes("自定义类型"), "PG schema 树应展示自定义类型分组");
+vm.runInContext('state.schemaEditor.active = { kind: "customFunctions", index: 0 }; renderSchemaEditor();', context);
+assert.ok(context.document.querySelector("#schemaDetail").innerHTML.includes("方法内容"), "自定义方法详情应展示方法内容");
+assert.ok(context.document.querySelector("#schemaDetail").innerHTML.includes("CREATE OR REPLACE FUNCTION"), "自定义方法详情应包含函数定义");
+vm.runInContext('state.schemaEditor.active = { kind: "customTypes", index: 0 }; renderSchemaEditor();', context);
+assert.ok(context.document.querySelector("#schemaDetail").innerHTML.includes("mqtt_user_status"), "自定义类型详情应展示类型名称");
+assert.ok(context.document.querySelector("#schemaDetail").innerHTML.includes("active"), "自定义类型详情应展示枚举值");
+const pgTriggerStatementCompletions = vm.runInContext('buildCodeCompletion({ value: "", selectionStart: 0 }, "schema-trigger-statement", true).items.map((item) => item.insert)', context);
+assert.ok(pgTriggerStatementCompletions.some((item) => item.includes("EXECUTE FUNCTION")), "PG 触发器语句应提示 EXECUTE FUNCTION");
+const pgTriggerTimingCompletions = vm.runInContext('buildCodeCompletion({ value: "", selectionStart: 0 }, "schema-trigger-timing", true).items.map((item) => item.insert)', context);
+assert.ok(pgTriggerTimingCompletions.includes("INSTEAD OF"), "PG 触发器时机应提示 INSTEAD OF");
+vm.runInContext('state.connectionType = "mysql";', context);
+const mysqlTriggerStatementCompletions = vm.runInContext('buildCodeCompletion({ value: "", selectionStart: 0 }, "schema-trigger-statement", true).items.map((item) => item.insert)', context);
+assert.ok(mysqlTriggerStatementCompletions.some((item) => item.includes("SET NEW.")), "MySQL 触发器语句应提示 NEW 字段写法");
+
 console.log("ok - Workbench SQL 建表导入弹窗和解析");
