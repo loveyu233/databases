@@ -7123,7 +7123,7 @@ export class DatabaseWorkbenchPanel {
         ? postgresSchemaInputRow(editor)
         : "";
       const ddlRoleRow = state.connectionType === "postgres"
-        ? schemaInputRow("执行 Role", "ddlRole", editor.ddlRole || "", "例如 xtj_smart_pen_owner，留空则不切换")
+        ? schemaInputRow("执行 Role", "ddlRole", editor.ddlRole || "", "输入角色会在运行ddl前后执行，留空则不执行")
         : "";
       schemaDetail.innerHTML = '<div class="schema-detail-title"><h3>表信息</h3><span>root 节点</span></div>'
         + '<div class="schema-form">'
