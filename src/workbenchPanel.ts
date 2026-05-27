@@ -6625,6 +6625,12 @@ export class DatabaseWorkbenchPanel {
       const typeEnd = findFirstSqlKeyword(rest, ["character set", "collate", "not null", "null", "default", "comment", "auto_increment", "generated", "primary key", "unique", "references", "check", "on update"]);
       const rawType = (typeEnd >= 0 ? rest.slice(0, typeEnd) : rest).trim();
       const type = resolveImportedCreateTableColumnType(rawType, postgresEnumTypes);
+      const defaultValue = normalizeImportedPostgresColumnDefault(
+        extractClauseValue(rest, "default", ["comment", "auto_increment", "generated", "primary key", "unique", "references", "check", "on update", "not null", "null"]),
+        rawType,
+        type,
+        postgresEnumTypes
+      );
       const inlinePrimary = /\\bprimary\\s+key\\b/i.test(rest);
       const autoIncrement = /\\bauto_increment\\b/i.test(rest) || /\\bgenerated\\b[\\s\\S]*\\bidentity\\b/i.test(rest) || /\\bserial\\b/i.test(rawType);
       const comment = extractSqlComment(rest);
@@ -6640,7 +6646,7 @@ export class DatabaseWorkbenchPanel {
         jsonObjectOnly: false,
         autoIncrement,
         autoIncrementValue: autoIncrement ? "1" : "",
-        defaultValue: extractClauseValue(rest, "default", ["comment", "auto_increment", "generated", "primary key", "unique", "references", "check", "on update", "not null", "null"]),
+        defaultValue,
         onUpdate: extractClauseValue(rest, "on update", ["comment", "primary key", "unique", "references", "check"]),
         key: inlinePrimary ? "PRI" : "",
       };
@@ -6649,10 +6655,55 @@ export class DatabaseWorkbenchPanel {
     function resolveImportedCreateTableColumnType(rawType, postgresEnumTypes) {
       const type = String(rawType || "").trim();
       if (state.connectionType !== "postgres" || !postgresEnumTypes?.size) return type;
-      const path = normalizeSqlIdentifierPath(type);
-      const values = postgresEnumTypes.get(path) || postgresEnumTypes.get(normalizeSqlIdentifier(type));
+      const values = resolveImportedPostgresEnumValues(type, postgresEnumTypes);
       if (!values) return type;
       return "enum(" + values.map(formatInlineEnumValue).join(",") + ")";
+    }
+
+    function resolveImportedPostgresEnumValues(rawType, postgresEnumTypes) {
+      const type = String(rawType || "").trim();
+      if (!type || !postgresEnumTypes?.size) return null;
+      const path = normalizeSqlIdentifierPath(type);
+      const name = normalizeSqlIdentifier(type);
+      const candidates = [path, name];
+      if (!hasSqlQuotedIdentifier(type)) {
+        candidates.push(path.toLowerCase(), name.toLowerCase());
+      }
+      for (const key of candidates) {
+        if (key && postgresEnumTypes.has(key)) return postgresEnumTypes.get(key);
+      }
+      return null;
+    }
+
+    function normalizeImportedPostgresColumnDefault(defaultValue, rawType, resolvedType, postgresEnumTypes) {
+      const value = String(defaultValue || "").trim();
+      if (state.connectionType !== "postgres" || !value || !/^enum\\s*\\(/i.test(String(resolvedType || "").trim())) return value;
+      const cast = parsePostgresDefaultTypeCast(value);
+      if (!cast) return value;
+      const rawEnumValues = resolveImportedPostgresEnumValues(rawType, postgresEnumTypes);
+      const castEnumValues = resolveImportedPostgresEnumValues(cast.typeName, postgresEnumTypes);
+      const rawTypeKey = normalizeSqlIdentifierPath(rawType);
+      const castTypeKey = normalizeSqlIdentifierPath(cast.typeName);
+      const sameType = rawTypeKey && normalizeImportedPostgresIdentifierKey(rawTypeKey) === normalizeImportedPostgresIdentifierKey(castTypeKey);
+      if (!sameType && (!castEnumValues || (rawEnumValues && castEnumValues !== rawEnumValues))) {
+        return value;
+      }
+      return unquoteSqlLiteral(cast.expression);
+    }
+
+    function parsePostgresDefaultTypeCast(value) {
+      const identifier = '(?:"(?:[^"]|"")+"|[A-Za-z_][A-Za-z0-9_$]*)(?:\\\\s*\\\\.\\\\s*(?:"(?:[^"]|"")+"|[A-Za-z_][A-Za-z0-9_$]*))*';
+      const match = String(value || "").trim().match(new RegExp("^([\\\\s\\\\S]+?)::\\\\s*(" + identifier + ")\\\\s*$", "i"));
+      return match ? { expression: match[1].trim(), typeName: match[2].trim() } : null;
+    }
+
+    function normalizeImportedPostgresIdentifierKey(value) {
+      return String(value || "").replace(/\\s*\\.\\s*/g, ".").toLowerCase();
+    }
+
+    function hasSqlQuotedIdentifier(value) {
+      const text = String(value || "");
+      return text.includes('"') || text.includes(String.fromCharCode(96));
     }
 
     function formatInlineEnumValue(value) {
@@ -6923,8 +6974,13 @@ export class DatabaseWorkbenchPanel {
         if (!values.length) continue;
         const fullName = normalizeSqlIdentifierPath(match[1]);
         const parts = fullName.split(".").filter(Boolean);
-        if (fullName) enumTypes.set(fullName, values);
-        if (parts.length) enumTypes.set(parts[parts.length - 1], values);
+        const addName = (name) => {
+          if (!name) return;
+          enumTypes.set(name, values);
+          if (!hasSqlQuotedIdentifier(match[1])) enumTypes.set(name.toLowerCase(), values);
+        };
+        addName(fullName);
+        if (parts.length) addName(parts[parts.length - 1]);
       }
       return enumTypes;
     }

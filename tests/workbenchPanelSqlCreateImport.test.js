@@ -280,4 +280,22 @@ assert.equal(statusColumn.type, "enum('active','disabled')");
 assert.equal(statusColumn.comment, "设备状态");
 assert.ok(pgDraft.keys.some((key) => key.name === "devices_pkey" && key.primary === true));
 
+vm.runInContext('state.connectionType = "postgres"; state.defaultSchema = "public"; state.tables = [];', context);
+const copiedPgEnumDraft = context.parseCreateTableSqlToDraft(`
+CREATE TYPE "mqtt_user_type" AS ENUM ('pen', 'app', 'service');
+CREATE TYPE "mqtt_user_status" AS ENUM ('active', 'disabled', 'lost', 'retired');
+CREATE TABLE "mqtt_user" (
+  "guid" text NOT NULL,
+  "user_type" mqtt_user_type DEFAULT 'pen'::mqtt_user_type NOT NULL,
+  "status" mqtt_user_status DEFAULT 'active'::mqtt_user_status NOT NULL,
+  CONSTRAINT "mqtt_user_pkey" PRIMARY KEY ("guid")
+);
+`);
+const copiedUserTypeColumn = copiedPgEnumDraft.columns.find((column) => column.name === "user_type");
+const copiedStatusColumn = copiedPgEnumDraft.columns.find((column) => column.name === "status");
+assert.equal(copiedUserTypeColumn.type, "enum('pen','app','service')");
+assert.equal(copiedUserTypeColumn.defaultValue, "pen", "导入 PG 复制表结构时应移除旧 enum 类型转换，避免新建表引用不存在的原类型");
+assert.equal(copiedStatusColumn.type, "enum('active','disabled','lost','retired')");
+assert.equal(copiedStatusColumn.defaultValue, "active");
+
 console.log("ok - Workbench SQL 建表导入弹窗和解析");
