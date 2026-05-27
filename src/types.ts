@@ -323,7 +323,7 @@ export type PanelMessage =
   | { type: "refreshSchema" };
 
 export type PanelToWebviewMessage =
-  | { type: "init"; database: string; connectionId?: string; connectionName: string; connectionType?: DatabaseType; tables: TableInfo[]; selectedTable?: string; defaultLimit: number; tableDisplay: TableDisplayConfig; schemaCapabilities?: SchemaCapabilities; completionUsage?: Record<string, number>; queryConsole?: boolean; defaultSchema?: string; connections?: Array<Pick<DbConnectionConfig, "id" | "name" | "type" | "host" | "port" | "username">> }
+  | { type: "init"; database: string; connectionId?: string; connectionName: string; connectionType?: DatabaseType; tables: TableInfo[]; selectedTable?: string; defaultLimit: number; tableDisplay: TableDisplayConfig; schemaCapabilities?: SchemaCapabilities; completionUsage?: Record<string, number>; queryConsole?: boolean; defaultSchema?: string; ddlRoleOptions?: string[]; connections?: Array<Pick<DbConnectionConfig, "id" | "name" | "type" | "host" | "port" | "username">> }
   | { type: "tableSelected"; table: TableInfo; connectionType?: DatabaseType; defaultLimit: number; tableDisplay: TableDisplayConfig; schemaCapabilities?: SchemaCapabilities }
   | { type: "importSourceDatabases"; connectionId: string; databases: string[] }
   | { type: "importSourceTables"; connectionId: string; database: string; tables: TableInfo[] }
@@ -336,7 +336,7 @@ export type PanelToWebviewMessage =
   | { type: "redisKeyDetail"; key: string; keyType: string; page: number; pageSize: number; totalRows: number; totalPages: number; columns: string[]; rows: Record<string, unknown>[]; search?: string; fuzzySearch?: boolean; sortDirection?: "asc" | "desc"; memoryUsage?: number | null }
   | { type: "operationLogs"; logs: OperationLogEntry[] }
   | { type: "tableDisplayConfig"; tableDisplay: TableDisplayConfig }
-  | { type: "schemaDraftApplied" }
+  | { type: "schemaDraftApplied"; ddlRoleOptions?: string[] }
   | { type: "schemaDraftError"; message: string }
   | { type: "schemaDraftPreview"; title: string; sql: string }
   | { type: "updateCellsPreview"; title: string; sql: string; table: string; primaryKeys: string[]; updates: Array<{ primaryValues: Record<string, unknown>; changes: Record<string, unknown> }>; refreshQuery?: QuickRefreshQuery }

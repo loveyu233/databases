@@ -77,10 +77,22 @@ function createPanel() {
   };
 }
 
-function createWorkbench(initialTable) {
+function createMemoryGlobalState(initial = {}) {
+  const values = new Map(Object.entries(initial));
+  return {
+    get(key, fallback) {
+      return values.has(key) ? values.get(key) : fallback;
+    },
+    async update(key, value) {
+      values.set(key, value);
+    },
+  };
+}
+
+function createWorkbench(initialTable, overrides = {}) {
   const context = {
     extensionUri: {},
-    globalState: { get() {}, update() {} },
+    globalState: overrides.globalState || { get() {}, update() {} },
     secrets: { delete() {}, get() {}, store() {} },
   };
   const store = { getAll: () => [] };
@@ -128,6 +140,14 @@ const roleCreateStatements = createWorkbench().buildSchemaDraftStatements({
 assert.equal(roleCreateStatements[0], "SET ROLE xtj_smart_pen_owner;", "PG DDL 设置 role 后应在最前执行 SET ROLE");
 assert.equal(roleCreateStatements.at(-1), "RESET ROLE;", "PG DDL 设置 role 后应在最后 RESET ROLE");
 assert.ok(roleCreateStatements.join("\n").includes("CREATE TABLE \"devices\""), "PG DDL role 包裹后仍应保留建表 SQL");
+
+const roleHistoryState = createMemoryGlobalState({ "databaseWorkbench.postgresDdlRoles": ["old_owner"] });
+const roleHistoryWorkbench = createWorkbench(undefined, { globalState: roleHistoryState });
+assert.deepEqual(roleHistoryWorkbench.getPostgresDdlRoleOptions(), ["old_owner"], "应能读取已持久化的 PG DDL role 历史");
+roleHistoryWorkbench.savePostgresDdlRoleOption("xtj_smart_pen_owner");
+assert.deepEqual(roleHistoryWorkbench.getPostgresDdlRoleOptions(), ["xtj_smart_pen_owner", "old_owner"], "新 role 应写入历史并排在最前");
+roleHistoryWorkbench.savePostgresDdlRoleOption("old_owner");
+assert.deepEqual(roleHistoryWorkbench.getPostgresDdlRoleOptions(), ["old_owner", "xtj_smart_pen_owner"], "再次使用旧 role 应移动到最前");
 
 const editWorkbench = createWorkbench("devices");
 editWorkbench.schema = [{

@@ -61,6 +61,7 @@ type SqlStatementSelection = {
 export class DatabaseWorkbenchPanel {
   private static readonly panels = new Map<string, DatabaseWorkbenchPanel>();
   private static readonly completionUsageStateKey = "databaseWorkbench.completionUsage";
+  private static readonly postgresDdlRolesStateKey = "databaseWorkbench.postgresDdlRoles";
   private static readonly activeTreeSelectionChangedEmitter = new vscode.EventEmitter<ActiveWorkbenchTreeSelection | undefined>();
   static readonly onDidChangeActiveTreeSelection = DatabaseWorkbenchPanel.activeTreeSelectionChangedEmitter.event;
   private static activePanelKey = "";
@@ -436,6 +437,7 @@ export class DatabaseWorkbenchPanel {
       completionUsage: this.getCompletionUsage(),
       queryConsole: this.queryConsole,
       defaultSchema: this.defaultSchema,
+      ddlRoleOptions: this.connection.type === "postgres" ? this.getPostgresDdlRoleOptions() : undefined,
       connections: this.store.getAll()
         .filter((connection) => connection.type === "mysql")
         .map((connection) => ({
@@ -1151,6 +1153,9 @@ export class DatabaseWorkbenchPanel {
     }
 
     const nextTableName = getDraftTableName(draft, this.connection.type) || originalTableName;
+    const ddlRoleOptions = this.connection.type === "postgres"
+      ? await this.savePostgresDdlRoleOption(asString(draft.ddlRole))
+      : undefined;
     this.selectedTable = nextTableName;
     await this.loadSchema(true);
     const afterTable = nextTableName ? this.findTable(nextTableName) : undefined;
@@ -1161,7 +1166,7 @@ export class DatabaseWorkbenchPanel {
       }],
     });
     await vscode.commands.executeCommand("databaseWorkbench.refresh");
-    this.panel.webview.postMessage({ type: "schemaDraftApplied" });
+    this.panel.webview.postMessage({ type: "schemaDraftApplied", ddlRoleOptions });
     vscode.window.setStatusBarMessage(createMode ? "Database Workbench: 新表已创建。" : "Database Workbench: 表结构修改已提交。", 2000);
   }
 
@@ -1955,6 +1960,21 @@ export class DatabaseWorkbenchPanel {
 
   private async saveCompletionUsage(value: Record<string, number>): Promise<void> {
     await this.context.globalState.update(DatabaseWorkbenchPanel.completionUsageStateKey, sanitizeCompletionUsage(value));
+  }
+
+  private getPostgresDdlRoleOptions(): string[] {
+    return sanitizeStringList(this.context.globalState.get<string[]>(DatabaseWorkbenchPanel.postgresDdlRolesStateKey, []), 20);
+  }
+
+  private async savePostgresDdlRoleOption(role: string): Promise<string[]> {
+    const normalized = role.trim();
+    const current = this.getPostgresDdlRoleOptions();
+    if (!normalized) {
+      return current;
+    }
+    const next = sanitizeStringList([normalized, ...current.filter((item) => item !== normalized)], 20);
+    await this.context.globalState.update(DatabaseWorkbenchPanel.postgresDdlRolesStateKey, next);
+    return next;
   }
 
   private async createPendingOperationLog(input: CreateOperationLogInput): Promise<string | undefined> {
@@ -3888,7 +3908,7 @@ export class DatabaseWorkbenchPanel {
 	  <script nonce="${nonce}">
     const vscode = acquireVsCodeApi();
     let webviewPersistedState = typeof vscode.getState === "function" ? (vscode.getState() || {}) : {};
-	    const state = { database: "", connectionId: "", connectionName: "", connectionType: "mysql", queryConsole: false, defaultSchema: "", connections: [], tables: [], selectedTable: "", currentTable: null, schemaEditor: null, defaultLimit: 30, tableDisplay: { showColumnComments: true, hiddenColumnCommentNames: ["id", "created_at", "updated_at", "deleted_at"], dataGridFontSize: 12, sqlConfirmFontSize: 15 }, schemaCapabilities: { supportsNotEmptyStringCheck: false }, lastSql: "", currentResult: null, sortColumn: "", sortDirection: "asc", fieldColumns: [], selectedColumns: [], fieldSelectionInitialized: false, lastQueryMode: "preview", primaryKeys: [], columnTypes: {}, columnComments: {}, columnMeta: {}, pendingEdits: {}, quickInsert: { active: false, values: {} }, rowSelection: { selected: [], dragging: false, anchor: null, deleting: false }, quickFieldQuery: { rowIndexes: [], column: "" }, relationQuery: { rowIndexes: [], sourceColumn: "", targetTable: "", targetColumn: "" }, importSource: { databases: [], tables: [], columns: [], mappings: [] }, redisDetail: { key: "", keyType: "", page: 1, pageSize: 30, totalRows: 0, totalPages: 1, columns: [], rows: [], search: "", fuzzySearch: false, sortDirection: "asc", memoryUsage: null, contextRowIndex: -1 }, operationLogs: [], selectedLogId: "", rollbackingLogId: "", rollbackError: null, logContextLogId: "", activeLogTagColor: "", logTagDraft: { logId: "", color: "blue" }, aiTimeline: [], aiActiveTimelineId: "", aiContinueParentId: "", aiContinueSourceId: "" };
+	    const state = { database: "", connectionId: "", connectionName: "", connectionType: "mysql", queryConsole: false, defaultSchema: "", ddlRoleOptions: [], connections: [], tables: [], selectedTable: "", currentTable: null, schemaEditor: null, defaultLimit: 30, tableDisplay: { showColumnComments: true, hiddenColumnCommentNames: ["id", "created_at", "updated_at", "deleted_at"], dataGridFontSize: 12, sqlConfirmFontSize: 15 }, schemaCapabilities: { supportsNotEmptyStringCheck: false }, lastSql: "", currentResult: null, sortColumn: "", sortDirection: "asc", fieldColumns: [], selectedColumns: [], fieldSelectionInitialized: false, lastQueryMode: "preview", primaryKeys: [], columnTypes: {}, columnComments: {}, columnMeta: {}, pendingEdits: {}, quickInsert: { active: false, values: {} }, rowSelection: { selected: [], dragging: false, anchor: null, deleting: false }, quickFieldQuery: { rowIndexes: [], column: "" }, relationQuery: { rowIndexes: [], sourceColumn: "", targetTable: "", targetColumn: "" }, importSource: { databases: [], tables: [], columns: [], mappings: [] }, redisDetail: { key: "", keyType: "", page: 1, pageSize: 30, totalRows: 0, totalPages: 1, columns: [], rows: [], search: "", fuzzySearch: false, sortDirection: "asc", memoryUsage: null, contextRowIndex: -1 }, operationLogs: [], selectedLogId: "", rollbackingLogId: "", rollbackError: null, logContextLogId: "", activeLogTagColor: "", logTagDraft: { logId: "", color: "blue" }, aiTimeline: [], aiActiveTimelineId: "", aiContinueParentId: "", aiContinueSourceId: "" };
     const $ = (selector) => document.querySelector(selector);
 	    const sqlInput = $("#sqlInput");
 	    const sqlHighlight = $("#sqlHighlight");
@@ -4043,6 +4063,7 @@ export class DatabaseWorkbenchPanel {
 	        state.connectionType = message.connectionType || "mysql";
 	        state.queryConsole = message.queryConsole === true;
 	        state.defaultSchema = message.defaultSchema || (state.connectionType === "postgres" ? "public" : "");
+	        state.ddlRoleOptions = normalizeStringList(message.ddlRoleOptions || state.ddlRoleOptions);
 	        state.connections = message.connections || [];
 	        state.tables = message.tables || [];
         state.selectedTable = message.selectedTable || state.selectedTable;
@@ -4168,6 +4189,7 @@ export class DatabaseWorkbenchPanel {
         return;
       }
       if (message.type === "schemaDraftApplied") {
+        state.ddlRoleOptions = normalizeStringList(message.ddlRoleOptions || state.ddlRoleOptions);
         state.schemaEditor = null;
         pendingSchemaConfirmDraft = null;
         pendingUpdateConfirmPayload = null;
@@ -5439,6 +5461,19 @@ export class DatabaseWorkbenchPanel {
         if (Number.isFinite(usedAt) && usedAt > 0) next[key] = usedAt;
         return next;
       }, {});
+    }
+
+    function normalizeStringList(value) {
+      if (!Array.isArray(value)) return [];
+      const seen = new Set();
+      const result = [];
+      value.forEach((item) => {
+        const text = String(item || "").trim();
+        if (!text || seen.has(text)) return;
+        seen.add(text);
+        result.push(text);
+      });
+      return result.slice(0, 20);
     }
 
     function persistCompletionUsage() {
@@ -7123,7 +7158,7 @@ export class DatabaseWorkbenchPanel {
         ? postgresSchemaInputRow(editor)
         : "";
       const ddlRoleRow = state.connectionType === "postgres"
-        ? schemaInputRow("执行 Role", "ddlRole", editor.ddlRole || "", "输入角色会在运行ddl前后执行，留空则不执行")
+        ? postgresDdlRoleInputRow(editor)
         : "";
       schemaDetail.innerHTML = '<div class="schema-detail-title"><h3>表信息</h3><span>root 节点</span></div>'
         + '<div class="schema-form">'
@@ -7285,6 +7320,13 @@ export class DatabaseWorkbenchPanel {
       return '<div class="schema-form-row"><label>Schema</label>'
         + '<input class="field" data-schema-path="table.schema" list="postgresSchemaOptions" value="' + escapeHtml(editor.table.schema || state.defaultSchema || "public") + '" placeholder="例如 public" />'
         + '<datalist id="postgresSchemaOptions">' + options.map((schema) => '<option value="' + escapeHtml(schema) + '"></option>').join("") + '</datalist>'
+        + '</div>';
+    }
+
+    function postgresDdlRoleInputRow(editor) {
+      return '<div class="schema-form-row"><label>执行 Role</label>'
+        + '<input class="field" data-schema-path="ddlRole" list="postgresDdlRoleOptions" value="' + escapeHtml(editor.ddlRole || "") + '" placeholder="输入角色会在运行ddl前后执行，留空则不执行" />'
+        + '<datalist id="postgresDdlRoleOptions">' + (state.ddlRoleOptions || []).map((role) => '<option value="' + escapeHtml(role) + '"></option>').join("") + '</datalist>'
         + '</div>';
     }
 
@@ -12971,6 +13013,26 @@ function sanitizeCompletionUsage(value: unknown): Record<string, number> {
       next[key] = usedAt;
       return next;
     }, {});
+}
+
+function sanitizeStringList(value: unknown, maxItems: number): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const item of value) {
+    const text = String(item ?? "").trim();
+    if (!text || seen.has(text)) {
+      continue;
+    }
+    seen.add(text);
+    result.push(text);
+    if (result.length >= maxItems) {
+      break;
+    }
+  }
+  return result;
 }
 
 function isMySqlCheckConstraintEnforcedVersion(version: string): boolean {
