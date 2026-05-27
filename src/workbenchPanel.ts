@@ -3386,6 +3386,12 @@ export class DatabaseWorkbenchPanel {
       cursor: text;
     }
     .schema-code-preview {
+      position: static;
+      inset: auto;
+      z-index: auto;
+      display: block;
+      width: 100%;
+      min-width: 0;
       min-height: 130px;
       max-height: min(420px, 46vh);
       margin: 0;
@@ -3394,6 +3400,7 @@ export class DatabaseWorkbenchPanel {
       border-radius: 7px;
       box-sizing: border-box;
       overflow: auto;
+      pointer-events: auto;
       color: var(--fg);
       background: rgba(127,127,127,.05);
       white-space: pre-wrap;

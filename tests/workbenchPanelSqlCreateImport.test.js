@@ -238,6 +238,7 @@ function createWebviewContext(script) {
 const html = buildWorkbenchHtml();
 assert.ok(html.includes('id="sqlCreateTableBtn"'), "添加表弹窗应包含 SQL 建表按钮");
 assert.ok(html.includes('id="sqlCreateTableOverlay"'), "添加表弹窗应包含 SQL 建表导入弹窗");
+assert.match(html, /\.schema-code-preview\s*\{[\s\S]*position:\s*static;[\s\S]*pointer-events:\s*auto;/, "schema 只读 SQL 预览不应继承编辑器高亮层的 absolute 定位和禁用鼠标事件");
 
 const scriptMatch = html.match(/<script nonce="[^"]*">([\s\S]*)<\/script>/);
 assert.ok(scriptMatch, "workbench webview script should exist");
