@@ -241,11 +241,20 @@ const sql = [
 ].join(" ");
 const formatted = context.formatConfirmSqlPreview(sql);
 
+assert.ok(formatted.startsWith("START TRANSACTION;\n\n"), "MySQL 多语句预览应显示事务开始");
 assert.ok(formatted.includes(";\n\nCREATE TABLE"), "CREATE TYPE 和 CREATE TABLE 之间应空一行");
 assert.ok(formatted.includes(";\n\nCOMMENT"), "CREATE TABLE 和 COMMENT 之间应空一行");
+assert.ok(formatted.includes("\n\nCOMMIT;\n\n-- 执行失败时插件会自动 ROLLBACK"), "多语句预览应显示提交和失败回滚提示");
 
 const literalFormatted = context.formatConfirmSqlPreview("SELECT 'aaa; bbb'; SELECT 1;");
 assert.ok(literalFormatted.includes("'aaa; bbb';\n\nSELECT"), "字符串后的下一条语句仍应空行分隔");
 assert.ok(!literalFormatted.includes("'aaa;\n\n bbb'"), "字符串里的分号不能被当成语句分隔");
 
-console.log("ok - SQL 确认弹窗多语句预览会空行分隔");
+const singleFormatted = context.formatConfirmSqlPreview("SELECT 1;");
+assert.ok(!singleFormatted.startsWith("START TRANSACTION"), "单条 SQL 预览不应额外显示事务包裹");
+
+vm.runInContext('state.connectionType = "postgres";', context);
+const pgFormatted = context.formatConfirmSqlPreview("CREATE TABLE a(id int); COMMENT ON TABLE a IS 'a';");
+assert.ok(pgFormatted.startsWith("BEGIN;\n\n"), "PostgreSQL 多语句预览应显示 BEGIN");
+
+console.log("ok - SQL 确认弹窗多语句预览会显示事务包裹");

@@ -4699,7 +4699,92 @@ export class DatabaseWorkbenchPanel {
 
 	    function formatConfirmSqlPreview(sql) {
 	      const formatted = formatSqlText(sql);
-	      return insertBlankLinesBetweenSqlStatements(expandJsonSqlLiterals(formatted));
+	      return wrapTransactionPreviewIfNeeded(insertBlankLinesBetweenSqlStatements(expandJsonSqlLiterals(formatted)), state.connectionType);
+	    }
+
+	    function wrapTransactionPreviewIfNeeded(sql, dialect) {
+	      const text = String(sql || "").trim();
+	      if (dialect !== "mysql" && dialect !== "postgres") return text;
+	      const statements = splitSqlStatementsForPreview(text);
+	      if (statements.length <= 1 || hasExplicitTransactionStatement(statements)) return text;
+	      const mysql = dialect === "mysql";
+	      const start = mysql ? "START TRANSACTION;" : "BEGIN;";
+	      return start + "\\n\\n" + text + "\\n\\nCOMMIT;\\n\\n-- 执行失败时插件会自动 ROLLBACK";
+	    }
+
+	    function hasExplicitTransactionStatement(statements) {
+	      return statements.some((statement) => /^(begin|start\\s+transaction|commit|rollback)\\b/i.test(String(statement || "").trim()));
+	    }
+
+	    function splitSqlStatementsForPreview(sql) {
+	      const statements = [];
+	      let current = "";
+	      let quote = "";
+	      let lineComment = false;
+	      let blockComment = false;
+	      const text = String(sql || "");
+	      for (let index = 0; index < text.length; index += 1) {
+	        const char = text[index];
+	        const next = text[index + 1] || "";
+	        if (lineComment) {
+	          current += char;
+	          if (char === "\\n") lineComment = false;
+	          continue;
+	        }
+	        if (blockComment) {
+	          current += char;
+	          if (char === "*" && next === "/") {
+	            current += next;
+	            index += 1;
+	            blockComment = false;
+	          }
+	          continue;
+	        }
+	        if (quote) {
+	          current += char;
+	          if (char === String.fromCharCode(92) && next) {
+	            current += next;
+	            index += 1;
+	            continue;
+	          }
+	          if (char === quote) {
+	            if (next === quote && quote !== String.fromCharCode(96)) {
+	              current += next;
+	              index += 1;
+	              continue;
+	            }
+	            quote = "";
+	          }
+	          continue;
+	        }
+	        if (char === "-" && next === "-") {
+	          current += char + next;
+	          index += 1;
+	          lineComment = true;
+	          continue;
+	        }
+	        if (char === "/" && next === "*") {
+	          current += char + next;
+	          index += 1;
+	          blockComment = true;
+	          continue;
+	        }
+	        if (char === "'" || char === '"' || char === String.fromCharCode(96)) {
+	          quote = char;
+	          current += char;
+	          continue;
+	        }
+	        if (char === ";") {
+	          const statement = current.trim();
+	          if (statement) statements.push(statement);
+	          current = "";
+	          continue;
+	        }
+	        current += char;
+	      }
+	      const tail = current.trim();
+	      if (tail) statements.push(tail);
+	      return statements;
 	    }
 
 	    function insertBlankLinesBetweenSqlStatements(sql) {
@@ -5011,7 +5096,7 @@ export class DatabaseWorkbenchPanel {
 		        "DEFAULT", "DELETE", "DESC", "DISTINCT", "DO", "DROP", "ELSE", "END", "ENGINE", "EXISTS", "EXPIRE", "FALSE", "FOREIGN", "FROM", "FULL", "GROUP",
 		        "HAVING", "IF", "ILIKE", "IN", "INDEX", "INNER", "INSERT", "INTERVAL", "INTO", "IS", "JOIN", "JSONB", "KEY", "LEFT", "LIKE", "LIMIT", "MODIFY",
 		        "NOT", "NOTHING", "NULL", "OFFSET", "ON", "OR", "ORDER", "OUTER", "OVER", "PARTITION", "PERSIST", "PRIMARY", "RECURSIVE", "REFERENCES", "RENAME",
-		        "RETURNING", "RIGHT", "SELECT", "SERIAL", "SET", "TABLE", "THEN", "TO", "TRUE", "TRUNCATE", "UNION", "UNIQUE", "UNLINK", "UPDATE", "USING",
+		        "RETURNING", "RIGHT", "ROLLBACK", "SELECT", "SERIAL", "SET", "START", "TABLE", "THEN", "TO", "TRANSACTION", "TRUE", "TRUNCATE", "UNION", "UNIQUE", "UNLINK", "UPDATE", "USING",
 		        "VALUES", "WHEN", "WHERE", "WINDOW", "WITH"
 	      ].includes(upper);
 	    }

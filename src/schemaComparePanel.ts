@@ -1233,7 +1233,7 @@ function renderCompareHtml(sqlConfirmFontSize = 15): string {
 	      state.pendingSqlAction = message.action || null;
 	      $("#sqlConfirmTitle").textContent = message.title || "确认执行 SQL";
 	      const code = $("#sqlConfirmCode");
-	      code.innerHTML = renderHighlightedConfirmSql(formatSqlPreview(message.sql || ""));
+	      code.innerHTML = renderHighlightedConfirmSql(formatSqlPreview(message.sql || "", state.init?.source?.type || ""));
 	      $("#sqlConfirmOverlay").classList.add("open");
 	      code.scrollTop = 0;
 	      code.scrollLeft = 0;
@@ -1255,12 +1255,63 @@ function renderCompareHtml(sqlConfirmFontSize = 15): string {
 	        setStatus("正在执行已确认的 SQL...", "");
 	      }
 	    }
-	    function formatSqlPreview(sql) {
-	      return String(sql || "")
+	    function formatSqlPreview(sql, dialect) {
+	      const formatted = String(sql || "")
 	        .replace(/\\r\\n/g, "\\n")
 	        .replace(/;\\s*/g, ";\\n")
 	        .replace(/\\b(ALTER|CREATE|DROP|INSERT|UPDATE|DELETE|SELECT|FROM|WHERE|SET|VALUES|ADD|MODIFY|CHANGE|RENAME|CONSTRAINT|PRIMARY KEY|FOREIGN KEY|REFERENCES|DEFAULT|COMMENT)\\b/gi, (match) => match.toUpperCase())
 	        .trim();
+	      return wrapTransactionPreviewIfNeeded(formatted, dialect);
+	    }
+	    function wrapTransactionPreviewIfNeeded(sql, dialect) {
+	      const text = String(sql || "").trim();
+	      if (dialect !== "mysql" && dialect !== "postgres") return text;
+	      const statements = splitSqlStatementsForPreview(text);
+	      if (statements.length <= 1 || statements.some((statement) => /^(begin|start\\s+transaction|commit|rollback)\\b/i.test(statement.trim()))) return text;
+	      const start = dialect === "mysql" ? "START TRANSACTION;" : "BEGIN;";
+	      return start + "\\n\\n" + text + "\\n\\nCOMMIT;\\n\\n-- 执行失败时插件会自动 ROLLBACK";
+	    }
+	    function splitSqlStatementsForPreview(sql) {
+	      const statements = [];
+	      let current = "";
+	      let quote = "";
+	      const text = String(sql || "");
+	      for (let index = 0; index < text.length; index += 1) {
+	        const char = text[index];
+	        const next = text[index + 1] || "";
+	        if (quote) {
+	          current += char;
+	          if (char === String.fromCharCode(92) && next) {
+	            current += next;
+	            index += 1;
+	            continue;
+	          }
+	          if (char === quote) {
+	            if (next === quote && quote !== String.fromCharCode(96)) {
+	              current += next;
+	              index += 1;
+	              continue;
+	            }
+	            quote = "";
+	          }
+	          continue;
+	        }
+	        if (char === "'" || char === '"' || char === String.fromCharCode(96)) {
+	          quote = char;
+	          current += char;
+	          continue;
+	        }
+	        if (char === ";") {
+	          const statement = current.trim();
+	          if (statement) statements.push(statement);
+	          current = "";
+	          continue;
+	        }
+	        current += char;
+	      }
+	      const tail = current.trim();
+	      if (tail) statements.push(tail);
+	      return statements;
 	    }
 	    function renderHighlightedConfirmSql(sql) {
 	      const tokens = tokenizeConfirmSql(sql);
@@ -1434,7 +1485,7 @@ function renderCompareHtml(sqlConfirmFontSize = 15): string {
 	      return /[A-Za-z0-9_$]/.test(char) || char.charCodeAt(0) > 127;
 	    }
 	    function isConfirmSqlKeyword(upper) {
-	      return ["ADD","AFTER","ALTER","AND","AS","ASC","BEGIN","BETWEEN","BY","CASCADE","CASE","CHANGE","CHECK","COLLATE","COLUMN","COMMENT","COMMIT","CONSTRAINT","CREATE","DATABASE","DEFAULT","DELETE","DESC","DISTINCT","DROP","ELSE","END","ENGINE","EXISTS","FOREIGN","FROM","GROUP","HAVING","IF","IN","INDEX","INNER","INSERT","INTO","IS","JOIN","KEY","LEFT","LIKE","LIMIT","MODIFY","NOT","NULL","ON","OR","ORDER","OUTER","PRIMARY","REFERENCES","RENAME","RETURNING","RIGHT","SELECT","SET","TABLE","THEN","TO","TRUNCATE","UNION","UNIQUE","UPDATE","USING","VALUES","WHEN","WHERE"].includes(upper);
+	      return ["ADD","AFTER","ALTER","AND","AS","ASC","BEGIN","BETWEEN","BY","CASCADE","CASE","CHANGE","CHECK","COLLATE","COLUMN","COMMENT","COMMIT","CONSTRAINT","CREATE","DATABASE","DEFAULT","DELETE","DESC","DISTINCT","DROP","ELSE","END","ENGINE","EXISTS","FOREIGN","FROM","GROUP","HAVING","IF","IN","INDEX","INNER","INSERT","INTO","IS","JOIN","KEY","LEFT","LIKE","LIMIT","MODIFY","NOT","NULL","ON","OR","ORDER","OUTER","PRIMARY","REFERENCES","RENAME","RETURNING","RIGHT","ROLLBACK","SELECT","SET","START","TABLE","THEN","TO","TRANSACTION","TRUNCATE","UNION","UNIQUE","UPDATE","USING","VALUES","WHEN","WHERE"].includes(upper);
 	    }
     $("#targetConnection").addEventListener("change", loadTargetDatabases);
     $("#targetDatabase").addEventListener("change", loadTargetTables);

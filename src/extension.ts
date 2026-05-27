@@ -1500,6 +1500,7 @@ async function editDatabase(
   if (!await showSqlConfirmDialog({
     title: "确认执行下面的数据库修改 SQL 吗？",
     sql,
+    dialect: node.connection.type,
   })) {
     return;
   }
@@ -1527,6 +1528,7 @@ async function deleteDatabase(
     title: `确定删除数据库「${node.database}」吗？这个操作不可恢复。`,
     sql,
     confirmLabel: "确认删除",
+    dialect: node.connection.type,
   })) {
     return;
   }
@@ -1681,6 +1683,7 @@ async function deleteTable(
     title: `确定删除表「${node.table}」吗？这个操作不可恢复。`,
     sql,
     confirmLabel: "确认删除",
+    dialect: node.connection.type,
   })) {
     return;
   }
@@ -1748,6 +1751,7 @@ async function submitCreateResource(
     title: `确认创建${plan.targetLabel}「${plan.name}」吗？`,
     sql: plan.sql,
     confirmLabel: "确认创建",
+    dialect: connection.type === "mysql" || connection.type === "postgres" ? connection.type : undefined,
   })) {
     panel.webview.postMessage({ type: "createResourceStatus", ok: false, message: "已取消创建。" });
     return;
