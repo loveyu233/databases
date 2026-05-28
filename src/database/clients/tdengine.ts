@@ -194,10 +194,36 @@ export class TDengineClient implements DbClient {
 
 function getTDengineModule(): TDengineModule {
   if (!tdengineModule) {
-    tdengineModule = require("@tdengine/websocket") as TDengineModule;
+    tdengineModule = loadTDengineModuleWithoutFileLogger();
     tdengineModule.setLogLevel("error");
   }
   return tdengineModule;
+}
+
+function loadTDengineModuleWithoutFileLogger(): TDengineModule {
+  const nodeModule = require("module") as {
+    _load: (request: string, parent: unknown, isMain: boolean) => unknown;
+  };
+  const originalLoad = nodeModule._load;
+  nodeModule._load = function patchedLoad(request: string, parent: unknown, isMain: boolean): unknown {
+    if (request === "winston-daily-rotate-file") {
+      const winston = originalLoad.call(this, "winston", parent, isMain) as {
+        transports: { Console: new (options?: Record<string, unknown>) => unknown };
+      };
+      return function SilentTDengineRotateFile(options?: Record<string, unknown>): unknown {
+        return new winston.transports.Console({
+          level: String(options?.level || "error"),
+          silent: true,
+        });
+      };
+    }
+    return originalLoad.call(this, request, parent, isMain);
+  };
+  try {
+    return require("@tdengine/websocket") as TDengineModule;
+  } finally {
+    nodeModule._load = originalLoad;
+  }
 }
 
 function isTDengineRowsQuery(sql: string): boolean {

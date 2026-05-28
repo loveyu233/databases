@@ -1,8 +1,11 @@
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
 const Module = require("node:module");
+const path = require("node:path");
 
 const originalLoad = Module._load;
 const calls = [];
+const repoLogDirectory = path.join(__dirname, "..", "logs");
 
 class FakeWSConfig {
   constructor(url) {
@@ -131,6 +134,9 @@ Module._load = function patchedLoad(request, parent, isMain) {
     return fakeVscode;
   }
   if (request === "@tdengine/websocket") {
+    const RotateFile = require("winston-daily-rotate-file");
+    const transport = new RotateFile({ filename: "./logs/app-%DATE%.log", level: "info" });
+    calls.push(["tdengineLogSilent", transport.silent]);
     return {
       WSConfig: FakeWSConfig,
       setLogLevel: (level) => {
@@ -148,6 +154,7 @@ Module._load = function patchedLoad(request, parent, isMain) {
 const { DatabaseService } = require("../out/database/service");
 
 async function run() {
+  fs.rmSync(repoLogDirectory, { recursive: true, force: true });
   const service = new DatabaseService();
   const connection = {
     id: "td",
@@ -162,6 +169,8 @@ async function run() {
   calls.length = 0;
   const databases = await service.listDatabases(connection);
   assert.deepEqual(databases, ["power", "telemetry"]);
+  assert.deepEqual(calls.find((item) => item[0] === "tdengineLogSilent"), ["tdengineLogSilent", true]);
+  assert.equal(fs.existsSync(repoLogDirectory), false);
   assert.deepEqual(calls.find((item) => item[0] === "connect"), [
     "connect",
     {
@@ -204,9 +213,11 @@ async function run() {
   assert.deepEqual(calls.find((item) => item[0] === "exec").slice(1), ["CREATE DATABASE `iot`;", 2]);
 
   console.log("ok - DatabaseService TDengine 连接、结构和查询");
+  fs.rmSync(repoLogDirectory, { recursive: true, force: true });
 }
 
 run().catch((error) => {
   console.error(error);
+  fs.rmSync(repoLogDirectory, { recursive: true, force: true });
   process.exitCode = 1;
 });
