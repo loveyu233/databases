@@ -600,6 +600,8 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
   .sort-header.active .sort-mark { color: var(--fg); }
   .editable-cell { cursor: pointer; }
   .editable-cell:hover { outline: 1px solid var(--button); outline-offset: -1px; background: rgba(14, 99, 156, .12); }
+  .copyable-cell { cursor: copy; }
+  .copyable-cell:hover { outline: 1px solid var(--button); outline-offset: -1px; background: rgba(14, 99, 156, .08); }
   .inspectable-cell { cursor: pointer; }
   .inspectable-cell:hover { outline: 1px solid var(--button); outline-offset: -1px; background: rgba(14, 99, 156, .1); }
   .cell-newline-mark {
@@ -6840,10 +6842,9 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
       const pending = state.pendingEdits[editKey];
       const displayValue = pending ? formatValue(pending.newValue) : formatValue(value);
       const editable = canEditColumn(column, entry.row);
-      const inspectable = canInspectRedisValue(column, entry.row);
-      const copyable = canCopyReadonlyColumn(column, entry.row);
-      const title = copyable ? displayValue + "\\n双击复制到剪贴板" : displayValue;
-      return '<td class="data-cell ' + (editable ? 'editable-cell' : '') + (inspectable ? ' inspectable-cell' : '') + (copyable ? ' copyable-cell' : '') + (pending ? ' pending-cell' : '') + '" data-row-index="' + entry.index + '" data-column="' + escapeHtml(column) + '" title="' + escapeHtml(title) + '"><span class="cell-value">' + renderCellDisplayValue(displayValue) + '</span></td>';
+      const copyable = !editable;
+      const title = displayValue + (editable ? "\\n双击编辑" : "\\n双击复制到剪贴板");
+      return '<td class="data-cell ' + (editable ? 'editable-cell' : '') + (copyable ? ' copyable-cell' : '') + (pending ? ' pending-cell' : '') + '" data-row-index="' + entry.index + '" data-column="' + escapeHtml(column) + '" title="' + escapeHtml(title) + '"><span class="cell-value">' + renderCellDisplayValue(displayValue) + '</span></td>';
     }).join("") + '</tr>').join("");
     result.innerHTML = '<table class="data-table" style="--column-count: ' + columns.length + '"><thead><tr class="data-header-row">' + head + '</tr><tr class="table-x-scroll-row"><th colspan="' + columns.length + '"><div class="table-x-scroll" aria-label="横向滚动查看更多字段"><div class="table-x-scroll-inner"></div></div></th></tr></thead><tbody>' + body + '</tbody></table>';
     setupResultHorizontalScrollbar();
@@ -6855,19 +6856,11 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
         });
       });
     }
-    result.querySelectorAll(".editable-cell:not(.insert-cell)").forEach((cell) => {
-      cell.addEventListener("dblclick", () => startCellEdit(cell));
-    });
-    result.querySelectorAll(".inspectable-cell").forEach((cell) => {
-      cell.addEventListener("dblclick", () => openRedisKeyDetailFromCell(cell));
-    });
-    result.querySelectorAll(".copyable-cell").forEach((cell) => {
-      cell.addEventListener("dblclick", () => copyReadonlyCellValue(cell));
-    });
     result.querySelectorAll(".insert-cell").forEach((cell) => {
       cell.addEventListener("dblclick", () => startInsertCellEdit(cell.getAttribute("data-column")));
     });
     result.querySelectorAll(".data-cell").forEach((cell) => {
+      cell.addEventListener("dblclick", () => handleDataCellDblClick(cell));
       cell.addEventListener("contextmenu", (event) => openRowContextMenu(event, cell));
       cell.addEventListener("mousedown", (event) => startRowSelection(event, cell));
       cell.addEventListener("mouseenter", () => extendRowSelection(cell));
@@ -8694,26 +8687,24 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
       && state.primaryKeys.every((primaryKey) => row && row[primaryKey] !== undefined && row[primaryKey] !== null);
   }
 
-  function canCopyReadonlyColumn(column, row) {
-    if (state.connectionType === "redis") {
-      return column === "key" && row?.key !== undefined && row?.key !== null;
-    }
-    if (state.connectionType === "elasticsearch") {
-      return column === "_index" && row?._index !== undefined && row?._index !== null;
-    }
-    return false;
-  }
-
-  function copyReadonlyCellValue(cell) {
+  function handleDataCellDblClick(cell) {
+    if (cell.classList.contains("insert-cell")) return;
     const rowIndex = Number(cell.getAttribute("data-row-index"));
     const column = cell.getAttribute("data-column");
     if (!state.currentResult || !column || !Number.isInteger(rowIndex)) return;
     const row = state.currentResult.rows[rowIndex];
-    if (!canCopyReadonlyColumn(column, row)) return;
-    const value = row[column];
-    const label = state.connectionType === "redis" ? "Redis Key" : "ES _index";
-    vscode.postMessage({ type: "copyText", text: String(value ?? ""), successMessage: label + " 已复制" });
-    setStatus(label + " 已复制到剪贴板。", false);
+    if (!row) return;
+    if (canEditColumn(column, row)) {
+      startCellEdit(cell);
+      return;
+    }
+    copyReadonlyCellValue(column, row);
+  }
+
+  function copyReadonlyCellValue(column, row) {
+    const text = formatValue(row?.[column]);
+    vscode.postMessage({ type: "copyText", text, successMessage: "单元格内容已复制" });
+    setStatus("字段 " + column + " 已复制到剪贴板。", false);
   }
 
   function canInspectRedisValue(column, row) {
