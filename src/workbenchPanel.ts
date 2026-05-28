@@ -684,7 +684,7 @@ export class DatabaseWorkbenchPanel {
 
   private async runSql(sql: string, limit?: number, page?: number, sortColumn?: string, sortDirection?: "asc" | "desc"): Promise<void> {
     if (!sql.trim()) {
-      throw new Error(this.connection.type === "redis" ? "请先输入 Redis 命令。" : this.connection.type === "elasticsearch" ? "请先输入 Elasticsearch 查询。" : this.connection.type === "mongodb" ? "请先输入 MongoDB 命令。" : "请先输入 SQL。");
+      throw new Error(this.connection.type === "redis" ? "请先输入 Redis 命令。" : this.connection.type === "elasticsearch" ? "请先输入 Elasticsearch 查询。" : this.connection.type === "mongodb" ? "请先输入 MongoDB 命令。" : this.connection.type === "tdengine" ? "请先输入 TDengine SQL。" : "请先输入 SQL。");
     }
 
     let executableSql = sql.trim();
@@ -788,11 +788,12 @@ export class DatabaseWorkbenchPanel {
     }
 
     let activeIndex = 0;
+    const usesTransaction = this.connection.type === "mysql" || this.connection.type === "postgres";
     try {
       const results = await this.databaseService.queryStatements(connection, this.database, executableSqlList, -1, (statement, index) => {
         activeIndex = index;
         this.lastQueryErrorSql = statement;
-        this.panel.webview.postMessage({ type: "loading", area: "query", message: `正在事务中执行第 ${index + 1} / ${plans.length} 条 SQL...` });
+        this.panel.webview.postMessage({ type: "loading", area: "query", message: `${usesTransaction ? "正在事务中执行" : "正在执行"}第 ${index + 1} / ${plans.length} 条 SQL...` });
       });
 
       for (let index = 0; index < plans.length; index += 1) {
@@ -810,7 +811,9 @@ export class DatabaseWorkbenchPanel {
     } catch (error) {
       const failedIndex = getStatementErrorIndex(error, activeIndex);
       const partialResults = getStatementPartialResults(error);
-      const errorMessage = `事务执行失败，已请求回滚：${getErrorMessage(error)}`;
+      const errorMessage = usesTransaction
+        ? `事务执行失败，已请求回滚：${getErrorMessage(error)}`
+        : `第 ${failedIndex + 1} 条 SQL 执行失败：${getErrorMessage(error)}`;
       for (let index = 0; index < plans.length; index += 1) {
         const plan = plans[index];
         const result = partialResults[index];
@@ -822,7 +825,7 @@ export class DatabaseWorkbenchPanel {
           title: getSqlStatementTitle(statements[index]) || `SQL ${index + 1}`,
           type: plan.isSelect ? "查询" : "修改",
           affectedRows: result?.affectedRows ?? result?.rowCount ?? 0,
-          status: index < failedIndex ? "已请求回滚" : index === failedIndex ? `失败：${getErrorMessage(error)}` : "未执行",
+          status: index < failedIndex ? (usesTransaction ? "已请求回滚" : "已执行") : index === failedIndex ? `失败：${getErrorMessage(error)}` : "未执行",
         });
       }
       const summary: QueryResult = {
@@ -1276,6 +1279,9 @@ export class DatabaseWorkbenchPanel {
     confirmed: boolean,
     refreshQuery?: QuickRefreshQuery
   ): Promise<void> {
+    if (this.connection.type === "tdengine") {
+      throw new Error("TDengine 时序表暂不支持表格双击编辑，请使用 SQL 控制台执行。");
+    }
     if (!table || primaryKeys.length === 0 || updates.length === 0) {
       throw new Error("缺少主键或修改内容，无法构造 UPDATE。");
     }
@@ -1343,6 +1349,9 @@ export class DatabaseWorkbenchPanel {
   }
 
   private async insertRow(table: string, values: Record<string, unknown>, confirmed: boolean): Promise<void> {
+    if (this.connection.type === "tdengine") {
+      throw new Error("TDengine 时序表暂不支持快速新增，请使用 SQL 控制台执行 INSERT。");
+    }
     if (!table.trim()) {
       throw new Error("请先从左侧数据库树选择一张表。");
     }
@@ -1395,6 +1404,9 @@ export class DatabaseWorkbenchPanel {
   }
 
   private async deleteRows(table: string, primaryKeys: string[], primaryValuesList: Array<Record<string, unknown>>, confirmed: boolean): Promise<void> {
+    if (this.connection.type === "tdengine") {
+      throw new Error("TDengine 时序表暂不支持右键删除行，请使用 SQL 控制台执行。");
+    }
     if (!table.trim() || primaryKeys.length === 0) {
       throw new Error("缺少表名或主键，无法构造 DELETE。");
     }
@@ -1452,8 +1464,8 @@ export class DatabaseWorkbenchPanel {
     targetColumn: string,
     values: unknown[]
   ): Promise<void> {
-    if (this.connection.type !== "mysql" && this.connection.type !== "postgres" && this.connection.type !== "mongodb") {
-      throw new Error("关联查询暂时只支持 MySQL、PostgreSQL 和 MongoDB。");
+    if (this.connection.type !== "mysql" && this.connection.type !== "postgres" && this.connection.type !== "mongodb" && this.connection.type !== "tdengine") {
+      throw new Error("关联查询暂时只支持 MySQL、PostgreSQL、MongoDB 和 TDengine。");
     }
     const sql = buildRelationQuerySql(this.connection.type, sourceTable, sourceColumn, targetTable, targetColumn, values);
     const suffix = `relation:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
@@ -1468,8 +1480,8 @@ export class DatabaseWorkbenchPanel {
   }
 
   private async runQuickFieldValueQuery(table: string, column: string, values: unknown[], limit?: number): Promise<void> {
-    if (this.connection.type !== "mysql" && this.connection.type !== "postgres" && this.connection.type !== "mongodb") {
-      throw new Error("字段快速条件查询暂时只支持 MySQL、PostgreSQL 和 MongoDB。");
+    if (this.connection.type !== "mysql" && this.connection.type !== "postgres" && this.connection.type !== "mongodb" && this.connection.type !== "tdengine") {
+      throw new Error("字段快速条件查询暂时只支持 MySQL、PostgreSQL、MongoDB 和 TDengine。");
     }
     const safeTable = String(table || "").trim();
     if (!safeTable) {
@@ -2024,7 +2036,7 @@ export class DatabaseWorkbenchPanel {
         }
         return;
       }
-      const failedLabel = this.connection.type === "redis" ? "Redis命令执行失败" : this.connection.type === "elasticsearch" ? "Elasticsearch查询执行失败" : this.connection.type === "mongodb" ? "MongoDB命令执行失败" : "SQL执行失败";
+      const failedLabel = this.connection.type === "redis" ? "Redis命令执行失败" : this.connection.type === "elasticsearch" ? "Elasticsearch查询执行失败" : this.connection.type === "mongodb" ? "MongoDB命令执行失败" : this.connection.type === "tdengine" ? "TDengine SQL执行失败" : "SQL执行失败";
       this.panel.webview.postMessage({ type: "error", area, message: `${failedLabel}，正在使用 AI 搜索错误...` });
       const message = await this.formatDatabaseError(error, this.lastQueryErrorSql);
       this.panel.webview.postMessage({ type: "error", area, message });

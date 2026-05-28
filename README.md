@@ -2,7 +2,7 @@
 
 Database Workbench 是一个在 VS Code 内使用的数据库工作台。它把连接管理、结构浏览、数据预览、查询编辑、数据修改、导入导出、操作日志和 AI 辅助放到同一个侧边栏与标签页工作流里。
 
-当前支持：**MySQL、PostgreSQL、Redis、Elasticsearch、MongoDB**。
+当前支持：**MySQL、PostgreSQL、Redis、Elasticsearch、MongoDB、TDengine**。
 
 > Pro 只解锁 AI、操作日志、表结构对比等高级入口，不包含大模型额度或内置 API Key。使用 AI 前仍需要自行配置 OpenAI、DeepSeek、通义千问、豆包、Ollama 等 OpenAI 兼容接口。
 
@@ -10,21 +10,21 @@ Database Workbench 是一个在 VS Code 内使用的数据库工作台。它把�
 
 ## 支持能力矩阵
 
-| 能力 | MySQL | PostgreSQL | Redis | Elasticsearch | MongoDB |
-| --- | --- | --- | --- | --- | --- |
-| 连接管理 | ✅ | ✅ | ✅ | ✅ | ✅ |
-| 分组 / 置顶 / 导入导出连接 | ✅ | ✅ | ✅ | ✅ | ✅ |
-| 资源浏览 | 库 / 表 | 库 / schema / 表 | DB / Key | 索引 | 数据库 / 集合 |
-| 快速查询 | WHERE 片段 | WHERE 片段 | Key 搜索 / INSPECT | Query DSL / query_string | JSON Filter |
-| 查询控制台 | SQL | SQL | Redis 命令 | HTTP Query DSL / ES SQL | Mongo shell 风格命令 |
-| 数据预览 | ✅ | ✅ | ✅ | ✅ | ✅ |
-| 双击编辑 | ✅ | ✅ | ✅ | ✅ | ✅，按 `_id` |
-| 新增 / 删除 | ✅ | ✅ | 部分 Key/成员 | ✅ | ✅，按 `_id` |
-| 创建资源 | 数据库 / 表 | 数据库 / schema 表 | - | 索引 | 数据库 / 集合 |
-| 修改表结构 | ✅ | ✅ | - | - | - |
-| 表结构对比，Pro | ✅ | ✅ | - | - | - |
-| 操作日志，Pro | ✅ | ✅ | ✅ | ✅ | ✅ |
-| AI 辅助，Pro | SQL | SQL | 命令 | Query DSL / ES SQL | MongoDB 命令 |
+| 能力 | MySQL | PostgreSQL | Redis | Elasticsearch | MongoDB | TDengine |
+| --- | --- | --- | --- | --- | --- | --- |
+| 连接管理 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 分组 / 置顶 / 导入导出连接 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 资源浏览 | 库 / 表 | 库 / schema / 表 | DB / Key | 索引 | 数据库 / 集合 | 库 / 超级表 / 表 |
+| 快速查询 | WHERE 片段 | WHERE 片段 | Key 搜索 / INSPECT | Query DSL / query_string | JSON Filter | WHERE 时间条件 |
+| 查询控制台 | SQL | SQL | Redis 命令 | HTTP Query DSL / ES SQL | Mongo shell 风格命令 | TDengine SQL |
+| 数据预览 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 双击编辑 | ✅ | ✅ | ✅ | ✅ | ✅，按 `_id` | - |
+| 新增 / 删除 | ✅ | ✅ | 部分 Key/成员 | ✅ | ✅，按 `_id` | - |
+| 创建资源 | 数据库 / 表 | 数据库 / schema 表 | - | 索引 | 数据库 / 集合 | 数据库 |
+| 修改表结构 | ✅ | ✅ | - | - | - | - |
+| 表结构对比，Pro | ✅ | ✅ | - | - | - | - |
+| 操作日志，Pro | ✅ | ✅ | ✅ | ✅ | ✅ | ✅，SQL 变更 |
+| AI 辅助，Pro | SQL | SQL | 命令 | Query DSL / ES SQL | MongoDB 命令 | TDengine SQL |
 
 ## 目录
 
@@ -45,11 +45,11 @@ Database Workbench 是一个在 VS Code 内使用的数据库工作台。它把�
 
 - **统一连接树**：按分组、连接、数据库 / Schema / DB / 索引 / 集合展示资源。
 - **一致的工作台体验**：点击左侧资源后，右侧标签页展示预览、快速条件、SQL / 命令编辑器、AI 时间线和结果表格。
-- **多数据库支持**：MySQL、PostgreSQL、Redis、Elasticsearch、MongoDB 使用同一套操作习惯。
+- **多数据库支持**：MySQL、PostgreSQL、Redis、Elasticsearch、MongoDB、TDengine 使用同一套操作习惯。
 - **可视化数据编辑**：双击编辑、JSON 格式化与高亮、枚举/布尔快捷按钮、快速新增、右键删除和批量删除。
 - **结构管理**：MySQL / PostgreSQL 支持创建表、修改表、SQL 建表导入、复制结构、触发器、自定义类型等。
-- **安全确认**：变更类 SQL / 命令执行前会弹出格式化确认预览；多条 SQL 执行会使用事务包裹。
-- **AI 辅助**：基于当前表结构、Redis Key、ES Mapping 或 MongoDB 集合结构生成查询和分析错误。
+- **安全确认**：变更类 SQL / 命令执行前会弹出格式化确认预览；MySQL / PostgreSQL 多条 SQL 执行会使用事务包裹。
+- **AI 辅助**：基于当前表结构、Redis Key、ES Mapping、MongoDB 集合结构或 TDengine 时序表结构生成查询和分析错误。
 - **操作日志**：记录数据变更和结构变更，支持查看前后数据、标签和回滚。
 
 ## 快速开始
@@ -57,7 +57,7 @@ Database Workbench 是一个在 VS Code 内使用的数据库工作台。它把�
 1. 安装插件后，打开 VS Code 左侧 **Database Workbench**。
 2. 点击连接树标题栏的 `+`。
 3. 选择「添加数据库连接」。
-4. 选择类型：MySQL / PostgreSQL / Redis / Elasticsearch / MongoDB。
+4. 选择类型：MySQL / PostgreSQL / Redis / Elasticsearch / MongoDB / TDengine。
 5. 填写 host、port、username、password、默认数据库或认证库等信息。
 6. 点击「测试连接」。
 7. 展开连接，点击数据库、表、索引、集合或 Redis DB。
@@ -91,9 +91,13 @@ Database Workbench
 │  ├─ Elasticsearch 本地连接
 │  │  └─ indices
 │  │     └─ logs.2026.05
-│  └─ MongoDB 本地连接
-│     └─ app_blog
-│        └─ users
+│  ├─ MongoDB 本地连接
+│  │  └─ app_blog
+│  │     └─ users
+│  └─ TDengine 本地连接
+│     └─ power
+│        ├─ meters
+│        └─ d1001
 ```
 
 - 分组可修改名称和颜色。
@@ -105,8 +109,8 @@ Database Workbench
 
 ```text
 顶部：刷新 / 自动刷新 / 复制结构 / 修改结构 / 选择显示字段 / 操作日志
-快速条件：WHERE 片段、ES 条件、MongoDB JSON Filter、Redis Key 搜索
-SQL / 命令 / AI：完整 SQL、Redis 命令、ES 请求、MongoDB 命令、AI 时间线
+快速条件：WHERE 片段、TDengine 时间条件、ES 条件、MongoDB JSON Filter、Redis Key 搜索
+SQL / 命令 / AI：完整 SQL、TDengine SQL、Redis 命令、ES 请求、MongoDB 命令、AI 时间线
 结果表格：预览、排序、分页、横向滚动、编辑、右键菜单
 ```
 
@@ -258,9 +262,42 @@ MongoDB 表格编辑说明：
 - 新增、修改、删除会生成对应 `insertOne`、`updateOne`、`deleteMany`。
 - 关联查询和字段快速条件查询支持 ObjectId 自动识别。
 
+### TDengine：时序库、超级表和时间窗口查询
+
+TDengine 连接通过 taosAdapter WebSocket 端口访问，默认端口为 `6041`。本地默认账号通常是 `root`，默认密码通常是 `taosdata`；开启 SSL 时会使用 `wss://` 连接。
+
+左侧树会展示数据库，下一级合并展示超级表、子表和普通表。点击时序表后，右侧会预览数据并读取字段结构；空结果也会保留 `ts`、指标字段和 tag 字段表头。
+
+常用查询：
+
+```sql
+SHOW DATABASES;
+SHOW STABLES;
+SHOW TABLES;
+DESCRIBE meters;
+
+SELECT *
+FROM meters
+WHERE ts >= now - 1d
+LIMIT 30;
+
+SELECT avg(current) AS avg_current
+FROM meters
+WHERE ts >= now - 1h
+INTERVAL(10m);
+```
+
+TDengine 操作说明：
+
+- 快速条件可直接输入 `ts >= now - 1d AND current > 10`。
+- 查询控制台支持 `SHOW`、`DESCRIBE`、`SELECT`、`CREATE DATABASE`、`CREATE STABLE`、`INSERT` 等 TDengine SQL。
+- 复制结构会优先读取 `SHOW CREATE STABLE` / `SHOW CREATE TABLE`。
+- 行右键支持关联查询和字段快速条件查询，方便用 tag 或时间字段反查其它时序表。
+- 表格双击编辑、快速新增和右键删除行暂不开放，建议通过 SQL 控制台显式执行 TDengine 写入或清理语句。
+
 ## AI 辅助，Pro
 
-激活 Pro 并配置 AI 后，可以在 MySQL、PostgreSQL、Redis、Elasticsearch、MongoDB 中使用 AI。
+激活 Pro 并配置 AI 后，可以在 MySQL、PostgreSQL、Redis、Elasticsearch、MongoDB、TDengine 中使用 AI。
 
 AI 能力包括：
 
@@ -268,6 +305,7 @@ AI 能力包括：
 - 根据 Redis Key 信息生成 Redis 命令。
 - 根据 Elasticsearch Mapping 生成 Query DSL 或 ES SQL。
 - 根据 MongoDB 集合结构生成 find / aggregate / countDocuments 等命令。
+- 根据 TDengine 时序表结构生成时间范围、INTERVAL 和聚合 SQL。
 - 根据错误信息分析失败原因。
 - 根据自然语言辅助创建表结构草案。
 - 对上一次 AI 结果继续追问和改写。
@@ -465,7 +503,7 @@ Database Workbench: 取消激活（测试使用）
 - 连接密码保存在 VS Code `SecretStorage`。
 - 普通连接信息保存在 VS Code 扩展全局状态中。
 - 导出的连接 JSON 可能包含密码。
-- AI 请求会发送表结构、Key / 索引 / 集合摘要和你的需求描述，默认不发送查询结果数据行。
+- AI 请求会发送表结构、Key / 索引 / 集合 / 时序表摘要和你的需求描述，默认不发送查询结果数据行。
 - 操作日志保存在本机，可能包含修改前后的真实业务数据。
 - Pro 许可证保存在 VS Code `SecretStorage`，插件不会联网校验许可证。
 - Elasticsearch 自签名证书需要手动开启 `allowInsecureTls`，远程或不可信网络环境不建议开启。
@@ -479,7 +517,7 @@ src/
 ├─ database/
 │  ├─ service.ts              # 数据库应用服务入口
 │  ├─ core/                   # DbClient、事务判断、通用工具
-│  └─ clients/                # mysql / postgres / redis / elasticsearch / mongodb
+│  └─ clients/                # mysql / postgres / redis / elasticsearch / mongodb / tdengine
 ├─ workbench/
 │  ├─ logic.ts                # 查询、结构 SQL、导出、回滚等纯逻辑
 │  └─ webviewHtml.ts          # 右侧工作台 HTML / CSS / 前端脚本
@@ -526,6 +564,10 @@ Pro 只解锁 AI 功能入口，不提供模型额度或通用 API Key。你需�
 ### MongoDB 为什么新建数据库时需要初始集合？
 
 MongoDB 数据库只有在创建集合或写入文档后才会真正存在。插件创建 MongoDB 数据库时会让你填写初始集合名，默认 `default_collection`。
+
+### TDengine 为什么使用 6041 端口？
+
+插件使用 TDengine 官方 WebSocket 连接器访问 taosAdapter，默认端口是 `6041`。如果你的 taosAdapter 端口或反向代理地址不同，请在连接配置里改成实际端口；开启 SSL 后会使用 `wss://`。
 
 ### 操作日志会不会占用很多空间？
 

@@ -169,6 +169,9 @@ export function buildSqlPaginationPlan(
   sortDirection?: "asc" | "desc"
 ): SqlPaginationPlan {
   const trimmed = stripTrailingSemicolon(sql);
+  if (type === "tdengine" && isTDengineReadOnlyStatement(trimmed)) {
+    return { executableSql: trimmed, isSelect: true };
+  }
   if (!isSelectLikeSql(trimmed)) {
     return { executableSql: sql, isSelect: false };
   }
@@ -399,6 +402,10 @@ export function isSelectLikeSql(sql: string): boolean {
   return /^(select|with)\b/i.test(sql.trim());
 }
 
+function isTDengineReadOnlyStatement(sql: string): boolean {
+  return /^(show|describe|desc|explain)\b/i.test(sql.trim());
+}
+
 export function buildUpdateSql(
   type: DbConnectionConfig["type"],
   table: string,
@@ -582,8 +589,8 @@ export function buildRelationQuerySql(
   targetColumn: string,
   values: unknown[]
 ): string {
-	if (type !== "mysql" && type !== "postgres" && type !== "mongodb") {
-	  throw new Error("关联查询暂时只支持 MySQL、PostgreSQL 和 MongoDB。");
+	if (type !== "mysql" && type !== "postgres" && type !== "mongodb" && type !== "tdengine") {
+	  throw new Error("关联查询暂时只支持 MySQL、PostgreSQL、MongoDB 和 TDengine。");
 	}
   const safeSourceTable = sourceTable.trim();
   const safeSourceColumn = sourceColumn.trim();
@@ -608,8 +615,8 @@ export function buildRelationQuerySql(
 }
 
 export function buildFieldValueConditionSql(type: DbConnectionConfig["type"], column: string, values: unknown[]): string {
-	if (type !== "mysql" && type !== "postgres" && type !== "mongodb") {
-	  throw new Error("字段快速条件查询暂时只支持 MySQL、PostgreSQL 和 MongoDB。");
+	if (type !== "mysql" && type !== "postgres" && type !== "mongodb" && type !== "tdengine") {
+	  throw new Error("字段快速条件查询暂时只支持 MySQL、PostgreSQL、MongoDB 和 TDengine。");
 	}
   const safeColumn = column.trim();
   if (!safeColumn) {
@@ -2122,7 +2129,7 @@ export function asString(value: unknown): string {
 }
 
 export function quoteIdentifier(type: DbConnectionConfig["type"], identifier: string): string {
-  if (type === "mysql") {
+  if (type === "mysql" || type === "tdengine") {
     return `\`${identifier.replace(/`/g, "``")}\``;
   }
   if (type !== "postgres") {
@@ -2251,6 +2258,7 @@ export function getAiLoadingMessage(type: DbConnectionConfig["type"]): string {
   if (type === "redis") return "正在根据 Redis Key 信息生成命令...";
   if (type === "elasticsearch") return "正在根据索引结构生成 Elasticsearch 查询...";
   if (type === "mongodb") return "正在根据集合结构生成 MongoDB 查询...";
+  if (type === "tdengine") return "正在根据 TDengine 时序表结构生成 SQL...";
   return "正在根据表结构生成 SQL...";
 }
 

@@ -3,3 +3,5 @@ out/
 *.vsix
 .DS_Store
 .license-private/
+
+logs/

@@ -73,6 +73,10 @@ assert.equal(
   buildFieldValueConditionSql("mongodb", "status", ["active", null]),
   '{ "$or": [{ "status": "active" }, { "status": null }] }'
 );
+assert.equal(
+  buildFieldValueConditionSql("tdengine", "tbname", ["d1001", "d1002", "d1001"]),
+  "`tbname` IN ('d1001', 'd1002')"
+);
 
 const mysqlSql = buildRelationQuerySql("mysql", "users", "id", "orders", "user_id", [1, 2, 2, null]);
 assert.equal(mysqlSql, [
@@ -90,6 +94,13 @@ assert.equal(pgSql, [
 
 const mongoSql = buildRelationQuerySql("mongodb", "orders", "user_id", "users", "_id", ["64f000000000000000000001"]);
 assert.equal(mongoSql, 'db.getCollection("users").find({ "_id": ObjectId("64f000000000000000000001") }).limit(30);');
+
+const tdengineSql = buildRelationQuerySql("tdengine", "meters", "tbname", "d1001", "location", ["beijing", "shanghai"]);
+assert.equal(tdengineSql, [
+  "SELECT *",
+  "FROM `d1001`",
+  "WHERE `location` IN ('beijing', 'shanghai');",
+].join("\n"));
 
 assert.throws(
   () => buildRelationQuerySql("postgres", "users", "id", "orders", "user_id", []),

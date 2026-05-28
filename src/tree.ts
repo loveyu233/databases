@@ -112,10 +112,10 @@ export class ConnectionsTreeProvider implements vscode.TreeDataProvider<TreeNode
       ? `${pinned ? "已置顶。\n" : ""}${node.table}\n${node.comment.trim()}`
       : `${pinned ? "已置顶： " : ""}${node.table}`;
     item.contextValue = `databaseWorkbench.table.${node.connection.type}.${pinned ? "pinned" : "unpinned"}`;
-    item.iconPath = new vscode.ThemeIcon(node.connection.type === "redis" ? "symbol-key" : node.connection.type === "elasticsearch" ? "symbol-array" : node.connection.type === "mongodb" ? "symbol-object" : "table");
+    item.iconPath = new vscode.ThemeIcon(node.connection.type === "redis" ? "symbol-key" : node.connection.type === "elasticsearch" ? "symbol-array" : node.connection.type === "mongodb" ? "symbol-object" : node.connection.type === "tdengine" ? "pulse" : "table");
     item.command = {
       command: "databaseWorkbench.openTable",
-      title: node.connection.type === "mongodb" ? "查看集合信息" : "查看表信息",
+      title: node.connection.type === "mongodb" ? "查看集合信息" : node.connection.type === "tdengine" ? "查看时序表信息" : "查看表信息",
       arguments: [node],
     };
     return item;
@@ -554,6 +554,7 @@ function getDatabaseDescription(type: DbConnectionConfig["type"]): string {
   if (type === "redis") return "Redis DB";
   if (type === "elasticsearch") return "索引空间";
   if (type === "mongodb") return "数据库";
+  if (type === "tdengine") return "数据库";
   return "数据库";
 }
 
@@ -561,6 +562,7 @@ function getTableDescription(type: DbConnectionConfig["type"]): string {
   if (type === "redis") return "Key";
   if (type === "elasticsearch") return "Index";
   if (type === "mongodb") return "Collection";
+  if (type === "tdengine") return "时序表";
   return "表";
 }
 

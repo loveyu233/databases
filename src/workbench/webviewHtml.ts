@@ -2215,6 +2215,17 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
 	      "find", "countDocuments", "aggregate", "insertOne", "insertMany", "updateOne", "updateMany", "deleteOne", "deleteMany",
 	      "ObjectId", "ISODate", "$in", "$or", "$and", "$set", "$unset", "$gt", "$gte", "$lt", "$lte", "$regex", "$exists"
 	    ];
+	    const tdengineKeywords = [
+	      "SELECT", "DISTINCT", "FROM", "WHERE", "AND", "OR", "NOT", "NULL", "IS", "IN", "LIKE", "BETWEEN",
+	      "GROUP BY", "HAVING", "ORDER BY", "ASC", "DESC", "LIMIT", "OFFSET", "INTERVAL", "SLIDING", "FILL", "PARTITION BY",
+	      "INSERT", "INTO", "VALUES", "CREATE", "DATABASE", "TABLE", "STABLE", "TAGS", "USING", "ALTER", "DROP", "DESCRIBE", "SHOW",
+	      "SHOW DATABASES", "SHOW TABLES", "SHOW STABLES", "SHOW TOPICS", "COUNT", "AVG", "SUM", "MIN", "MAX", "FIRST", "LAST", "LAST_ROW",
+	      "SPREAD", "STDDEV", "PERCENTILE", "APERCENTILE", "ELAPSED", "NOW", "TODAY", "TRUE", "FALSE"
+	    ];
+	    const tdengineDataTypes = [
+	      "timestamp", "bool", "tinyint", "smallint", "int", "bigint", "tinyint unsigned", "smallint unsigned", "int unsigned",
+	      "bigint unsigned", "float", "double", "binary(64)", "varchar(255)", "nchar(64)", "varbinary(255)", "json"
+	    ];
   const logTagColorOptions = [
     { key: "red", label: "红色" },
     { key: "orange", label: "橙色" },
@@ -2731,7 +2742,7 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
     state.sortDirection = "asc";
     const executableSql = getExecutableSqlFromEditor();
     if (!executableSql) {
-      setStatus(state.connectionType === "redis" ? "请先输入需要执行的 Redis 命令。" : state.connectionType === "elasticsearch" ? "请先输入需要执行的 Elasticsearch 查询。" : "请先输入或生成需要执行的 SQL。", true);
+      setStatus(state.connectionType === "redis" ? "请先输入需要执行的 Redis 命令。" : state.connectionType === "elasticsearch" ? "请先输入需要执行的 Elasticsearch 查询。" : state.connectionType === "mongodb" ? "请先输入需要执行的 MongoDB 命令。" : state.connectionType === "tdengine" ? "请先输入需要执行的 TDengine SQL。" : "请先输入或生成需要执行的 SQL。", true);
       return;
     }
     preserveSqlInputOnNextResult = true;
@@ -3463,7 +3474,7 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
   function buildCodeCompletion(input, mode, force) {
     const cursor = input.selectionStart ?? input.value.length;
     const before = input.value.slice(0, cursor);
-	      const supportsAiTags = state.connectionType === "mysql" || state.connectionType === "postgres" || state.connectionType === "redis" || state.connectionType === "elasticsearch" || state.connectionType === "mongodb";
+	      const supportsAiTags = state.connectionType === "mysql" || state.connectionType === "postgres" || state.connectionType === "redis" || state.connectionType === "elasticsearch" || state.connectionType === "mongodb" || state.connectionType === "tdengine";
     const tableTag = (mode === "sql" || mode === "ai-prompt") && supportsAiTags ? findTableTagAtCursor(input.value, cursor) : null;
     if (tableTag) {
       const tagToken = getTableTagCompletionToken(input.value, tableTag.contentStart, cursor);
@@ -3498,7 +3509,7 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
     let items = [];
     if (mode === "ai-prompt") {
       if (tableTag) {
-        items = getTableCompletions({ quote: false, kind: state.connectionType === "redis" ? "Redis Key" : state.connectionType === "elasticsearch" ? "ES Index" : "表" });
+        items = getTableCompletions({ quote: false, kind: state.connectionType === "redis" ? "Redis Key" : state.connectionType === "elasticsearch" ? "ES Index" : state.connectionType === "tdengine" ? "TDengine 表" : "表" });
       } else if (aiTag) {
         items = state.connectionType === "redis"
           ? getTableCompletions({ quote: false, kind: "Redis Key" })
@@ -3519,7 +3530,7 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
 	          ? [...getTableCompletions({ quote: false, kind: "Mongo 集合" }), ...getCurrentColumnCompletions(input.value).map((item) => ({ ...item, kind: "Mongo 字段" }))]
 	          : buildMongoCompletionItems(input.value, mode);
     } else if (mode === "schema-type") {
-      items = (state.connectionType === "postgres" ? postgresDataTypes : mysqlDataTypes).map((value) => completionItem(value, value, "类型"));
+      items = (state.connectionType === "tdengine" ? tdengineDataTypes : state.connectionType === "postgres" ? postgresDataTypes : mysqlDataTypes).map((value) => completionItem(value, value, "类型"));
     } else if (mode === "schema-default") {
       const values = state.connectionType === "postgres"
         ? [...postgresDefaultValues, "gen_random_uuid()", "uuid_generate_v4()"]
@@ -3725,21 +3736,23 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
 	    }
 
   function keywordCompletions() {
-	      const keywords = state.connectionType === "mongodb" ? mongoKeywords : state.connectionType === "postgres" ? postgresKeywords : mysqlKeywords;
+	      const keywords = state.connectionType === "mongodb" ? mongoKeywords : state.connectionType === "tdengine" ? tdengineKeywords : state.connectionType === "postgres" ? postgresKeywords : mysqlKeywords;
 	      return keywords.map((keyword) => completionItem(keyword, keyword + " ", "关键字"));
 	    }
 
   function getFunctionCompletions() {
     const functions = state.connectionType === "postgres"
       ? ["COUNT()", "SUM()", "AVG()", "MIN()", "MAX()", "COALESCE()", "NOW()", "TO_CHAR()", "JSONB_EXTRACT_PATH_TEXT()"]
-      : ["COUNT()", "SUM()", "AVG()", "MIN()", "MAX()", "JSON_TYPE()", "JSON_EXTRACT()", "JSON_UNQUOTE()", "DATE_FORMAT()", "COALESCE()"];
+      : state.connectionType === "tdengine"
+        ? ["COUNT()", "AVG()", "SUM()", "MIN()", "MAX()", "FIRST()", "LAST()", "LAST_ROW()", "SPREAD()", "STDDEV()", "NOW()"]
+        : ["COUNT()", "SUM()", "AVG()", "MIN()", "MAX()", "JSON_TYPE()", "JSON_EXTRACT()", "JSON_UNQUOTE()", "DATE_FORMAT()", "COALESCE()"];
     return functions
       .map((item) => completionItem(item, item, "函数"));
   }
 
   function getTableCompletions(options = {}) {
     const shouldQuote = options.quote !== false;
-	      const kind = options.kind || (state.connectionType === "redis" ? "Redis Key" : state.connectionType === "elasticsearch" ? "ES Index" : state.connectionType === "mongodb" ? "Mongo 集合" : "表");
+	      const kind = options.kind || (state.connectionType === "redis" ? "Redis Key" : state.connectionType === "elasticsearch" ? "ES Index" : state.connectionType === "mongodb" ? "Mongo 集合" : state.connectionType === "tdengine" ? "TDengine 表" : "表");
     return (state.tables || []).map((table) => completionItem(table.name, shouldQuote ? quoteCompletionIdentifier(table.name) : table.name, kind, table.comment || ""));
   }
 
@@ -3911,7 +3924,7 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
 
   function isSqlReservedWord(value) {
     const word = String(value || "").toUpperCase();
-	      const keywords = state.connectionType === "mongodb" ? mongoKeywords : state.connectionType === "postgres" ? postgresKeywords : mysqlKeywords;
+	      const keywords = state.connectionType === "mongodb" ? mongoKeywords : state.connectionType === "tdengine" ? tdengineKeywords : state.connectionType === "postgres" ? postgresKeywords : mysqlKeywords;
     return keywords.some((keyword) => keyword.split(" ")[0] === word) || ["ON", "WHERE", "LEFT", "RIGHT", "INNER", "GROUP", "ORDER", "LIMIT"].includes(word);
   }
 
@@ -4292,48 +4305,55 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
     }
 
     vscode.postMessage({ type: "copyTableDdl", table: state.selectedTable });
-	      setStatus(state.connectionType === "redis" ? "正在读取 Key 信息..." : state.connectionType === "elasticsearch" ? "正在读取索引结构..." : state.connectionType === "mongodb" ? "正在读取集合结构..." : "正在读取建表 SQL...", false);
+	      setStatus(state.connectionType === "redis" ? "正在读取 Key 信息..." : state.connectionType === "elasticsearch" ? "正在读取索引结构..." : state.connectionType === "mongodb" ? "正在读取集合结构..." : state.connectionType === "tdengine" ? "正在读取时序表结构..." : "正在读取建表 SQL...", false);
 	    }
 
 	    function applyConnectionMode() {
 	      const redis = state.connectionType === "redis";
 	      const es = state.connectionType === "elasticsearch";
 	      const mongo = state.connectionType === "mongodb";
-	      $("#copyStructureBtn").textContent = es ? "复制索引结构" : mongo ? "复制集合结构" : redis ? "复制 Key 信息" : "复制表结构";
+	      const tdengine = state.connectionType === "tdengine";
+	      $("#copyStructureBtn").textContent = es ? "复制索引结构" : mongo ? "复制集合结构" : tdengine ? "复制时序表结构" : redis ? "复制 Key 信息" : "复制表结构";
 	      $("#copyStructureBtn").style.display = redis ? "none" : "";
-	      $("#editStructureBtn").style.display = redis || es || mongo ? "none" : "";
-	      $("#quickAddBtn").style.display = redis || es ? "none" : "";
+	      $("#editStructureBtn").style.display = redis || es || mongo || tdengine ? "none" : "";
+	      $("#quickAddBtn").style.display = redis || es || tdengine ? "none" : "";
 	      $("#operationLogBtn").style.display = redis || es ? "none" : "";
 	      fieldPicker.style.display = redis ? "none" : "";
-	      $("#fieldPickerBtn").textContent = es || mongo ? "选择显示字段" : redis ? "选择显示列" : "选择显示字段";
+	      $("#fieldPickerBtn").textContent = es || mongo || tdengine ? "选择显示字段" : redis ? "选择显示列" : "选择显示字段";
 	      $("#toggleSqlBtn").textContent = $("#sqlDrawer").classList.contains("open")
-	        ? (redis ? "收起命令 / AI" : es ? "收起查询 / AI" : mongo ? "收起命令 / AI" : "收起 SQL / AI")
-	        : (redis ? "打开命令 / AI" : es ? "打开查询 / AI" : mongo ? "打开命令 / AI" : "打开 SQL / AI");
-	      $("#runSqlBtn").textContent = redis ? "执行命令" : es ? "执行请求" : mongo ? "执行命令" : "执行 SQL";
+	        ? (redis ? "收起命令 / AI" : es ? "收起查询 / AI" : mongo ? "收起命令 / AI" : tdengine ? "收起 SQL / AI" : "收起 SQL / AI")
+	        : (redis ? "打开命令 / AI" : es ? "打开查询 / AI" : mongo ? "打开命令 / AI" : tdengine ? "打开 SQL / AI" : "打开 SQL / AI");
+	      $("#runSqlBtn").textContent = redis ? "执行命令" : es ? "执行请求" : mongo ? "执行命令" : tdengine ? "执行 TDengine SQL" : "执行 SQL";
 	      $("#formatBtn").textContent = es ? "格式化 JSON" : mongo ? "格式化 Mongo" : "格式化";
 	      const sqlLabel = document.querySelector('label[for="sqlInput"]');
-	      if (sqlLabel) sqlLabel.textContent = redis ? "Redis 命令" : es ? "Elasticsearch 查询" : mongo ? "MongoDB 命令" : "SQL 编辑器";
+	      if (sqlLabel) sqlLabel.textContent = redis ? "Redis 命令" : es ? "Elasticsearch 查询" : mongo ? "MongoDB 命令" : tdengine ? "TDengine SQL 编辑器" : "SQL 编辑器";
 	      whereInput.placeholder = redis
 	        ? "Key 过滤：留空显示全部，例如 user:*、session:*"
 	        : es
 	          ? "快速查询：Lucene 语法或 JSON Query DSL，例如 status:published"
 	          : mongo
 	            ? '快速查询：MongoDB Filter，例如 { "status": "active" }'
-	            : "快速条件：例如 status = 'paid' AND id > 100";
+	            : tdengine
+	              ? "快速条件：例如 ts >= now - 1d AND current > 10"
+	              : "快速条件：例如 status = 'paid' AND id > 100";
 	      sqlInput.placeholder = redis
 	        ? "这里保持纯净，只放当前要执行的 Redis 命令。AI 提问请写到右侧时间线输入框。"
 	        : es
 	          ? "这里保持纯净，只放当前要执行的 Elasticsearch 查询。AI 提问请写到右侧时间线输入框。"
 	          : mongo
 	            ? '这里保持纯净，只放当前要执行的 MongoDB 命令，例如 db.getCollection("users").find({}).limit(30)。AI 提问请写到右侧时间线输入框。'
-	            : "这里保持纯净，只放当前要执行的 SQL。AI 提问请写到右侧时间线输入框。";
+	            : tdengine
+	              ? "这里保持纯净，只放当前要执行的 TDengine SQL，例如 SELECT * FROM meters LIMIT 30。AI 提问请写到右侧时间线输入框。"
+	              : "这里保持纯净，只放当前要执行的 SQL。AI 提问请写到右侧时间线输入框。";
 	      aiPromptInput.placeholder = redis
 	        ? "例如：@ai{查询 user:* 相关 Key}，或 @gen{生成一个 hash 测试数据}，用 @table{key} 指定 Key。"
 	        : es
 	          ? "例如：@ai{查询最近 10 条日志}，或 @gen{生成测试文档}，用 @table{index} 指定索引。"
 	          : mongo
 	            ? "例如：@ai{查询 status 为 active 的用户}，或 @gen{生成测试文档}，用 @table{collection} 指定集合。"
-	            : "例如：查询当前表 created_at 为空的数据；或 @ai{把当前 SQL 改成按 created_at 倒序}；用 @table{users} 添加额外表结构。";
+	            : tdengine
+	              ? "例如：@ai{查询最近 1 小时平均电流}，或 @table{meters} 指定时序表结构。"
+	              : "例如：查询当前表 created_at 为空的数据；或 @ai{把当前 SQL 改成按 created_at 倒序}；用 @table{users} 添加额外表结构。";
     applyQueryConsoleMode();
   }
 
@@ -4347,7 +4367,7 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
     $("#sqlDrawer").classList.add("open");
     $("#tableTitle").textContent = "查询控制台";
     $("#tableTitle").title = state.connectionName + " / " + state.database + " / 查询控制台";
-	      const objectLabel = state.connectionType === "mongodb" ? " 个集合" : " 张表";
+	      const objectLabel = state.connectionType === "mongodb" ? " 个集合" : state.connectionType === "tdengine" ? " 张时序表" : " 张表";
 	      $("#summary").innerHTML = '<span class="pill">' + state.database + '</span><span class="pill">' + state.tables.length + objectLabel + '</span>';
   }
 
@@ -6622,7 +6642,7 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
     updateExportButton();
     renderPagination(null);
     applyQueryConsoleMode();
-	      const consoleName = state.connectionType === "mongodb" ? "MongoDB 命令" : "SQL";
+	      const consoleName = state.connectionType === "mongodb" ? "MongoDB 命令" : state.connectionType === "tdengine" ? "TDengine SQL" : "SQL";
 	      setStatus("查询控制台已就绪：输入 " + consoleName + " 或让 AI 生成后执行。", false);
 	      result.innerHTML = '<div class="empty"><strong>查询控制台</strong>这里只有 ' + escapeHtml(consoleName) + ' / AI 编辑器和执行结果预览。你可以直接编写查询，也可以在右侧“继续告诉 AI”里描述需求。</div>';
   }
@@ -6639,7 +6659,7 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
     updateExportButton();
     renderPagination(null);
     $("#tableTitle").textContent = "选择一张表";
-	      $("#summary").innerHTML = '<span class="pill">' + state.tables.length + (state.connectionType === "mongodb" ? ' 个集合' : ' 张表') + '</span>';
+	      $("#summary").innerHTML = '<span class="pill">' + state.tables.length + (state.connectionType === "mongodb" ? ' 个集合' : state.connectionType === "tdengine" ? ' 张时序表' : ' 张表') + '</span>';
     if (state.queryConsole) {
       renderQueryConsoleIntro();
     }
@@ -6731,7 +6751,7 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
     $("#summary").innerHTML = table.comment
       ? '<span class="pill table-comment" title="' + escapeHtml(table.comment) + '">' + escapeHtml(table.comment) + '</span>'
       : "";
-	      const noun = state.connectionType === "redis" ? "Key" : state.connectionType === "elasticsearch" ? "索引" : state.connectionType === "mongodb" ? "集合" : "表";
+	      const noun = state.connectionType === "redis" ? "Key" : state.connectionType === "elasticsearch" ? "索引" : state.connectionType === "mongodb" ? "集合" : state.connectionType === "tdengine" ? "时序表" : "表";
     result.innerHTML = '<div class="empty"><strong>正在读取预览数据</strong>已选择' + escapeHtml(noun) + ' ' + escapeHtml(table.name) + '，请稍候。</div>';
     renderPagination(null);
     setStatus("已选择" + noun + " " + table.name + "，正在读取预览数据...", false);
@@ -7954,12 +7974,13 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
     quickFieldBtn.disabled = !canQuickField;
     relationBtn.disabled = !canRelation;
     deleteBtn.title = canDelete ? "" : getDeleteDisabledReason(row);
-	      quickFieldBtn.title = canQuickField ? "用选中行字段值写入快速条件并查询当前表" : "快速条件查询仅支持 MySQL/PostgreSQL/MongoDB 数据预览结果";
-	      relationBtn.title = canRelation ? "用选中行字段值去查询另一张表/集合" : "关联查询仅支持 MySQL/PostgreSQL/MongoDB 数据预览结果";
+	      quickFieldBtn.title = canQuickField ? "用选中行字段值写入快速条件并查询当前表" : "快速条件查询仅支持 MySQL/PostgreSQL/MongoDB/TDengine 数据预览结果";
+	      relationBtn.title = canRelation ? "用选中行字段值去查询另一张表/集合" : "关联查询仅支持 MySQL/PostgreSQL/MongoDB/TDengine 数据预览结果";
   }
 
   function canDeleteContextRows(row) {
     if (state.connectionType === "redis") return Boolean(row?.key);
+    if (state.connectionType === "tdengine") return false;
     if (hasPendingEdits()) return false;
     if (!state.primaryKeys.length) return false;
     const selectedRows = state.rowSelection.selected.length ? state.rowSelection.selected : [activeContextRowIndex];
@@ -7968,20 +7989,21 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
 
   function getDeleteDisabledReason(row) {
     if (state.connectionType === "redis") return row?.key ? "" : "当前行没有 Redis Key";
+    if (state.connectionType === "tdengine") return "TDengine 时序表暂不支持右键删除行，请使用 SQL 控制台执行。";
     if (hasPendingEdits()) return "请先提交当前修改后再删除";
     if (!state.primaryKeys.length) return "当前表没有读取到主键，无法按行删除";
     return "选中行缺少主键字段，无法删除";
   }
 
   function canOpenRelationQueryForRows() {
-	      return (state.connectionType === "mysql" || state.connectionType === "postgres" || state.connectionType === "mongodb")
+	      return (state.connectionType === "mysql" || state.connectionType === "postgres" || state.connectionType === "mongodb" || state.connectionType === "tdengine")
       && !state.queryConsole
       && Boolean(state.selectedTable && state.currentTable && state.currentResult?.rows?.length)
       && getContextRowIndexes().length > 0;
   }
 
   function canOpenQuickFieldQueryForRows() {
-	      return (state.connectionType === "mysql" || state.connectionType === "postgres" || state.connectionType === "mongodb")
+	      return (state.connectionType === "mysql" || state.connectionType === "postgres" || state.connectionType === "mongodb" || state.connectionType === "tdengine")
       && !state.queryConsole
       && !hasPendingEdits()
       && Boolean(state.selectedTable && state.currentTable && state.currentResult?.rows?.length)
@@ -8059,7 +8081,7 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
       return;
     }
     if (!canOpenQuickFieldQueryForRows()) {
-	        setStatus("快速条件查询仅支持 MySQL/PostgreSQL/MongoDB 数据预览结果。", true);
+	        setStatus("快速条件查询仅支持 MySQL/PostgreSQL/MongoDB/TDengine 数据预览结果。", true);
       return;
     }
     const rowIndexes = getContextRowIndexes();
@@ -8130,7 +8152,7 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
 
   function openRelationQueryDialog() {
     if (!canOpenRelationQueryForRows()) {
-	        setStatus("关联查询仅支持 MySQL/PostgreSQL/MongoDB 数据预览结果。", true);
+	        setStatus("关联查询仅支持 MySQL/PostgreSQL/MongoDB/TDengine 数据预览结果。", true);
       return;
     }
     const rowIndexes = getContextRowIndexes();
@@ -8239,7 +8261,7 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
     const uniqueValues = dedupeRelationPreviewValues(values);
     const missingRows = state.relationQuery.rowIndexes.length - values.length;
     $("#confirmRelationQueryBtn").disabled = !state.relationQuery.sourceColumn || !state.relationQuery.targetTable || !state.relationQuery.targetColumn || !uniqueValues.length;
-	      relationMeta.innerHTML = '已选择 <strong>' + state.relationQuery.rowIndexes.length + '</strong> 行，从当前' + (state.connectionType === "mongodb" ? '集合' : '表') + ' <strong>' + escapeHtml(state.selectedTable) + '</strong> 取字段值，再到目标' + (state.connectionType === "mongodb" ? '集合' : '表') + '字段执行 IN 查询。';
+	      relationMeta.innerHTML = '已选择 <strong>' + state.relationQuery.rowIndexes.length + '</strong> 行，从当前' + (state.connectionType === "mongodb" ? '集合' : state.connectionType === "tdengine" ? '时序表' : '表') + ' <strong>' + escapeHtml(state.selectedTable) + '</strong> 取字段值，再到目标' + (state.connectionType === "mongodb" ? '集合' : state.connectionType === "tdengine" ? '时序表' : '表') + '字段执行 IN 查询。';
     relationPreview.innerHTML = '<div>方向：<strong>' + escapeHtml(state.selectedTable + "." + state.relationQuery.sourceColumn) + '</strong> → <strong>' + escapeHtml(state.relationQuery.targetTable + "." + state.relationQuery.targetColumn) + '</strong></div>'
       + '<div>可用值：' + uniqueValues.length + ' 个' + (missingRows > 0 ? '，' + missingRows + ' 行缺少该字段值' : '') + '</div>'
       + '<div>预览：' + escapeHtml(uniqueValues.slice(0, 12).map(formatValue).join(", ") || "没有可用值") + (uniqueValues.length > 12 ? " ..." : "") + '</div>';
@@ -8661,6 +8683,9 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
     }
     if (state.connectionType === "elasticsearch") {
       return Boolean(row?._id) && !["_index", "_id", "_score"].includes(column);
+    }
+    if (state.connectionType === "tdengine") {
+      return false;
     }
     return state.connectionType !== "redis"
       && state.connectionType !== "elasticsearch"
@@ -9229,6 +9254,7 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
 
   function isAutoManagedColumn(column) {
     if (state.connectionType === "mongodb" && column === "_id") return true;
+    if (state.connectionType === "tdengine" && column === "ts") return true;
     const meta = state.columnMeta[column] || {};
     const extra = String(meta.extra || "").toLowerCase();
     const hasDefault = meta.defaultValue !== undefined && meta.defaultValue !== null;
@@ -9618,12 +9644,16 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
     if (state.connectionType === "elasticsearch") {
       return "请结合当前索引结构生成或改写 Elasticsearch 查询，只返回最终可执行内容，不要解释，不要使用 Markdown 代码块。优先返回 METHOD /path 换行 JSON body 的 HTTP 请求格式。默认生成只读查询。";
     }
+    if (state.connectionType === "tdengine") {
+      return "请结合当前 TDengine 时序表结构生成或改写 SQL，只返回最终可执行 SQL，不要解释，不要使用 Markdown 代码块。默认生成只读查询，优先使用时间范围、INTERVAL、PARTITION BY、聚合函数。";
+    }
     return "请结合当前数据库表结构生成或改写 SQL，只返回最终可执行 SQL，不要解释，不要使用 Markdown 代码块。";
   }
 
   function getAiRewriteFallback() {
     if (state.connectionType === "redis") return "请根据当前 Redis Key 信息生成或优化这条 Redis 命令";
     if (state.connectionType === "elasticsearch") return "请根据当前索引结构生成或优化这段 Elasticsearch 查询";
+    if (state.connectionType === "tdengine") return "请根据当前 TDengine 时序表结构生成或优化这段 SQL";
     return "请根据当前表结构生成或优化这段 SQL";
   }
 
@@ -9634,6 +9664,9 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
     }
     if (state.connectionType === "elasticsearch") {
       return "请根据当前索引结构生成用于写入测试数据的一条 Elasticsearch HTTP 请求，只返回一条最终可执行请求，不要解释，不要使用 Markdown 代码块。如果需要写入多条测试数据，必须使用一条 POST /_bulk 请求并返回 NDJSON 请求体，不要返回多条独立请求。";
+    }
+    if (state.connectionType === "tdengine") {
+      return "请根据当前 TDengine 时序表结构生成用于写入测试数据的一条 INSERT SQL，只返回 SQL，不要解释，不要使用 Markdown 代码块。";
     }
     return "请根据当前数据库表结构生成用于插入测试数据的 SQL，只返回一条最终可执行 SQL，不要解释，不要使用 Markdown 代码块。即使需求要求生成多条测试数据，也必须合并成一条 INSERT 语句，使用多组 VALUES，例如 INSERT INTO table (col) VALUES (...), (...), (...); 不要返回多条 INSERT。默认情况下，生成 INSERT 语句时应省略主键字段、带默认值字段、自动生成字段和自动更新时间字段，让数据库自动生成；例如 id 是主键、created_at 有 DEFAULT CURRENT_TIMESTAMP 时，默认不要写入 INSERT 字段列表。但如果本次需求中明确点名或强调某个字段必须有指定数据，即使它是主键、带默认值或自动生成字段，也必须在 INSERT 字段列表中显式写入并给出符合需求的值。";
   }

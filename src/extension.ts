@@ -234,7 +234,7 @@ async function showAddMenu(
       },
       {
         label: "$(database) 添加数据库连接",
-        description: "MySQL / PostgreSQL / Redis / Elasticsearch / MongoDB",
+        description: "MySQL / PostgreSQL / Redis / Elasticsearch / MongoDB / TDengine",
         action: "connection" as const,
       },
     ],
@@ -395,7 +395,7 @@ function getTreeNodeLabel(node: TreeNode): string {
   if (node.kind === "connection") return `连接「${node.connection.name}」`;
   if (node.kind === "database") return `${node.connection.type === "elasticsearch" ? "索引空间" : "数据库"}「${node.database}」`;
   if (node.kind === "schema") return `Schema「${node.schema}」`;
-  if (node.kind === "table") return `${node.connection.type === "elasticsearch" ? "索引" : node.connection.type === "mongodb" ? "集合" : "表"}「${node.table}」`;
+  if (node.kind === "table") return `${node.connection.type === "elasticsearch" ? "索引" : node.connection.type === "mongodb" ? "集合" : node.connection.type === "tdengine" ? "时序表" : "表"}「${node.table}」`;
   return "节点";
 }
 
@@ -917,7 +917,7 @@ function normalizeConnectionEditorPayload(payload: ConnectionEditorPayload): Con
 }
 
 function isDatabaseType(value: unknown): value is DatabaseType {
-  return value === "mysql" || value === "postgres" || value === "redis" || value === "elasticsearch" || value === "mongodb";
+  return value === "mysql" || value === "postgres" || value === "redis" || value === "elasticsearch" || value === "mongodb" || value === "tdengine";
 }
 
 async function importConnectionDraftToEditor(panel: vscode.WebviewPanel, store: ConnectionStore): Promise<void> {
@@ -943,7 +943,7 @@ async function importConnectionDraftToEditor(panel: vscode.WebviewPanel, store: 
   const parsed = parseConnectionImportFile(text);
   const drafts = parsed.drafts;
   if (drafts.length === 0 && parsed.groups.length === 0) {
-    throw new Error("没有从文件中解析到支持的连接信息。当前支持 Database Workbench JSON 和 Navicat .ncx 导出的 MySQL / PostgreSQL / Redis / Elasticsearch / MongoDB 连接。");
+    throw new Error("没有从文件中解析到支持的连接信息。当前支持 Database Workbench JSON 和 Navicat .ncx 导出的 MySQL / PostgreSQL / Redis / Elasticsearch / MongoDB / TDengine 连接。");
   }
 
   if (parsed.format === "databaseWorkbenchJson") {
@@ -1226,6 +1226,7 @@ function mapImportedConnectionType(type: string): DatabaseType | undefined {
   if (normalized === "redis") return "redis";
   if (normalized === "elasticsearch" || normalized === "elastic") return "elasticsearch";
   if (normalized === "mongodb" || normalized === "mongo") return "mongodb";
+  if (normalized === "tdengine" || normalized === "taos" || normalized === "taosdata") return "tdengine";
   return undefined;
 }
 
@@ -1519,7 +1520,7 @@ async function deleteDatabase(
   if (!node) {
     throw new Error("没有拿到数据库节点信息，请刷新左侧数据库树后重试。");
   }
-  if (node.connection.type !== "mysql" && node.connection.type !== "postgres" && node.connection.type !== "mongodb") {
+  if (node.connection.type !== "mysql" && node.connection.type !== "postgres" && node.connection.type !== "mongodb" && node.connection.type !== "tdengine") {
     vscode.window.showWarningMessage("当前连接类型不支持删除数据库。");
     return;
   }
@@ -1672,8 +1673,8 @@ async function openQueryConsole(
   if (!databaseNode) {
     throw new Error("没有拿到数据库节点信息，请刷新左侧数据库树后重试。");
   }
-  if (databaseNode.connection.type !== "mysql" && databaseNode.connection.type !== "postgres" && databaseNode.connection.type !== "mongodb") {
-    vscode.window.showWarningMessage("查询控制台暂时只支持 MySQL、PostgreSQL 和 MongoDB。");
+  if (databaseNode.connection.type !== "mysql" && databaseNode.connection.type !== "postgres" && databaseNode.connection.type !== "mongodb" && databaseNode.connection.type !== "tdengine") {
+    vscode.window.showWarningMessage("查询控制台暂时只支持 MySQL、PostgreSQL、MongoDB 和 TDengine。");
     return;
   }
 
@@ -1801,6 +1802,8 @@ async function submitCreateResource(
     await databaseService.query(connectionWithSecret, "indices", plan.sql, getQueryConfigForCommand());
   } else if (connection.type === "mongodb") {
     await databaseService.query(connectionWithSecret, plan.name, plan.sql, getQueryConfigForCommand());
+  } else if (connection.type === "tdengine") {
+    await databaseService.queryAdmin(connectionWithSecret, plan.sql, getQueryConfigForCommand());
   } else {
     await databaseService.queryAdmin(connectionWithSecret, plan.sql, getQueryConfigForCommand());
   }
@@ -1850,6 +1853,7 @@ function getDefaultPort(type: DatabaseType): number {
   if (type === "postgres") return 5432;
   if (type === "redis") return 6379;
   if (type === "mongodb") return 27017;
+  if (type === "tdengine") return 6041;
   return 9200;
 }
 
@@ -1981,6 +1985,7 @@ function renderConnectionEditorHtml(existing: DbConnectionConfig | undefined, gr
                   <option value="redis">Redis</option>
                   <option value="elasticsearch">Elasticsearch</option>
                   <option value="mongodb">MongoDB</option>
+                  <option value="tdengine">TDengine</option>
                 </select>
               </div>
               <div class="field">
@@ -2062,6 +2067,7 @@ function renderConnectionEditorHtml(existing: DbConnectionConfig | undefined, gr
       redis: { port: 6379, username: "", name: "Redis 本地连接", databaseLabel: "默认 DB 编号", databaseHint: "可留空；默认使用 db0，左侧会根据服务端配置展示 DB。", databasePlaceholder: "例如：0" },
       elasticsearch: { port: 9200, username: "", name: "Elasticsearch 本地连接", databaseLabel: "默认索引筛选", databaseHint: "可留空；展开时列出全部索引。", databasePlaceholder: "例如：logs-*" },
       mongodb: { port: 27017, username: "", name: "MongoDB 本地连接", databaseLabel: "默认认证库", databaseHint: "可留空；无认证 MongoDB 直接留空，有认证时可填写 admin 或业务库。", databasePlaceholder: "例如：admin / app_blog" },
+      tdengine: { port: 6041, username: "root", name: "TDengine 本地连接", databaseLabel: "默认数据库", databaseHint: "可留空；默认通过 taosAdapter WebSocket 端口连接。", databasePlaceholder: "例如：power" },
     };
     const $ = (selector) => document.querySelector(selector);
     const typeInput = $("#typeInput");
@@ -2118,7 +2124,7 @@ function renderConnectionEditorHtml(existing: DbConnectionConfig | undefined, gr
       $("#databaseHint").textContent = meta.databaseHint;
       databaseInput.placeholder = meta.databasePlaceholder;
       $("#usernameRequired").style.display = type === "redis" || type === "elasticsearch" || type === "mongodb" ? "none" : "inline";
-      $("#usernameHint").textContent = type === "redis" || type === "elasticsearch" || type === "mongodb" ? "用户名可留空，本地 Docker 默认无认证时直接留空。" : "MySQL / PostgreSQL 通常需要用户名。";
+      $("#usernameHint").textContent = type === "redis" || type === "elasticsearch" || type === "mongodb" ? "用户名可留空，本地 Docker 默认无认证时直接留空。" : type === "tdengine" ? "TDengine 默认用户名通常是 root，默认密码通常是 taosdata。" : "MySQL / PostgreSQL 通常需要用户名。";
       $("#insecureTlsRow").style.display = type === "elasticsearch" && sslInput.checked ? "flex" : "none";
       $("#tlsRisk").classList.toggle("show", type === "elasticsearch" && sslInput.checked && allowInsecureTlsInput.checked);
       $("#summaryBadge").textContent = type + "://" + (hostInput.value || "127.0.0.1") + ":" + (portInput.value || meta.port);
@@ -2260,7 +2266,7 @@ async function promptIdentifier(title: string, value: string): Promise<string | 
 }
 
 function quoteIdentifier(type: DatabaseType, identifier: string): string {
-  if (type === "mysql") {
+  if (type === "mysql" || type === "tdengine") {
     return `\`${identifier.replace(/`/g, "``")}\``;
   }
   if (type !== "postgres") {
@@ -2276,6 +2282,7 @@ function getQueryConfigForCommand(): number {
 function getFilterTargetName(type: DatabaseType): string {
   if (type === "redis") return "DB";
   if (type === "mongodb") return "数据库";
+  if (type === "tdengine") return "数据库";
   return "数据库";
 }
 
@@ -2308,6 +2315,13 @@ function buildCreateResourcePlan(type: DatabaseType, payload: Record<string, unk
       name,
       targetLabel: "数据库",
       sql: `CREATE DATABASE ${quoteIdentifier(type, name)} ENCODING '${escapeSqlString(encoding)}';`,
+    };
+  }
+  if (type === "tdengine") {
+    return {
+      name,
+      targetLabel: "数据库",
+      sql: `CREATE DATABASE ${quoteIdentifier(type, name)};`,
     };
   }
   if (type === "elasticsearch") {

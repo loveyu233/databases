@@ -1,8 +1,8 @@
 {
   "name": "loveyu-database-workbench",
   "displayName": "Database Workbench",
-  "description": "在 VS Code 中管理 MySQL、PostgreSQL、Redis、Elasticsearch、MongoDB，并通过 AI 生成查询。",
-  "version": "1.0.18",
+  "description": "在 VS Code 中管理 MySQL、PostgreSQL、Redis、Elasticsearch、MongoDB、TDengine，并通过 AI 生成查询。",
+  "version": "1.0.19",
   "publisher": "loveyu",
   "license": "MIT",
   "repository": {
@@ -29,7 +29,8 @@
     "redis",
     "elasticsearch",
     "mongodb",
-    "ai"
+    "ai",
+    "tdengine"
   ],
   "activationEvents": [
     "onView:databaseWorkbench.connections",
@@ -285,7 +286,7 @@
         },
         {
           "command": "databaseWorkbench.createResource",
-          "when": "view == databaseWorkbench.connections && viewItem =~ /databaseWorkbench\\.connection\\.(mysql|postgres|elasticsearch|mongodb)/",
+          "when": "view == databaseWorkbench.connections && viewItem =~ /databaseWorkbench\\.connection\\.(mysql|postgres|elasticsearch|mongodb|tdengine)/",
           "group": "inline@2"
         },
         {
@@ -305,7 +306,7 @@
         },
         {
           "command": "databaseWorkbench.createResource",
-          "when": "view == databaseWorkbench.connections && viewItem =~ /databaseWorkbench\\.connection\\.(mysql|postgres|elasticsearch|mongodb)/",
+          "when": "view == databaseWorkbench.connections && viewItem =~ /databaseWorkbench\\.connection\\.(mysql|postgres|elasticsearch|mongodb|tdengine)/",
           "group": "1_manage@3"
         },
         {
@@ -315,7 +316,7 @@
         },
         {
           "command": "databaseWorkbench.deleteDatabase",
-          "when": "view == databaseWorkbench.connections && viewItem =~ /databaseWorkbench\\.database\\.(mysql|postgres|mongodb)/",
+          "when": "view == databaseWorkbench.connections && viewItem =~ /databaseWorkbench\\.database\\.(mysql|postgres|mongodb|tdengine)/",
           "group": "1_manage@2"
         },
         {
@@ -325,7 +326,7 @@
         },
         {
           "command": "databaseWorkbench.openQueryConsole",
-          "when": "view == databaseWorkbench.connections && viewItem =~ /databaseWorkbench\\.(database\\.(mysql|postgres|mongodb)|schema\\.postgres)/",
+          "when": "view == databaseWorkbench.connections && viewItem =~ /databaseWorkbench\\.(database\\.(mysql|postgres|mongodb|tdengine)|schema\\.postgres)/",
           "group": "1_manage@4"
         },
         {
@@ -695,10 +696,11 @@
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "test:schema-sync": "npm run compile && node tests/schemaSync.test.js && node tests/schemaCompareWebview.test.js && node tests/workbenchPanelPostgresEnum.test.js && node tests/treePostgresSchema.test.js && node tests/elasticsearchTreeAndEmptyResult.test.js && node tests/workbenchPanelRelationQuery.test.js && node tests/workbenchSqlConfirmFormat.test.js && node tests/workbenchPanelSqlCreateImport.test.js && node tests/editableHighlightStyle.test.js && node tests/databaseServiceTransactions.test.js && node tests/databaseServiceMongo.test.js",
+    "test:schema-sync": "npm run compile && node tests/schemaSync.test.js && node tests/schemaCompareWebview.test.js && node tests/workbenchPanelPostgresEnum.test.js && node tests/treePostgresSchema.test.js && node tests/elasticsearchTreeAndEmptyResult.test.js && node tests/workbenchPanelRelationQuery.test.js && node tests/workbenchSqlConfirmFormat.test.js && node tests/workbenchPanelSqlCreateImport.test.js && node tests/editableHighlightStyle.test.js && node tests/databaseServiceTransactions.test.js && node tests/databaseServiceMongo.test.js && node tests/databaseServiceTdengine.test.js",
     "package": "vsce package --allow-missing-repository"
   },
   "dependencies": {
+    "@tdengine/websocket": "^3.4.0",
     "mongodb": "^6.21.0",
     "mysql2": "^3.15.3",
     "pg": "^8.16.3",

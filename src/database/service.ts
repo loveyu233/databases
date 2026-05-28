@@ -4,6 +4,7 @@ import { MongoWorkbenchClient } from "./clients/mongodb";
 import { MySqlClient } from "./clients/mysql";
 import { PostgresClient } from "./clients/postgres";
 import { RedisWorkbenchClient } from "./clients/redis";
+import { TDengineClient } from "./clients/tdengine";
 import { DbClient, QueryStatementsError, supportsClientTransactions } from "./core/client";
 
 export class DatabaseService {
@@ -179,7 +180,7 @@ export class DatabaseService {
     sql: string,
     maxRows: number
   ): Promise<QueryResult> {
-    if (connection.type !== "mysql" && connection.type !== "postgres") {
+    if (connection.type !== "mysql" && connection.type !== "postgres" && connection.type !== "tdengine") {
       throw new Error("当前连接类型不支持管理 SQL。");
     }
     const adminDatabase = connection.type === "postgres" ? "postgres" : undefined;
@@ -213,6 +214,9 @@ async function createClient(connection: DbConnectionWithSecret, database?: strin
   }
   if (connection.type === "mongodb") {
     return MongoWorkbenchClient.connect(connection, database);
+  }
+  if (connection.type === "tdengine") {
+    return TDengineClient.connect(connection, database);
   }
 
   return ElasticsearchWorkbenchClient.connect(connection);

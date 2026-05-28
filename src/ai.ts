@@ -410,6 +410,26 @@ function buildMessages(prompt: string, schema: string, database: string, dialect
     ];
   }
 
+  if (dialect === "tdengine") {
+    return [
+      {
+        role: "system",
+        content: [
+          "你是资深 TDengine 时序数据库工程师，擅长把自然语言需求转换为 Database Workbench 可执行的 TDengine SQL。",
+          "只返回 SQL 本身，不要解释，不要 Markdown 代码块。",
+          "默认生成只读 SELECT / SHOW / DESCRIBE 查询；除非用户明确要求，不要生成 INSERT、CREATE、ALTER、DROP 等变更语句。",
+          "优先使用结构中真实存在的超级表、子表、普通表和字段名。",
+          "时序查询优先围绕时间列 ts 添加时间范围，例如 ts >= now - 1h；聚合查询可使用 INTERVAL、SLIDING、FILL、PARTITION BY。",
+          "如需引用标识符，使用反引号。",
+        ].join(" "),
+      },
+      {
+        role: "user",
+        content: `TDengine 数据库：${database}\n\n时序表结构：\n${schema}\n\n需求描述：\n${prompt}`,
+      },
+    ];
+  }
+
   const quoteRule = dialect === "mysql" ? "如需引用标识符，使用反引号。" : "如需引用标识符，使用双引号。";
   return [
     {
