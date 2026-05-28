@@ -626,6 +626,11 @@
           "minimum": 10,
           "maximum": 32,
           "description": "SQL 确认类弹窗中 SQL 预览字体大小，单位 px。修改后已打开的表格标签页会自动更新。"
+        },
+        "databaseWorkbench.table.rowCopyDelimiter": {
+          "type": "string",
+          "default": "\t",
+          "description": "表格右键复制行时每一列之间使用的分隔符。默认是制表符，适合直接粘贴到 Excel；也可以填写逗号、竖线或 \\t 等自定义分隔符。"
         }
       }
     },

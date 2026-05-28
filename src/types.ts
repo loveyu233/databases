@@ -239,6 +239,7 @@ export type TableDisplayConfig = {
   hiddenColumnCommentNames: string[];
   dataGridFontSize: number;
   sqlConfirmFontSize: number;
+  rowCopyDelimiter: string;
 };
 
 export type LogConfig = {
@@ -429,6 +430,7 @@ export function getTableDisplayConfig(): TableDisplayConfig {
     hiddenColumnCommentNames: config.get("hiddenColumnCommentNames", ["id", "created_at", "updated_at", "deleted_at"]),
     dataGridFontSize: clampFontSize(config.get("dataGridFontSize", 12), 9, 24, 12),
     sqlConfirmFontSize: getSqlConfirmFontSize(),
+    rowCopyDelimiter: config.get("rowCopyDelimiter", "\t"),
   };
 }
 

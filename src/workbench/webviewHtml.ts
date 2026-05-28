@@ -1765,6 +1765,8 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
   </section>
 </main>
 <div class="row-context-menu" id="rowContextMenu">
+  <button id="copyCellBtn">复制单元格</button>
+  <button id="copyRowsBtn">复制该行</button>
   <button id="quickFieldQueryBtn">快速条件查询</button>
   <button id="relationQueryBtn">关联查询</button>
   <button class="danger-action" id="deleteRowBtn">删除该行</button>
@@ -2065,7 +2067,7 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
 	  <script nonce="${nonce}">
   const vscode = acquireVsCodeApi();
   let webviewPersistedState = typeof vscode.getState === "function" ? (vscode.getState() || {}) : {};
-	    const state = { database: "", connectionId: "", connectionName: "", connectionType: "mysql", queryConsole: false, defaultSchema: "", ddlRoleOptions: [], connections: [], tables: [], selectedTable: "", currentTable: null, schemaEditor: null, defaultLimit: 30, tableDisplay: { showColumnComments: true, hiddenColumnCommentNames: ["id", "created_at", "updated_at", "deleted_at"], dataGridFontSize: 12, sqlConfirmFontSize: 15 }, schemaCapabilities: { supportsNotEmptyStringCheck: false }, lastSql: "", currentResult: null, sortColumn: "", sortDirection: "asc", fieldColumns: [], selectedColumns: [], fieldSelectionInitialized: false, lastQueryMode: "preview", primaryKeys: [], columnTypes: {}, columnComments: {}, columnMeta: {}, pendingEdits: {}, quickInsert: { active: false, values: {} }, rowSelection: { selected: [], dragging: false, anchor: null, deleting: false }, quickFieldQuery: { rowIndexes: [], column: "" }, relationQuery: { rowIndexes: [], sourceColumn: "", targetTable: "", targetColumn: "" }, importSource: { databases: [], tables: [], columns: [], mappings: [] }, redisDetail: { key: "", keyType: "", page: 1, pageSize: 30, totalRows: 0, totalPages: 1, columns: [], rows: [], search: "", fuzzySearch: false, sortDirection: "asc", memoryUsage: null, contextRowIndex: -1 }, operationLogs: [], selectedLogId: "", rollbackingLogId: "", rollbackError: null, logContextLogId: "", activeLogTagColor: "", logTagDraft: { logId: "", color: "blue" }, aiTimeline: [], aiActiveTimelineId: "", aiContinueParentId: "", aiContinueSourceId: "" };
+	    const state = { database: "", connectionId: "", connectionName: "", connectionType: "mysql", queryConsole: false, defaultSchema: "", ddlRoleOptions: [], connections: [], tables: [], selectedTable: "", currentTable: null, schemaEditor: null, defaultLimit: 30, tableDisplay: { showColumnComments: true, hiddenColumnCommentNames: ["id", "created_at", "updated_at", "deleted_at"], dataGridFontSize: 12, sqlConfirmFontSize: 15, rowCopyDelimiter: "\\t" }, schemaCapabilities: { supportsNotEmptyStringCheck: false }, lastSql: "", currentResult: null, sortColumn: "", sortDirection: "asc", fieldColumns: [], selectedColumns: [], fieldSelectionInitialized: false, lastQueryMode: "preview", primaryKeys: [], columnTypes: {}, columnComments: {}, columnMeta: {}, pendingEdits: {}, quickInsert: { active: false, values: {} }, rowSelection: { selected: [], dragging: false, anchor: null, deleting: false }, quickFieldQuery: { rowIndexes: [], column: "" }, relationQuery: { rowIndexes: [], sourceColumn: "", targetTable: "", targetColumn: "" }, importSource: { databases: [], tables: [], columns: [], mappings: [] }, redisDetail: { key: "", keyType: "", page: 1, pageSize: 30, totalRows: 0, totalPages: 1, columns: [], rows: [], search: "", fuzzySearch: false, sortDirection: "asc", memoryUsage: null, contextRowIndex: -1 }, operationLogs: [], selectedLogId: "", rollbackingLogId: "", rollbackError: null, logContextLogId: "", activeLogTagColor: "", logTagDraft: { logId: "", color: "blue" }, aiTimeline: [], aiActiveTimelineId: "", aiContinueParentId: "", aiContinueSourceId: "" };
   const $ = (selector) => document.querySelector(selector);
 	    const sqlInput = $("#sqlInput");
 	    const sqlHighlight = $("#sqlHighlight");
@@ -2699,6 +2701,8 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
   aiPromptInput.addEventListener("blur", () => updateAiTableTagValidation(true));
   attachSqlAutocomplete(whereInput, "where");
   $("#quickAddBtn").addEventListener("click", () => toggleQuickInsert());
+  $("#copyCellBtn").addEventListener("click", () => copyContextCell());
+  $("#copyRowsBtn").addEventListener("click", () => copyContextRows());
   $("#deleteRowBtn").addEventListener("click", () => deleteContextRow());
   document.addEventListener("click", () => {
     hideRowContextMenu();
@@ -6769,7 +6773,13 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
         : ["id", "created_at", "updated_at", "deleted_at"],
       dataGridFontSize: Number.isFinite(fontSize) ? Math.min(24, Math.max(9, Math.round(fontSize))) : 12,
       sqlConfirmFontSize: Number.isFinite(sqlConfirmFontSize) ? Math.min(32, Math.max(10, Math.round(sqlConfirmFontSize))) : 15,
+      rowCopyDelimiter: normalizeRowCopyDelimiter(config?.rowCopyDelimiter),
     };
+  }
+
+  function normalizeRowCopyDelimiter(value) {
+    const raw = value === undefined || value === null ? "\\t" : String(value);
+    return raw.length ? raw : "\\t";
   }
 
   function applyTableDisplayConfig() {
@@ -7922,6 +7932,7 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
 
   function updateDeleteRowButtonText() {
     const count = state.rowSelection.selected.length;
+    $("#copyRowsBtn").textContent = count > 1 ? "复制选中 " + count + " 行" : "复制该行";
     $("#deleteRowBtn").textContent = count > 1 ? "删除选中 " + count + " 行" : "删除该行";
     $("#quickFieldQueryBtn").textContent = count > 1 ? "快速查询选中 " + count + " 行" : "快速条件查询";
     $("#relationQueryBtn").textContent = count > 1 ? "关联查询选中 " + count + " 行" : "关联查询";
@@ -7935,12 +7946,6 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
     if (!Number.isInteger(rowIndex) || !row) {
       return;
     }
-    if (state.connectionType === "redis") {
-      if (!row?.key) {
-        setStatus("无法删除：当前行没有 Redis Key。", true);
-        return;
-      }
-    }
     if (!state.rowSelection.selected.includes(rowIndex)) {
       setRowSelection([rowIndex]);
     } else {
@@ -7949,23 +7954,32 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
     activeContextRowIndex = rowIndex;
     activeContextColumn = cell.getAttribute("data-column") || "";
     updateRowContextActions(row);
-    const left = Math.min(event.clientX, window.innerWidth - 168);
-    const top = Math.min(event.clientY, window.innerHeight - 82);
+    rowContextMenu.classList.add("open");
+    const rect = rowContextMenu.getBoundingClientRect();
+    const left = Math.min(event.clientX, window.innerWidth - rect.width - 8);
+    const top = Math.min(event.clientY, window.innerHeight - rect.height - 8);
     rowContextMenu.style.left = Math.max(8, left) + "px";
     rowContextMenu.style.top = Math.max(8, top) + "px";
-    rowContextMenu.classList.add("open");
   }
 
   function updateRowContextActions(row) {
+    const copyCellBtn = $("#copyCellBtn");
+    const copyRowsBtn = $("#copyRowsBtn");
     const deleteBtn = $("#deleteRowBtn");
     const quickFieldBtn = $("#quickFieldQueryBtn");
     const relationBtn = $("#relationQueryBtn");
+    const hasCell = Boolean(row && activeContextColumn);
+    const hasRows = getContextRowIndexes().length > 0;
     const canDelete = canDeleteContextRows(row);
     const canQuickField = canOpenQuickFieldQueryForRows();
     const canRelation = canOpenRelationQueryForRows();
+    copyCellBtn.disabled = !hasCell;
+    copyRowsBtn.disabled = !hasRows;
     deleteBtn.disabled = !canDelete;
     quickFieldBtn.disabled = !canQuickField;
     relationBtn.disabled = !canRelation;
+    copyCellBtn.title = hasCell ? "复制当前单元格内容" : "当前单元格没有可复制内容";
+    copyRowsBtn.title = hasRows ? "复制选中行的完整数据，包含表头" : "没有选中可复制的行";
     deleteBtn.title = canDelete ? "" : getDeleteDisabledReason(row);
 	      quickFieldBtn.title = canQuickField ? "用选中行字段值写入快速条件并查询当前表" : "快速条件查询仅支持 MySQL/PostgreSQL/MongoDB/TDengine 数据预览结果";
 	      relationBtn.title = canRelation ? "用选中行字段值去查询另一张表/集合" : "关联查询仅支持 MySQL/PostgreSQL/MongoDB/TDengine 数据预览结果";
@@ -8009,6 +8023,67 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
     activeContextRowIndex = null;
     activeContextColumn = "";
     updateDeleteRowButtonText();
+  }
+
+  function copyContextCell() {
+    const rowIndex = activeContextRowIndex;
+    const column = activeContextColumn;
+    const row = Number.isInteger(rowIndex) ? state.currentResult?.rows?.[rowIndex] : null;
+    hideRowContextMenu();
+    if (!row || !column) {
+      setStatus("没有可复制的单元格。", true);
+      return;
+    }
+    copyReadonlyCellValue(column, row);
+  }
+
+  function copyContextRows() {
+    const rowIndexes = getContextRowIndexes();
+    const columns = getCurrentCopyColumns();
+    hideRowContextMenu();
+    if (!rowIndexes.length || !columns.length) {
+      setStatus("没有可复制的行数据。", true);
+      return;
+    }
+    const rows = rowIndexes
+      .map((rowIndex) => state.currentResult?.rows?.[rowIndex])
+      .filter(Boolean);
+    if (!rows.length) {
+      setStatus("没有可复制的行数据。", true);
+      return;
+    }
+    const delimiter = getRowCopyDelimiter();
+    const lines = [
+      columns.map((column) => escapeCopyField(column, delimiter)).join(delimiter),
+      ...rows.map((row) => columns.map((column) => escapeCopyField(formatValue(row[column]), delimiter)).join(delimiter)),
+    ];
+    const text = lines.join("\\n");
+    const label = rows.length > 1 ? "已复制 " + rows.length + " 行" : "已复制 1 行";
+    vscode.postMessage({ type: "copyText", text, successMessage: label });
+    setStatus(label + "到剪贴板。", false);
+  }
+
+  function getCurrentCopyColumns() {
+    if (!state.currentResult) return [];
+    const allColumns = mergeColumns(state.quickInsert.active ? getSchemaColumnNames() : [], state.currentResult.columns || []);
+    const visibleColumns = getVisibleColumns(allColumns);
+    return visibleColumns.length ? visibleColumns : allColumns;
+  }
+
+  function getRowCopyDelimiter() {
+    const raw = normalizeRowCopyDelimiter(state.tableDisplay?.rowCopyDelimiter);
+    return raw
+      .replace(/\\\\t/g, "\\t")
+      .replace(/\\\\n/g, "\\n")
+      .replace(/\\\\r/g, "\\r");
+  }
+
+  function escapeCopyField(value, delimiter) {
+    const text = String(value ?? "");
+    if (!text.includes(delimiter) && !/[\\r\\n"]/.test(text)) {
+      return text;
+    }
+    return '"' + text.replace(/"/g, '""') + '"';
   }
 
   function deleteContextRow() {
