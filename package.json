@@ -695,7 +695,7 @@
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "test:schema-sync": "npm run compile && node tests/schemaSync.test.js && node tests/schemaCompareWebview.test.js && node tests/workbenchPanelPostgresEnum.test.js && node tests/treePostgresSchema.test.js && node tests/workbenchPanelRelationQuery.test.js && node tests/workbenchSqlConfirmFormat.test.js && node tests/workbenchPanelSqlCreateImport.test.js && node tests/databaseServiceTransactions.test.js && node tests/databaseServiceMongo.test.js",
+    "test:schema-sync": "npm run compile && node tests/schemaSync.test.js && node tests/schemaCompareWebview.test.js && node tests/workbenchPanelPostgresEnum.test.js && node tests/treePostgresSchema.test.js && node tests/elasticsearchTreeAndEmptyResult.test.js && node tests/workbenchPanelRelationQuery.test.js && node tests/workbenchSqlConfirmFormat.test.js && node tests/workbenchPanelSqlCreateImport.test.js && node tests/databaseServiceTransactions.test.js && node tests/databaseServiceMongo.test.js",
     "package": "vsce package --allow-missing-repository"
   },
   "dependencies": {

@@ -2758,13 +2758,32 @@ class ElasticsearchWorkbenchClient implements DbClient {
     const request = withElasticSearchSizeLimit(parseElasticRequest(text), maxRows);
     const response = await this.client.request(request.method, request.path, request.body);
     const rows = normalizeElasticResponse(response, maxRows);
+    const columns = await this.resolveResultColumns(request.path, rows);
     return {
-      columns: Object.keys(rows[0] ?? { result: "" }),
+      columns,
       rows,
       rowCount: rows.length,
       command: request.method,
       elapsedMs: Date.now() - startedAt,
     };
+  }
+
+  private async resolveResultColumns(path: string, rows: Record<string, unknown>[]): Promise<string[]> {
+    const rowColumns = collectElasticColumns(rows);
+    if (rowColumns.length) {
+      return rowColumns;
+    }
+    const index = extractElasticSearchIndexFromPath(path) ?? this.indexPattern;
+    if (!index) {
+      return ["result"];
+    }
+    try {
+      const mappings = await this.client.getMapping(index);
+      const schemaColumns = collectElasticMappingColumns(mappings);
+      return schemaColumns.length ? schemaColumns : ["result"];
+    } catch {
+      return ["result"];
+    }
   }
 
   quoteIdentifier(identifier: string): string {
@@ -3103,6 +3122,32 @@ function normalizeElasticResponse(response: unknown, maxRows: number): Record<st
     return (body.rows as unknown[][]).slice(0, limit).map((row) => Object.fromEntries(columns.map((column, index) => [column, row[index]])));
   }
   return [{ result: JSON.stringify(response, null, 2) }];
+}
+
+function collectElasticColumns(rows: Record<string, unknown>[]): string[] {
+  const columns = new Set<string>();
+  for (const row of rows) {
+    for (const column of Object.keys(row)) {
+      columns.add(column);
+    }
+  }
+  return [...columns];
+}
+
+function extractElasticSearchIndexFromPath(path: string): string | undefined {
+  const pathname = String(path || "").split("?")[0];
+  const match = pathname.match(/^\/([^/]+)\/_search$/);
+  return match ? decodeURIComponent(match[1]) : undefined;
+}
+
+function collectElasticMappingColumns(mappings: Record<string, { mappings?: unknown }>): string[] {
+  const columns = new Set<string>();
+  for (const item of Object.values(mappings)) {
+    for (const column of flattenElasticProperties(item.mappings ?? {})) {
+      columns.add(column.name);
+    }
+  }
+  return [...columns];
 }
 
 function flattenElasticProperties(mapping: unknown): TableColumn[] {

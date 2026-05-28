@@ -104,7 +104,7 @@ export class ConnectionsTreeProvider implements vscode.TreeDataProvider<TreeNode
       return item;
     }
 
-    const tableLabel = node.displayName || getTableDisplayName(node.table);
+    const tableLabel = node.displayName || node.table;
     const item = new vscode.TreeItem(tableLabel, vscode.TreeItemCollapsibleState.None);
     const pinned = this.isPinned(node);
     item.description = `${pinned ? "置顶 · " : ""}${node.comment?.trim() || getTableDescription(node.connection.type)}`;
