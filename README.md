@@ -8,10 +8,27 @@ Database Workbench 是一个在 VS Code 内使用的数据库工作台。它把�
 
 项目地址：[https://github.com/loveyu233/databases](https://github.com/loveyu233/databases)
 
+## 支持能力矩阵
+
+| 能力 | MySQL | PostgreSQL | Redis | Elasticsearch | MongoDB |
+| --- | --- | --- | --- | --- | --- |
+| 连接管理 | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 分组 / 置顶 / 导入导出连接 | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 资源浏览 | 库 / 表 | 库 / schema / 表 | DB / Key | 索引 | 数据库 / 集合 |
+| 快速查询 | WHERE 片段 | WHERE 片段 | Key 搜索 / INSPECT | Query DSL / query_string | JSON Filter |
+| 查询控制台 | SQL | SQL | Redis 命令 | HTTP Query DSL / ES SQL | Mongo shell 风格命令 |
+| 数据预览 | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 双击编辑 | ✅ | ✅ | ✅ | ✅ | ✅，按 `_id` |
+| 新增 / 删除 | ✅ | ✅ | 部分 Key/成员 | ✅ | ✅，按 `_id` |
+| 创建资源 | 数据库 / 表 | 数据库 / schema 表 | - | 索引 | 数据库 / 集合 |
+| 修改表结构 | ✅ | ✅ | - | - | - |
+| 表结构对比，Pro | ✅ | ✅ | - | - | - |
+| 操作日志，Pro | ✅ | ✅ | ✅ | ✅ | ✅ |
+| AI 辅助，Pro | SQL | SQL | 命令 | Query DSL / ES SQL | MongoDB 命令 |
+
 ## 目录
 
 - [核心特性](#核心特性)
-- [支持能力矩阵](#支持能力矩阵)
 - [快速开始](#快速开始)
 - [界面与操作习惯](#界面与操作习惯)
 - [各数据库使用示例](#各数据库使用示例)
@@ -34,24 +51,6 @@ Database Workbench 是一个在 VS Code 内使用的数据库工作台。它把�
 - **安全确认**：变更类 SQL / 命令执行前会弹出格式化确认预览；多条 SQL 执行会使用事务包裹。
 - **AI 辅助**：基于当前表结构、Redis Key、ES Mapping 或 MongoDB 集合结构生成查询和分析错误。
 - **操作日志**：记录数据变更和结构变更，支持查看前后数据、标签和回滚。
-
-## 支持能力矩阵
-
-| 能力 | MySQL | PostgreSQL | Redis | Elasticsearch | MongoDB |
-| --- | --- | --- | --- | --- | --- |
-| 连接管理 | ✅ | ✅ | ✅ | ✅ | ✅ |
-| 分组 / 置顶 / 导入导出连接 | ✅ | ✅ | ✅ | ✅ | ✅ |
-| 资源浏览 | 库 / 表 | 库 / schema / 表 | DB / Key | 索引 | 数据库 / 集合 |
-| 快速查询 | WHERE 片段 | WHERE 片段 | Key 搜索 / INSPECT | Query DSL / query_string | JSON Filter |
-| 查询控制台 | SQL | SQL | Redis 命令 | HTTP Query DSL / ES SQL | Mongo shell 风格命令 |
-| 数据预览 | ✅ | ✅ | ✅ | ✅ | ✅ |
-| 双击编辑 | ✅ | ✅ | ✅ | ✅ | ✅，按 `_id` |
-| 新增 / 删除 | ✅ | ✅ | 部分 Key/成员 | ✅ | ✅，按 `_id` |
-| 创建资源 | 数据库 / 表 | 数据库 / schema 表 | - | 索引 | 数据库 / 集合 |
-| 修改表结构 | ✅ | ✅ | - | - | - |
-| 表结构对比，Pro | ✅ | ✅ | - | - | - |
-| 操作日志，Pro | ✅ | ✅ | ✅ | ✅ | ✅ |
-| AI 辅助，Pro | SQL | SQL | 命令 | Query DSL / ES SQL | MongoDB 命令 |
 
 ## 快速开始
 
