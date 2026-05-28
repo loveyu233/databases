@@ -1,5 +1,6 @@
 import { DbConnectionWithSecret, QueryResult, TableInfo, TableSummary } from "../types";
 import { ElasticsearchWorkbenchClient } from "./clients/elasticsearch";
+import { KafkaWorkbenchClient } from "./clients/kafka";
 import { MongoWorkbenchClient } from "./clients/mongodb";
 import { MySqlClient } from "./clients/mysql";
 import { PostgresClient } from "./clients/postgres";
@@ -68,6 +69,12 @@ export class DatabaseService {
     if (connection.type === "mongodb") {
       const size = limit < 0 ? 100 : Math.max(1, limit);
       const command = `db.getCollection(${JSON.stringify(table)}).find({}).limit(${size})`;
+      const result = await withClient(connection, database, (client) => client.query(command, limit));
+      return { sql: command, result };
+    }
+    if (connection.type === "kafka") {
+      const size = limit < 0 ? 100 : Math.max(1, limit);
+      const command = `CONSUME ${JSON.stringify(table)} LIMIT ${size}`;
       const result = await withClient(connection, database, (client) => client.query(command, limit));
       return { sql: command, result };
     }
@@ -217,6 +224,9 @@ async function createClient(connection: DbConnectionWithSecret, database?: strin
   }
   if (connection.type === "tdengine") {
     return TDengineClient.connect(connection, database);
+  }
+  if (connection.type === "kafka") {
+    return KafkaWorkbenchClient.connect(connection, database);
   }
 
   return ElasticsearchWorkbenchClient.connect(connection);

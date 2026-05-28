@@ -1,7 +1,7 @@
 {
   "name": "loveyu-database-workbench",
   "displayName": "Database Workbench",
-  "description": "在 VS Code 中管理 MySQL、PostgreSQL、Redis、Elasticsearch、MongoDB、TDengine，并通过 AI 生成查询。",
+  "description": "在 VS Code 中管理 MySQL、PostgreSQL、Redis、Elasticsearch、MongoDB、TDengine、Kafka，并通过 AI 生成查询。",
   "version": "1.0.20",
   "publisher": "loveyu",
   "license": "MIT",
@@ -30,7 +30,8 @@
     "elasticsearch",
     "mongodb",
     "ai",
-    "tdengine"
+    "tdengine",
+    "kafka"
   ],
   "activationEvents": [
     "onView:databaseWorkbench.connections",
@@ -286,7 +287,7 @@
         },
         {
           "command": "databaseWorkbench.createResource",
-          "when": "view == databaseWorkbench.connections && viewItem =~ /databaseWorkbench\\.connection\\.(mysql|postgres|elasticsearch|mongodb|tdengine)/",
+          "when": "view == databaseWorkbench.connections && viewItem =~ /databaseWorkbench\\.connection\\.(mysql|postgres|elasticsearch|mongodb|tdengine|kafka)/",
           "group": "inline@2"
         },
         {
@@ -306,7 +307,7 @@
         },
         {
           "command": "databaseWorkbench.createResource",
-          "when": "view == databaseWorkbench.connections && viewItem =~ /databaseWorkbench\\.connection\\.(mysql|postgres|elasticsearch|mongodb|tdengine)/",
+          "when": "view == databaseWorkbench.connections && viewItem =~ /databaseWorkbench\\.connection\\.(mysql|postgres|elasticsearch|mongodb|tdengine|kafka)/",
           "group": "1_manage@3"
         },
         {
@@ -326,7 +327,7 @@
         },
         {
           "command": "databaseWorkbench.openQueryConsole",
-          "when": "view == databaseWorkbench.connections && viewItem =~ /databaseWorkbench\\.(database\\.(mysql|postgres|mongodb|tdengine)|schema\\.postgres)/",
+          "when": "view == databaseWorkbench.connections && viewItem =~ /databaseWorkbench\\.(database\\.(mysql|postgres|mongodb|tdengine|kafka)|schema\\.postgres)/",
           "group": "1_manage@4"
         },
         {
@@ -346,7 +347,7 @@
         },
         {
           "command": "databaseWorkbench.deleteTable",
-          "when": "view == databaseWorkbench.connections && viewItem =~ /databaseWorkbench\\.table\\.(mysql|postgres|mongodb)/",
+          "when": "view == databaseWorkbench.connections && viewItem =~ /databaseWorkbench\\.table\\.(mysql|postgres|mongodb|kafka)/",
           "group": "1_manage@2"
         },
         {
@@ -701,11 +702,12 @@
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "test:schema-sync": "npm run compile && node tests/schemaSync.test.js && node tests/schemaCompareWebview.test.js && node tests/workbenchPanelPostgresEnum.test.js && node tests/treePostgresSchema.test.js && node tests/elasticsearchTreeAndEmptyResult.test.js && node tests/workbenchPanelRelationQuery.test.js && node tests/workbenchSqlConfirmFormat.test.js && node tests/workbenchPanelSqlCreateImport.test.js && node tests/editableHighlightStyle.test.js && node tests/workbenchReadonlyCellCopy.test.js && node tests/databaseServiceTransactions.test.js && node tests/databaseServiceMongo.test.js && node tests/databaseServiceTdengine.test.js",
+    "test:schema-sync": "npm run compile && node tests/schemaSync.test.js && node tests/schemaCompareWebview.test.js && node tests/workbenchPanelPostgresEnum.test.js && node tests/treePostgresSchema.test.js && node tests/elasticsearchTreeAndEmptyResult.test.js && node tests/workbenchPanelRelationQuery.test.js && node tests/workbenchSqlConfirmFormat.test.js && node tests/workbenchPanelSqlCreateImport.test.js && node tests/editableHighlightStyle.test.js && node tests/workbenchReadonlyCellCopy.test.js && node tests/databaseServiceTransactions.test.js && node tests/databaseServiceMongo.test.js && node tests/databaseServiceTdengine.test.js && node tests/databaseServiceKafka.test.js",
     "package": "vsce package --allow-missing-repository"
   },
   "dependencies": {
     "@tdengine/websocket": "^3.4.0",
+    "kafkajs": "^2.2.4",
     "mongodb": "^6.21.0",
     "mysql2": "^3.15.3",
     "pg": "^8.16.3",

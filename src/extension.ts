@@ -234,7 +234,7 @@ async function showAddMenu(
       },
       {
         label: "$(database) 添加数据库连接",
-        description: "MySQL / PostgreSQL / Redis / Elasticsearch / MongoDB / TDengine",
+        description: "MySQL / PostgreSQL / Redis / Elasticsearch / MongoDB / TDengine / Kafka",
         action: "connection" as const,
       },
     ],
@@ -395,7 +395,7 @@ function getTreeNodeLabel(node: TreeNode): string {
   if (node.kind === "connection") return `连接「${node.connection.name}」`;
   if (node.kind === "database") return `${node.connection.type === "elasticsearch" ? "索引空间" : "数据库"}「${node.database}」`;
   if (node.kind === "schema") return `Schema「${node.schema}」`;
-  if (node.kind === "table") return `${node.connection.type === "elasticsearch" ? "索引" : node.connection.type === "mongodb" ? "集合" : node.connection.type === "tdengine" ? "时序表" : "表"}「${node.table}」`;
+  if (node.kind === "table") return `${node.connection.type === "elasticsearch" ? "索引" : node.connection.type === "mongodb" ? "集合" : node.connection.type === "tdengine" ? "时序表" : node.connection.type === "kafka" ? "Topic" : "表"}「${node.table}」`;
   return "节点";
 }
 
@@ -911,13 +911,13 @@ function normalizeConnectionEditorPayload(payload: ConnectionEditorPayload): Con
     password: String(payload.password ?? ""),
     database: String(payload.database ?? "").trim() || undefined,
     ssl: Boolean(payload.ssl),
-    allowInsecureTls: type === "elasticsearch" && Boolean(payload.ssl) && Boolean(payload.allowInsecureTls),
+    allowInsecureTls: (type === "elasticsearch" || type === "kafka") && Boolean(payload.ssl) && Boolean(payload.allowInsecureTls),
     updatePassword: Boolean(payload.updatePassword),
   };
 }
 
 function isDatabaseType(value: unknown): value is DatabaseType {
-  return value === "mysql" || value === "postgres" || value === "redis" || value === "elasticsearch" || value === "mongodb" || value === "tdengine";
+  return value === "mysql" || value === "postgres" || value === "redis" || value === "elasticsearch" || value === "mongodb" || value === "tdengine" || value === "kafka";
 }
 
 async function importConnectionDraftToEditor(panel: vscode.WebviewPanel, store: ConnectionStore): Promise<void> {
@@ -943,7 +943,7 @@ async function importConnectionDraftToEditor(panel: vscode.WebviewPanel, store: 
   const parsed = parseConnectionImportFile(text);
   const drafts = parsed.drafts;
   if (drafts.length === 0 && parsed.groups.length === 0) {
-    throw new Error("没有从文件中解析到支持的连接信息。当前支持 Database Workbench JSON 和 Navicat .ncx 导出的 MySQL / PostgreSQL / Redis / Elasticsearch / MongoDB / TDengine 连接。");
+    throw new Error("没有从文件中解析到支持的连接信息。当前支持 Database Workbench JSON 和 Navicat .ncx 导出的 MySQL / PostgreSQL / Redis / Elasticsearch / MongoDB / TDengine / Kafka 连接。");
   }
 
   if (parsed.format === "databaseWorkbenchJson") {
@@ -1227,6 +1227,7 @@ function mapImportedConnectionType(type: string): DatabaseType | undefined {
   if (normalized === "elasticsearch" || normalized === "elastic") return "elasticsearch";
   if (normalized === "mongodb" || normalized === "mongo") return "mongodb";
   if (normalized === "tdengine" || normalized === "taos" || normalized === "taosdata") return "tdengine";
+  if (normalized === "kafka" || normalized === "apache kafka") return "kafka";
   return undefined;
 }
 
@@ -1382,12 +1383,13 @@ async function filterDatabases(
   }
 
   const isIndexFilter = connection.type === "elasticsearch";
-  const targetName = isIndexFilter ? "索引" : getFilterTargetName(connection.type);
+  const isTopicFilter = connection.type === "kafka";
+  const targetName = isIndexFilter ? "索引" : isTopicFilter ? "Topic" : getFilterTargetName(connection.type);
   const values = await vscode.window.withProgress(
     { location: vscode.ProgressLocation.Notification, title: `正在读取 ${connection.name} 的${targetName}列表`, cancellable: false },
     async () => {
-      if (isIndexFilter) {
-        return (await databaseService.listTableSummaries(connectionWithSecret, "indices")).map((item) => item.name);
+      if (isIndexFilter || isTopicFilter) {
+        return (await databaseService.listTableSummaries(connectionWithSecret, isIndexFilter ? "indices" : "topics")).map((item) => item.name);
       }
       return databaseService.listDatabases(connectionWithSecret);
     }
@@ -1673,8 +1675,8 @@ async function openQueryConsole(
   if (!databaseNode) {
     throw new Error("没有拿到数据库节点信息，请刷新左侧数据库树后重试。");
   }
-  if (databaseNode.connection.type !== "mysql" && databaseNode.connection.type !== "postgres" && databaseNode.connection.type !== "mongodb" && databaseNode.connection.type !== "tdengine") {
-    vscode.window.showWarningMessage("查询控制台暂时只支持 MySQL、PostgreSQL、MongoDB 和 TDengine。");
+  if (databaseNode.connection.type !== "mysql" && databaseNode.connection.type !== "postgres" && databaseNode.connection.type !== "mongodb" && databaseNode.connection.type !== "tdengine" && databaseNode.connection.type !== "kafka") {
+    vscode.window.showWarningMessage("查询控制台暂时只支持 MySQL、PostgreSQL、MongoDB、TDengine 和 Kafka。");
     return;
   }
 
@@ -1711,14 +1713,19 @@ async function deleteTable(
   if (!node) {
     throw new Error("没有拿到表节点信息，请刷新左侧数据库树后重试。");
   }
-  if (node.connection.type !== "mysql" && node.connection.type !== "postgres" && node.connection.type !== "mongodb") {
+  if (node.connection.type !== "mysql" && node.connection.type !== "postgres" && node.connection.type !== "mongodb" && node.connection.type !== "kafka") {
     vscode.window.showWarningMessage("当前连接类型不支持删除表。");
     return;
   }
 
   const isMongo = node.connection.type === "mongodb";
-  const targetLabel = isMongo ? "集合" : "表";
-  const sql = isMongo ? `db.getCollection(${JSON.stringify(node.table)}).drop();` : `DROP TABLE ${quoteIdentifier(node.connection.type, node.table)};`;
+  const isKafka = node.connection.type === "kafka";
+  const targetLabel = isMongo ? "集合" : isKafka ? "Topic" : "表";
+  const sql = isMongo
+    ? `db.getCollection(${JSON.stringify(node.table)}).drop();`
+    : isKafka
+      ? `DELETE TOPIC ${quoteKafkaName(node.table)};`
+      : `DROP TABLE ${quoteIdentifier(node.connection.type, node.table)};`;
   if (!await showSqlConfirmDialog({
     title: `确定删除${targetLabel}「${node.table}」吗？这个操作不可恢复。`,
     sql,
@@ -1802,6 +1809,8 @@ async function submitCreateResource(
     await databaseService.query(connectionWithSecret, "indices", plan.sql, getQueryConfigForCommand());
   } else if (connection.type === "mongodb") {
     await databaseService.query(connectionWithSecret, plan.name, plan.sql, getQueryConfigForCommand());
+  } else if (connection.type === "kafka") {
+    await databaseService.query(connectionWithSecret, "topics", plan.sql, getQueryConfigForCommand());
   } else if (connection.type === "tdengine") {
     await databaseService.queryAdmin(connectionWithSecret, plan.sql, getQueryConfigForCommand());
   } else {
@@ -1854,11 +1863,12 @@ function getDefaultPort(type: DatabaseType): number {
   if (type === "redis") return 6379;
   if (type === "mongodb") return 27017;
   if (type === "tdengine") return 6041;
+  if (type === "kafka") return 9092;
   return 9200;
 }
 
 function canUseEmptyUsername(type: DatabaseType): boolean {
-  return type === "redis" || type === "elasticsearch" || type === "mongodb";
+  return type === "redis" || type === "elasticsearch" || type === "mongodb" || type === "kafka";
 }
 
 function renderConnectionEditorHtml(existing: DbConnectionConfig | undefined, groups: ConnectionGroup[], initialGroupId?: string): string {
@@ -1986,6 +1996,7 @@ function renderConnectionEditorHtml(existing: DbConnectionConfig | undefined, gr
                   <option value="elasticsearch">Elasticsearch</option>
                   <option value="mongodb">MongoDB</option>
                   <option value="tdengine">TDengine</option>
+                  <option value="kafka">Kafka</option>
                 </select>
               </div>
               <div class="field">
@@ -2068,6 +2079,7 @@ function renderConnectionEditorHtml(existing: DbConnectionConfig | undefined, gr
       elasticsearch: { port: 9200, username: "", name: "Elasticsearch 本地连接", databaseLabel: "默认索引筛选", databaseHint: "可留空；展开时列出全部索引。", databasePlaceholder: "例如：logs-*" },
       mongodb: { port: 27017, username: "", name: "MongoDB 本地连接", databaseLabel: "默认认证库", databaseHint: "可留空；无认证 MongoDB 直接留空，有认证时可填写 admin 或业务库。", databasePlaceholder: "例如：admin / app_blog" },
       tdengine: { port: 6041, username: "root", name: "TDengine 本地连接", databaseLabel: "默认数据库", databaseHint: "可留空；默认通过 taosAdapter WebSocket 端口连接。", databasePlaceholder: "例如：power" },
+      kafka: { port: 9092, username: "", name: "Kafka 本地连接", databaseLabel: "Topic 筛选", databaseHint: "可留空；支持通配符和逗号分隔，例如 order-*、user-*,event-*。填写用户名时会使用 SASL/PLAIN。", databasePlaceholder: "例如：order-* / user-*,event-*" },
     };
     const $ = (selector) => document.querySelector(selector);
     const typeInput = $("#typeInput");
@@ -2123,10 +2135,10 @@ function renderConnectionEditorHtml(existing: DbConnectionConfig | undefined, gr
       $("#databaseLabel").textContent = meta.databaseLabel;
       $("#databaseHint").textContent = meta.databaseHint;
       databaseInput.placeholder = meta.databasePlaceholder;
-      $("#usernameRequired").style.display = type === "redis" || type === "elasticsearch" || type === "mongodb" ? "none" : "inline";
-      $("#usernameHint").textContent = type === "redis" || type === "elasticsearch" || type === "mongodb" ? "用户名可留空，本地 Docker 默认无认证时直接留空。" : type === "tdengine" ? "TDengine 默认用户名通常是 root，默认密码通常是 taosdata。" : "MySQL / PostgreSQL 通常需要用户名。";
-      $("#insecureTlsRow").style.display = type === "elasticsearch" && sslInput.checked ? "flex" : "none";
-      $("#tlsRisk").classList.toggle("show", type === "elasticsearch" && sslInput.checked && allowInsecureTlsInput.checked);
+      $("#usernameRequired").style.display = type === "redis" || type === "elasticsearch" || type === "mongodb" || type === "kafka" ? "none" : "inline";
+      $("#usernameHint").textContent = type === "redis" || type === "elasticsearch" || type === "mongodb" ? "用户名可留空，本地 Docker 默认无认证时直接留空。" : type === "kafka" ? "用户名可留空；填写后会按 SASL/PLAIN 使用用户名和密码认证。" : type === "tdengine" ? "TDengine 默认用户名通常是 root，默认密码通常是 taosdata。" : "MySQL / PostgreSQL 通常需要用户名。";
+      $("#insecureTlsRow").style.display = (type === "elasticsearch" || type === "kafka") && sslInput.checked ? "flex" : "none";
+      $("#tlsRisk").classList.toggle("show", (type === "elasticsearch" || type === "kafka") && sslInput.checked && allowInsecureTlsInput.checked);
       $("#summaryBadge").textContent = type + "://" + (hostInput.value || "127.0.0.1") + ":" + (portInput.value || meta.port);
     }
     function resetForm() {
@@ -2283,12 +2295,14 @@ function getFilterTargetName(type: DatabaseType): string {
   if (type === "redis") return "DB";
   if (type === "mongodb") return "数据库";
   if (type === "tdengine") return "数据库";
+  if (type === "kafka") return "Topic 空间";
   return "数据库";
 }
 
 function getCreateTargetLabel(type: DatabaseType): string {
   if (type === "elasticsearch") return "索引";
   if (type === "mongodb") return "数据库";
+  if (type === "kafka") return "Topic";
   return "数据库";
 }
 
@@ -2322,6 +2336,16 @@ function buildCreateResourcePlan(type: DatabaseType, payload: Record<string, unk
       name,
       targetLabel: "数据库",
       sql: `CREATE DATABASE ${quoteIdentifier(type, name)};`,
+    };
+  }
+  if (type === "kafka") {
+    assertKafkaTopicName(name);
+    const partitions = parsePositiveInteger(asInputString(payload.partitions)) ?? 1;
+    const replicationFactor = parsePositiveInteger(asInputString(payload.replicationFactor)) ?? 1;
+    return {
+      name,
+      targetLabel: "Topic",
+      sql: `CREATE TOPIC ${quoteKafkaName(name)} PARTITIONS ${partitions} REPLICATION_FACTOR ${replicationFactor};`,
     };
   }
   if (type === "elasticsearch") {
@@ -2380,6 +2404,22 @@ function assertMongoCollectionName(name: string): void {
   if (name.includes("\0") || name.startsWith("system.")) {
     throw new Error("MongoDB 集合名称不能包含空字符，也不能以 system. 开头。");
   }
+}
+
+function assertKafkaTopicName(name: string): void {
+  if (!name.trim()) {
+    throw new Error("Kafka Topic 名称不能为空。");
+  }
+  if (!/^[A-Za-z0-9._-]+$/.test(name)) {
+    throw new Error("Kafka Topic 名称只能包含字母、数字、点号、下划线和短横线。");
+  }
+  if (name === "." || name === ".." || name.length > 249) {
+    throw new Error("Kafka Topic 名称不能是 . 或 ..，且长度不能超过 249。");
+  }
+}
+
+function quoteKafkaName(name: string): string {
+  return /^[A-Za-z0-9._-]+$/.test(name) ? name : JSON.stringify(name);
 }
 
 function buildElasticsearchCreateIndexBody(payload: Record<string, unknown>): Record<string, unknown> {
@@ -2455,6 +2495,7 @@ function renderCreateResourceHtml(connection: DbConnectionConfig, targetLabel: s
   const nonce = randomUUID().replace(/-/g, "");
   const isElastic = connection.type === "elasticsearch";
   const isMongo = connection.type === "mongodb";
+  const isKafka = connection.type === "kafka";
   return `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -2500,8 +2541,8 @@ function renderCreateResourceHtml(connection: DbConnectionConfig, targetLabel: s
           <tr>
             <th>${escapeHtml(targetLabel)}名称</th>
             <td>
-	              <input id="nameInput" placeholder="${isElastic ? "例如：articles-v1" : isMongo ? "例如：app_blog" : "例如：app_blog"}" autofocus />
-	              <div class="help">${isElastic ? "创建后会作为左侧索引节点展示。" : isMongo ? "MongoDB 只有在创建集合或写入文档后才会真正创建数据库。" : "创建后会作为左侧数据库节点展示。"}</div>
+	              <input id="nameInput" placeholder="${isElastic ? "例如：articles-v1" : isMongo ? "例如：app_blog" : isKafka ? "例如：orders.created" : "例如：app_blog"}" autofocus />
+	              <div class="help">${isElastic ? "创建后会作为左侧索引节点展示。" : isMongo ? "MongoDB 只有在创建集合或写入文档后才会真正创建数据库。" : isKafka ? "创建后会作为左侧 Topic 节点展示。" : "创建后会作为左侧数据库节点展示。"}</div>
             </td>
           </tr>
           ${renderCreateResourceRows(connection.type)}
@@ -2533,6 +2574,8 @@ function renderCreateResourceHtml(connection: DbConnectionConfig, targetLabel: s
 	        settingsJson: $("#settingsInput")?.value || "",
 	        mappingsJson: $("#mappingsInput")?.value || "",
 	        initialCollection: $("#initialCollectionInput")?.value || "",
+	        partitions: $("#partitionsInput")?.value || "",
+	        replicationFactor: $("#replicationFactorInput")?.value || "",
 	      };
     }
     $("#submitBtn").addEventListener("click", () => {
@@ -2600,6 +2643,19 @@ function renderCreateResourceRows(type: DatabaseType): string {
 	        <th>初始集合</th>
 	        <td><input id="initialCollectionInput" value="default_collection" data-default="default_collection" placeholder="例如：users" /><div class="help">MongoDB 数据库需要至少一个集合才会显示；创建后可在数据库节点上继续添加集合。</div></td>
 	      </tr>`;
+  }
+  if (type === "kafka") {
+    return `
+      <tr>
+        <th>分区 / 副本</th>
+        <td>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+            <input id="partitionsInput" value="1" data-default="1" placeholder="partitions" />
+            <input id="replicationFactorInput" value="1" data-default="1" placeholder="replication factor" />
+          </div>
+          <div class="help">默认创建 1 个分区、1 个副本；生产环境请按 Kafka 集群 Broker 数量调整副本数。</div>
+        </td>
+      </tr>`;
   }
   return "";
 }

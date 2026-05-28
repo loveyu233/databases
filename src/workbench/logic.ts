@@ -2259,6 +2259,7 @@ export function getAiLoadingMessage(type: DbConnectionConfig["type"]): string {
   if (type === "elasticsearch") return "正在根据索引结构生成 Elasticsearch 查询...";
   if (type === "mongodb") return "正在根据集合结构生成 MongoDB 查询...";
   if (type === "tdengine") return "正在根据 TDengine 时序表结构生成 SQL...";
+  if (type === "kafka") return "正在根据 Kafka Topic 信息生成命令...";
   return "正在根据表结构生成 SQL...";
 }
 
