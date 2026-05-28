@@ -65,6 +65,14 @@ assert.equal(
   buildFieldValueConditionSql("postgres", "user_id", [1, 2, 2, null]),
   "(\"user_id\" IN (1, 2) OR \"user_id\" IS NULL)"
 );
+assert.equal(
+  buildFieldValueConditionSql("mongodb", "_id", ["64f000000000000000000001", "64f000000000000000000002"]),
+  '{ "_id": { "$in": [ObjectId("64f000000000000000000001"), ObjectId("64f000000000000000000002")] } }'
+);
+assert.equal(
+  buildFieldValueConditionSql("mongodb", "status", ["active", null]),
+  '{ "$or": [{ "status": "active" }, { "status": null }] }'
+);
 
 const mysqlSql = buildRelationQuerySql("mysql", "users", "id", "orders", "user_id", [1, 2, 2, null]);
 assert.equal(mysqlSql, [
@@ -79,6 +87,9 @@ assert.equal(pgSql, [
   "FROM \"tenant\".\"departments\"",
   "WHERE \"id\" IN ('a', 'b''c');",
 ].join("\n"));
+
+const mongoSql = buildRelationQuerySql("mongodb", "orders", "user_id", "users", "_id", ["64f000000000000000000001"]);
+assert.equal(mongoSql, 'db.getCollection("users").find({ "_id": ObjectId("64f000000000000000000001") }).limit(30);');
 
 assert.throws(
   () => buildRelationQuerySql("postgres", "users", "id", "orders", "user_id", []),

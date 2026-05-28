@@ -234,7 +234,7 @@ async function showAddMenu(
       },
       {
         label: "$(database) 添加数据库连接",
-        description: "MySQL / PostgreSQL / Redis / Elasticsearch",
+        description: "MySQL / PostgreSQL / Redis / Elasticsearch / MongoDB",
         action: "connection" as const,
       },
     ],
@@ -395,7 +395,7 @@ function getTreeNodeLabel(node: TreeNode): string {
   if (node.kind === "connection") return `连接「${node.connection.name}」`;
   if (node.kind === "database") return `${node.connection.type === "elasticsearch" ? "索引空间" : "数据库"}「${node.database}」`;
   if (node.kind === "schema") return `Schema「${node.schema}」`;
-  if (node.kind === "table") return `${node.connection.type === "elasticsearch" ? "索引" : "表"}「${node.table}」`;
+  if (node.kind === "table") return `${node.connection.type === "elasticsearch" ? "索引" : node.connection.type === "mongodb" ? "集合" : "表"}「${node.table}」`;
   return "节点";
 }
 
@@ -917,7 +917,7 @@ function normalizeConnectionEditorPayload(payload: ConnectionEditorPayload): Con
 }
 
 function isDatabaseType(value: unknown): value is DatabaseType {
-  return value === "mysql" || value === "postgres" || value === "redis" || value === "elasticsearch";
+  return value === "mysql" || value === "postgres" || value === "redis" || value === "elasticsearch" || value === "mongodb";
 }
 
 async function importConnectionDraftToEditor(panel: vscode.WebviewPanel, store: ConnectionStore): Promise<void> {
@@ -943,7 +943,7 @@ async function importConnectionDraftToEditor(panel: vscode.WebviewPanel, store: 
   const parsed = parseConnectionImportFile(text);
   const drafts = parsed.drafts;
   if (drafts.length === 0 && parsed.groups.length === 0) {
-    throw new Error("没有从文件中解析到支持的连接信息。当前支持 Database Workbench JSON 和 Navicat .ncx 导出的 MySQL / PostgreSQL / Redis / Elasticsearch 连接。");
+    throw new Error("没有从文件中解析到支持的连接信息。当前支持 Database Workbench JSON 和 Navicat .ncx 导出的 MySQL / PostgreSQL / Redis / Elasticsearch / MongoDB 连接。");
   }
 
   if (parsed.format === "databaseWorkbenchJson") {
@@ -1225,6 +1225,7 @@ function mapImportedConnectionType(type: string): DatabaseType | undefined {
   if (normalized === "postgres" || normalized === "postgresql" || normalized === "pgsql") return "postgres";
   if (normalized === "redis") return "redis";
   if (normalized === "elasticsearch" || normalized === "elastic") return "elasticsearch";
+  if (normalized === "mongodb" || normalized === "mongo") return "mongodb";
   return undefined;
 }
 
@@ -1518,17 +1519,18 @@ async function deleteDatabase(
   if (!node) {
     throw new Error("没有拿到数据库节点信息，请刷新左侧数据库树后重试。");
   }
-  if (node.connection.type !== "mysql" && node.connection.type !== "postgres") {
+  if (node.connection.type !== "mysql" && node.connection.type !== "postgres" && node.connection.type !== "mongodb") {
     vscode.window.showWarningMessage("当前连接类型不支持删除数据库。");
     return;
   }
 
-  const sql = `DROP DATABASE ${quoteIdentifier(node.connection.type, node.database)};`;
+  const isMongo = node.connection.type === "mongodb";
+  const sql = isMongo ? "db.dropDatabase();" : `DROP DATABASE ${quoteIdentifier(node.connection.type, node.database)};`;
   if (!await showSqlConfirmDialog({
     title: `确定删除数据库「${node.database}」吗？这个操作不可恢复。`,
     sql,
     confirmLabel: "确认删除",
-    dialect: node.connection.type,
+    dialect: node.connection.type === "mysql" || node.connection.type === "postgres" ? node.connection.type : undefined,
   })) {
     return;
   }
@@ -1540,7 +1542,11 @@ async function deleteDatabase(
   }
 
   const connection = await requireConnection(store, node.connection.id);
-  await databaseService.queryAdmin(connection, sql, getQueryConfigForCommand());
+  if (isMongo) {
+    await databaseService.query(connection, node.database, sql, getQueryConfigForCommand());
+  } else {
+    await databaseService.queryAdmin(connection, sql, getQueryConfigForCommand());
+  }
   vscode.window.showInformationMessage(`已删除数据库 ${node.database}。`);
 }
 
@@ -1555,6 +1561,10 @@ async function addTable(
   if (!databaseNode) {
     throw new Error("没有拿到数据库节点信息，请刷新左侧数据库树后重试。");
   }
+  if (databaseNode.connection.type === "mongodb") {
+    await addMongoCollection(store, databaseService, databaseNode);
+    return;
+  }
   if (databaseNode.connection.type !== "mysql" && databaseNode.connection.type !== "postgres") {
     vscode.window.showWarningMessage("添加表暂时只支持 MySQL 和 PostgreSQL。");
     return;
@@ -1564,6 +1574,33 @@ async function addTable(
     schemaEditorMode: "createTable",
     defaultSchema: schemaNode?.schema ?? (databaseNode.connection.type === "postgres" ? "public" : undefined),
   });
+}
+
+async function addMongoCollection(
+  store: ConnectionStore,
+  databaseService: DatabaseService,
+  databaseNode: ReturnType<typeof asDatabaseNode> | ReturnType<typeof asSchemaNode>
+): Promise<void> {
+  if (!databaseNode) {
+    throw new Error("没有拿到数据库节点信息，请刷新左侧数据库树后重试。");
+  }
+  const collectionName = await promptIdentifier(`在 ${databaseNode.database} 中添加 MongoDB 集合`, "");
+  if (!collectionName) {
+    return;
+  }
+  assertMongoCollectionName(collectionName);
+  const sql = `db.createCollection(${JSON.stringify(collectionName)});`;
+  if (!await showSqlConfirmDialog({
+    title: `确认创建集合「${collectionName}」吗？`,
+    sql,
+    confirmLabel: "确认创建",
+  })) {
+    return;
+  }
+  const connection = await requireConnection(store, databaseNode.connection.id);
+  await databaseService.query(connection, databaseNode.database, sql, getQueryConfigForCommand());
+  await vscode.commands.executeCommand("databaseWorkbench.refresh");
+  vscode.window.showInformationMessage(`已创建集合 ${collectionName}。`);
 }
 
 async function copyDatabaseSchema(
@@ -1635,8 +1672,8 @@ async function openQueryConsole(
   if (!databaseNode) {
     throw new Error("没有拿到数据库节点信息，请刷新左侧数据库树后重试。");
   }
-  if (databaseNode.connection.type !== "mysql" && databaseNode.connection.type !== "postgres") {
-    vscode.window.showWarningMessage("查询控制台暂时只支持 MySQL 和 PostgreSQL。");
+  if (databaseNode.connection.type !== "mysql" && databaseNode.connection.type !== "postgres" && databaseNode.connection.type !== "mongodb") {
+    vscode.window.showWarningMessage("查询控制台暂时只支持 MySQL、PostgreSQL 和 MongoDB。");
     return;
   }
 
@@ -1673,24 +1710,26 @@ async function deleteTable(
   if (!node) {
     throw new Error("没有拿到表节点信息，请刷新左侧数据库树后重试。");
   }
-  if (node.connection.type !== "mysql" && node.connection.type !== "postgres") {
+  if (node.connection.type !== "mysql" && node.connection.type !== "postgres" && node.connection.type !== "mongodb") {
     vscode.window.showWarningMessage("当前连接类型不支持删除表。");
     return;
   }
 
-  const sql = `DROP TABLE ${quoteIdentifier(node.connection.type, node.table)};`;
+  const isMongo = node.connection.type === "mongodb";
+  const targetLabel = isMongo ? "集合" : "表";
+  const sql = isMongo ? `db.getCollection(${JSON.stringify(node.table)}).drop();` : `DROP TABLE ${quoteIdentifier(node.connection.type, node.table)};`;
   if (!await showSqlConfirmDialog({
-    title: `确定删除表「${node.table}」吗？这个操作不可恢复。`,
+    title: `确定删除${targetLabel}「${node.table}」吗？这个操作不可恢复。`,
     sql,
     confirmLabel: "确认删除",
-    dialect: node.connection.type,
+    dialect: node.connection.type === "mysql" || node.connection.type === "postgres" ? node.connection.type : undefined,
   })) {
     return;
   }
 
   const connection = await requireConnection(store, node.connection.id);
   await databaseService.query(connection, node.database, sql, getQueryConfigForCommand());
-  vscode.window.showInformationMessage(`已删除表 ${node.table}。`);
+  vscode.window.showInformationMessage(`已删除${targetLabel} ${node.table}。`);
 }
 
 async function openCreateResourcePanel(
@@ -1760,6 +1799,8 @@ async function submitCreateResource(
   panel.webview.postMessage({ type: "createResourceStatus", loading: true, message: `正在创建${plan.targetLabel}...` });
   if (connection.type === "elasticsearch") {
     await databaseService.query(connectionWithSecret, "indices", plan.sql, getQueryConfigForCommand());
+  } else if (connection.type === "mongodb") {
+    await databaseService.query(connectionWithSecret, plan.name, plan.sql, getQueryConfigForCommand());
   } else {
     await databaseService.queryAdmin(connectionWithSecret, plan.sql, getQueryConfigForCommand());
   }
@@ -1808,11 +1849,12 @@ function getDefaultPort(type: DatabaseType): number {
   if (type === "mysql") return 3306;
   if (type === "postgres") return 5432;
   if (type === "redis") return 6379;
+  if (type === "mongodb") return 27017;
   return 9200;
 }
 
 function canUseEmptyUsername(type: DatabaseType): boolean {
-  return type === "redis" || type === "elasticsearch";
+  return type === "redis" || type === "elasticsearch" || type === "mongodb";
 }
 
 function renderConnectionEditorHtml(existing: DbConnectionConfig | undefined, groups: ConnectionGroup[], initialGroupId?: string): string {
@@ -1938,6 +1980,7 @@ function renderConnectionEditorHtml(existing: DbConnectionConfig | undefined, gr
                   <option value="postgres">PostgreSQL</option>
                   <option value="redis">Redis</option>
                   <option value="elasticsearch">Elasticsearch</option>
+                  <option value="mongodb">MongoDB</option>
                 </select>
               </div>
               <div class="field">
@@ -2018,6 +2061,7 @@ function renderConnectionEditorHtml(existing: DbConnectionConfig | undefined, gr
       postgres: { port: 5432, username: "postgres", name: "PostgreSQL 本地连接", databaseLabel: "默认数据库", databaseHint: "可留空；未填写时默认连接 postgres。", databasePlaceholder: "例如：app_blog" },
       redis: { port: 6379, username: "", name: "Redis 本地连接", databaseLabel: "默认 DB 编号", databaseHint: "可留空；默认使用 db0，左侧会根据服务端配置展示 DB。", databasePlaceholder: "例如：0" },
       elasticsearch: { port: 9200, username: "", name: "Elasticsearch 本地连接", databaseLabel: "默认索引筛选", databaseHint: "可留空；展开时列出全部索引。", databasePlaceholder: "例如：logs-*" },
+      mongodb: { port: 27017, username: "", name: "MongoDB 本地连接", databaseLabel: "默认认证库", databaseHint: "可留空；无认证 MongoDB 直接留空，有认证时可填写 admin 或业务库。", databasePlaceholder: "例如：admin / app_blog" },
     };
     const $ = (selector) => document.querySelector(selector);
     const typeInput = $("#typeInput");
@@ -2073,8 +2117,8 @@ function renderConnectionEditorHtml(existing: DbConnectionConfig | undefined, gr
       $("#databaseLabel").textContent = meta.databaseLabel;
       $("#databaseHint").textContent = meta.databaseHint;
       databaseInput.placeholder = meta.databasePlaceholder;
-      $("#usernameRequired").style.display = type === "redis" || type === "elasticsearch" ? "none" : "inline";
-      $("#usernameHint").textContent = type === "redis" || type === "elasticsearch" ? "用户名可留空，本地 Docker 默认无认证时直接留空。" : "MySQL / PostgreSQL 通常需要用户名。";
+      $("#usernameRequired").style.display = type === "redis" || type === "elasticsearch" || type === "mongodb" ? "none" : "inline";
+      $("#usernameHint").textContent = type === "redis" || type === "elasticsearch" || type === "mongodb" ? "用户名可留空，本地 Docker 默认无认证时直接留空。" : "MySQL / PostgreSQL 通常需要用户名。";
       $("#insecureTlsRow").style.display = type === "elasticsearch" && sslInput.checked ? "flex" : "none";
       $("#tlsRisk").classList.toggle("show", type === "elasticsearch" && sslInput.checked && allowInsecureTlsInput.checked);
       $("#summaryBadge").textContent = type + "://" + (hostInput.value || "127.0.0.1") + ":" + (portInput.value || meta.port);
@@ -2231,11 +2275,13 @@ function getQueryConfigForCommand(): number {
 
 function getFilterTargetName(type: DatabaseType): string {
   if (type === "redis") return "DB";
+  if (type === "mongodb") return "数据库";
   return "数据库";
 }
 
 function getCreateTargetLabel(type: DatabaseType): string {
   if (type === "elasticsearch") return "索引";
+  if (type === "mongodb") return "数据库";
   return "数据库";
 }
 
@@ -2273,6 +2319,16 @@ function buildCreateResourcePlan(type: DatabaseType, payload: Record<string, unk
       sql: `PUT /${encodeURIComponent(name)}\n${JSON.stringify(body, null, 2)}`,
     };
   }
+  if (type === "mongodb") {
+    assertMongoDatabaseName(name);
+    const collection = asInputString(payload.initialCollection) || "default_collection";
+    assertMongoCollectionName(collection);
+    return {
+      name,
+      targetLabel: "数据库",
+      sql: `db.createCollection(${JSON.stringify(collection)});`,
+    };
+  }
   throw new Error("当前连接类型不支持创建。");
 }
 
@@ -2291,6 +2347,24 @@ function assertElasticsearchIndexName(name: string): void {
   }
   if (/^[-_+]/.test(name) || name === "." || name === "..") {
     throw new Error("Elasticsearch 索引名称不能以 -、_、+ 开头，也不能是 . 或 ..。");
+  }
+}
+
+function assertMongoDatabaseName(name: string): void {
+  if (!name.trim()) {
+    throw new Error("MongoDB 数据库名称不能为空。");
+  }
+  if (/[\0/\\."$*<>:|?]/.test(name)) {
+    throw new Error("MongoDB 数据库名称不能包含 / \\ . \" $ * < > : | ? 或空字符。");
+  }
+}
+
+function assertMongoCollectionName(name: string): void {
+  if (!name.trim()) {
+    throw new Error("MongoDB 集合名称不能为空。");
+  }
+  if (name.includes("\0") || name.startsWith("system.")) {
+    throw new Error("MongoDB 集合名称不能包含空字符，也不能以 system. 开头。");
   }
 }
 
@@ -2366,6 +2440,7 @@ function escapeSqlString(value: string): string {
 function renderCreateResourceHtml(connection: DbConnectionConfig, targetLabel: string): string {
   const nonce = randomUUID().replace(/-/g, "");
   const isElastic = connection.type === "elasticsearch";
+  const isMongo = connection.type === "mongodb";
   return `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -2411,8 +2486,8 @@ function renderCreateResourceHtml(connection: DbConnectionConfig, targetLabel: s
           <tr>
             <th>${escapeHtml(targetLabel)}名称</th>
             <td>
-              <input id="nameInput" placeholder="${isElastic ? "例如：articles-v1" : "例如：app_blog"}" autofocus />
-              <div class="help">${isElastic ? "创建后会作为左侧索引节点展示。" : "创建后会作为左侧数据库节点展示。"}</div>
+	              <input id="nameInput" placeholder="${isElastic ? "例如：articles-v1" : isMongo ? "例如：app_blog" : "例如：app_blog"}" autofocus />
+	              <div class="help">${isElastic ? "创建后会作为左侧索引节点展示。" : isMongo ? "MongoDB 只有在创建集合或写入文档后才会真正创建数据库。" : "创建后会作为左侧数据库节点展示。"}</div>
             </td>
           </tr>
           ${renderCreateResourceRows(connection.type)}
@@ -2440,10 +2515,11 @@ function renderCreateResourceHtml(connection: DbConnectionConfig, targetLabel: s
         collation: $("#collationInput")?.value || "",
         encoding: $("#encodingInput")?.value || "",
         shards: $("#shardsInput")?.value || "",
-        replicas: $("#replicasInput")?.value || "",
-        settingsJson: $("#settingsInput")?.value || "",
-        mappingsJson: $("#mappingsInput")?.value || "",
-      };
+	        replicas: $("#replicasInput")?.value || "",
+	        settingsJson: $("#settingsInput")?.value || "",
+	        mappingsJson: $("#mappingsInput")?.value || "",
+	        initialCollection: $("#initialCollectionInput")?.value || "",
+	      };
     }
     $("#submitBtn").addEventListener("click", () => {
       setStatus("正在提交创建请求...", "");
@@ -2502,7 +2578,14 @@ function renderCreateResourceRows(type: DatabaseType): string {
       <tr>
         <th>Mappings JSON</th>
         <td><textarea id="mappingsInput" spellcheck="false" placeholder='{ "properties": { "title": { "type": "text" } } }'></textarea><div class="help">可以填写 mappings 对象，或直接填写 properties 所在的对象。</div></td>
-      </tr>`;
+	      </tr>`;
+  }
+  if (type === "mongodb") {
+    return `
+	      <tr>
+	        <th>初始集合</th>
+	        <td><input id="initialCollectionInput" value="default_collection" data-default="default_collection" placeholder="例如：users" /><div class="help">MongoDB 数据库需要至少一个集合才会显示；创建后可在数据库节点上继续添加集合。</div></td>
+	      </tr>`;
   }
   return "";
 }

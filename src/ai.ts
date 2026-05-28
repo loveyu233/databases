@@ -390,6 +390,26 @@ function buildMessages(prompt: string, schema: string, database: string, dialect
     ];
   }
 
+  if (dialect === "mongodb") {
+    return [
+      {
+        role: "system",
+        content: [
+          "你是资深 MongoDB 工程师，擅长把自然语言需求转换为 Database Workbench 可执行的 MongoDB Shell 风格命令。",
+          "只返回最终可执行命令，不要解释，不要 Markdown 代码块。",
+          "优先返回 db.getCollection(\"collection\").find({}).sort({}).limit(n)、countDocuments({}) 或 aggregate([...])。",
+          "默认生成只读查询；除非用户明确要求，不要生成 insert、update、delete、dropDatabase、drop 等变更命令。",
+          "优先使用集合结构中真实存在的集合名和字段名。",
+          "ObjectId 查询请使用 ObjectId(\"...\")，时间查询可使用 ISODate(\"...\")。",
+        ].join(" "),
+      },
+      {
+        role: "user",
+        content: `MongoDB 数据库：${database}\n\n集合结构：\n${schema}\n\n需求描述：\n${prompt}`,
+      },
+    ];
+  }
+
   const quoteRule = dialect === "mysql" ? "如需引用标识符，使用反引号。" : "如需引用标识符，使用双引号。";
   return [
     {

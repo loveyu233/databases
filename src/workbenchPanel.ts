@@ -588,6 +588,37 @@ export class DatabaseWorkbenchPanel {
       this.panel.webview.postMessage({ type: "result", sql: request, result });
       return;
     }
+    if (this.connection.type === "mongodb") {
+      let totalRows = 0;
+      let totalPages = 1;
+      let currentPage = safePage;
+      if (safeLimit > 0) {
+        const countCommand = buildMongoQuickCountCommand(table, where);
+        this.lastQueryErrorSql = countCommand;
+        const countResult = await this.databaseService.query(connection, this.database, countCommand, 1);
+        totalRows = readTotalRows(countResult);
+        totalPages = Math.max(1, Math.ceil(totalRows / safeLimit));
+        currentPage = Math.min(safePage, totalPages);
+      }
+      const command = buildMongoQuickFindCommand(table, where, safeLimit, currentPage, sortColumn, sortDirection);
+      this.lastQueryErrorSql = command;
+      const result = await this.databaseService.query(connection, this.database, command, safeLimit < 0 ? -1 : queryConfig.maxRows);
+      if (safeLimit > 0) {
+        result.pagination = {
+          mode: "quick",
+          table,
+          where,
+          page: currentPage,
+          pageSize: safeLimit,
+          totalRows,
+          totalPages,
+          sortColumn,
+          sortDirection: normalizeSortDirection(sortDirection),
+        };
+      }
+      this.panel.webview.postMessage({ type: "result", sql: command, result });
+      return;
+    }
     let totalRows = 0;
     let totalPages = 1;
     let currentPage = safePage;
@@ -620,12 +651,12 @@ export class DatabaseWorkbenchPanel {
 
   private async runSql(sql: string, limit?: number, page?: number, sortColumn?: string, sortDirection?: "asc" | "desc"): Promise<void> {
     if (!sql.trim()) {
-      throw new Error(this.connection.type === "redis" ? "请先输入 Redis 命令。" : this.connection.type === "elasticsearch" ? "请先输入 Elasticsearch 查询。" : "请先输入 SQL。");
+      throw new Error(this.connection.type === "redis" ? "请先输入 Redis 命令。" : this.connection.type === "elasticsearch" ? "请先输入 Elasticsearch 查询。" : this.connection.type === "mongodb" ? "请先输入 MongoDB 命令。" : "请先输入 SQL。");
     }
 
     let executableSql = sql.trim();
     let executeAllStatements: string[] | undefined;
-    if (this.connection.type !== "redis" && this.connection.type !== "elasticsearch") {
+    if (this.connection.type !== "redis" && this.connection.type !== "elasticsearch" && this.connection.type !== "mongodb") {
       const picked = await this.pickSqlStatementToRun(executableSql);
       if (!picked) {
         this.panel.webview.postMessage({ type: "loading", area: "query", message: "已取消执行。" });
@@ -640,8 +671,8 @@ export class DatabaseWorkbenchPanel {
 
     const connection = await this.requireConnection();
     const queryConfig = getQueryConfig();
-    this.panel.webview.postMessage({ type: "loading", area: "query", message: this.connection.type === "redis" ? "正在执行 Redis 命令..." : this.connection.type === "elasticsearch" ? "正在执行 Elasticsearch 查询..." : "正在执行 SQL..." });
-    if (this.connection.type === "redis" || this.connection.type === "elasticsearch") {
+    this.panel.webview.postMessage({ type: "loading", area: "query", message: this.connection.type === "redis" ? "正在执行 Redis 命令..." : this.connection.type === "elasticsearch" ? "正在执行 Elasticsearch 查询..." : this.connection.type === "mongodb" ? "正在执行 MongoDB 命令..." : "正在执行 SQL..." });
+    if (this.connection.type === "redis" || this.connection.type === "elasticsearch" || this.connection.type === "mongodb") {
       this.lastQueryErrorSql = executableSql;
       const result = await this.databaseService.query(connection, this.database, executableSql, clampLimit(limit ?? queryConfig.defaultLimit));
       this.panel.webview.postMessage({ type: "result", sql: executableSql, result });
@@ -1388,8 +1419,8 @@ export class DatabaseWorkbenchPanel {
     targetColumn: string,
     values: unknown[]
   ): Promise<void> {
-    if (this.connection.type !== "mysql" && this.connection.type !== "postgres") {
-      throw new Error("关联查询暂时只支持 MySQL 和 PostgreSQL。");
+    if (this.connection.type !== "mysql" && this.connection.type !== "postgres" && this.connection.type !== "mongodb") {
+      throw new Error("关联查询暂时只支持 MySQL、PostgreSQL 和 MongoDB。");
     }
     const sql = buildRelationQuerySql(this.connection.type, sourceTable, sourceColumn, targetTable, targetColumn, values);
     const suffix = `relation:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
@@ -1404,8 +1435,8 @@ export class DatabaseWorkbenchPanel {
   }
 
   private async runQuickFieldValueQuery(table: string, column: string, values: unknown[], limit?: number): Promise<void> {
-    if (this.connection.type !== "mysql" && this.connection.type !== "postgres") {
-      throw new Error("字段快速条件查询暂时只支持 MySQL 和 PostgreSQL。");
+    if (this.connection.type !== "mysql" && this.connection.type !== "postgres" && this.connection.type !== "mongodb") {
+      throw new Error("字段快速条件查询暂时只支持 MySQL、PostgreSQL 和 MongoDB。");
     }
     const safeTable = String(table || "").trim();
     if (!safeTable) {
@@ -1960,7 +1991,7 @@ export class DatabaseWorkbenchPanel {
         }
         return;
       }
-      const failedLabel = this.connection.type === "redis" ? "Redis命令执行失败" : this.connection.type === "elasticsearch" ? "Elasticsearch查询执行失败" : "SQL执行失败";
+      const failedLabel = this.connection.type === "redis" ? "Redis命令执行失败" : this.connection.type === "elasticsearch" ? "Elasticsearch查询执行失败" : this.connection.type === "mongodb" ? "MongoDB命令执行失败" : "SQL执行失败";
       this.panel.webview.postMessage({ type: "error", area, message: `${failedLabel}，正在使用 AI 搜索错误...` });
       const message = await this.formatDatabaseError(error, this.lastQueryErrorSql);
       this.panel.webview.postMessage({ type: "error", area, message });
@@ -4150,10 +4181,15 @@ export class DatabaseWorkbenchPanel {
       "HGET", "HSCAN", "HSET", "HMGET", "HDEL", "HLEN", "LRANGE", "LPUSH", "RPUSH", "LLEN", "LPOP", "RPOP",
       "SSCAN", "SADD", "SREM", "SCARD", "ZRANGE", "ZSCAN", "ZADD", "ZREM", "ZCARD", "XRANGE", "XREAD", "XLEN", "MEMORY USAGE"
     ];
-    const elasticKeywords = [
-      "SELECT", "FROM", "WHERE", "ORDER BY", "LIMIT", "DESC", "ASC", "AND", "OR", "NOT", "LIKE", "RLIKE", "MATCH", "QUERY",
-      "GET", "POST", "PUT", "DELETE"
-    ];
+	    const elasticKeywords = [
+	      "SELECT", "FROM", "WHERE", "ORDER BY", "LIMIT", "DESC", "ASC", "AND", "OR", "NOT", "LIKE", "RLIKE", "MATCH", "QUERY",
+	      "GET", "POST", "PUT", "DELETE"
+	    ];
+	    const mongoKeywords = [
+	      "show dbs", "show collections", "db.runCommand", "db.createCollection", "db.dropDatabase",
+	      "find", "countDocuments", "aggregate", "insertOne", "insertMany", "updateOne", "updateMany", "deleteOne", "deleteMany",
+	      "ObjectId", "ISODate", "$in", "$or", "$and", "$set", "$unset", "$gt", "$gte", "$lt", "$lte", "$regex", "$exists"
+	    ];
     const logTagColorOptions = [
       { key: "red", label: "红色" },
       { key: "orange", label: "橙色" },
@@ -4722,9 +4758,11 @@ export class DatabaseWorkbenchPanel {
       moveCursorToEnd(sqlInput);
     });
 
-    function formatEditorText(value) {
-      return state.connectionType === "elasticsearch" ? formatElasticRequestText(value) : formatSqlText(value);
-    }
+	    function formatEditorText(value) {
+	      if (state.connectionType === "elasticsearch") return formatElasticRequestText(value);
+	      if (state.connectionType === "mongodb") return formatMongoCommandText(value);
+	      return formatSqlText(value);
+	    }
 
     function formatSqlText(sql) {
       const text = String(sql || "").trim();
@@ -5201,7 +5239,7 @@ export class DatabaseWorkbenchPanel {
       }
     }
 
-    function formatElasticRequestText(value) {
+	    function formatElasticRequestText(value) {
       const text = String(value || "").trim();
       if (!text) return "";
       const match = text.match(/^(GET|POST|PUT|DELETE)\\s+(\\S+)\\s*([\\s\\S]*)$/i);
@@ -5209,8 +5247,22 @@ export class DatabaseWorkbenchPanel {
         return tryFormatJsonText(text) || text;
       }
       const body = match[3]?.trim();
-      return match[1].toUpperCase() + " " + match[2] + (body ? "\\n" + (tryFormatJsonText(body) || body) : "");
-    }
+	      return match[1].toUpperCase() + " " + match[2] + (body ? "\\n" + (tryFormatJsonText(body) || body) : "");
+	    }
+
+	    function formatMongoCommandText(value) {
+	      const text = String(value || "").trim();
+	      if (!text) return "";
+	      if (text.startsWith("{") || text.startsWith("[")) {
+	        return tryFormatJsonText(text) || text;
+	      }
+	      return text
+	        .replace(/\\.sort\\s*\\(/g, "\\n  .sort(")
+	        .replace(/\\.skip\\s*\\(/g, "\\n  .skip(")
+	        .replace(/\\.limit\\s*\\(/g, "\\n  .limit(")
+	        .replace(/\\.aggregate\\s*\\(\\s*\\[/g, ".aggregate([\\n  ")
+	        .replace(/\\]\\s*\\)\\s*$/g, "\\n])");
+	    }
 
     function newlineSqlKeyword(sql, pattern, indent) {
       return sql.replace(pattern, (match) => "\\n" + indent + match.toUpperCase().replace(/\\s+/g, " "));
@@ -5386,7 +5438,7 @@ export class DatabaseWorkbenchPanel {
     function buildCodeCompletion(input, mode, force) {
       const cursor = input.selectionStart ?? input.value.length;
       const before = input.value.slice(0, cursor);
-      const supportsAiTags = state.connectionType === "mysql" || state.connectionType === "postgres" || state.connectionType === "redis" || state.connectionType === "elasticsearch";
+	      const supportsAiTags = state.connectionType === "mysql" || state.connectionType === "postgres" || state.connectionType === "redis" || state.connectionType === "elasticsearch" || state.connectionType === "mongodb";
       const tableTag = (mode === "sql" || mode === "ai-prompt") && supportsAiTags ? findTableTagAtCursor(input.value, cursor) : null;
       if (tableTag) {
         const tagToken = getTableTagCompletionToken(input.value, tableTag.contentStart, cursor);
@@ -5433,10 +5485,14 @@ export class DatabaseWorkbenchPanel {
         }
       } else if ((mode === "sql" || mode === "where") && state.connectionType === "redis") {
         items = aiTag ? getTableCompletions({ quote: false, kind: "Redis Key" }) : buildRedisCompletionItems(mode);
-      } else if ((mode === "sql" || mode === "where") && state.connectionType === "elasticsearch") {
-        items = aiTag
-          ? [...getTableCompletions({ quote: false, kind: "ES Index" }), ...getCurrentColumnCompletions(input.value).map((item) => ({ ...item, kind: "ES 字段" }))]
-          : buildElasticCompletionItems(input.value, mode);
+	      } else if ((mode === "sql" || mode === "where") && state.connectionType === "elasticsearch") {
+	        items = aiTag
+	          ? [...getTableCompletions({ quote: false, kind: "ES Index" }), ...getCurrentColumnCompletions(input.value).map((item) => ({ ...item, kind: "ES 字段" }))]
+	          : buildElasticCompletionItems(input.value, mode);
+	      } else if ((mode === "sql" || mode === "where") && state.connectionType === "mongodb") {
+	        items = aiTag
+	          ? [...getTableCompletions({ quote: false, kind: "Mongo 集合" }), ...getCurrentColumnCompletions(input.value).map((item) => ({ ...item, kind: "Mongo 字段" }))]
+	          : buildMongoCompletionItems(input.value, mode);
       } else if (mode === "schema-type") {
         items = (state.connectionType === "postgres" ? postgresDataTypes : mysqlDataTypes).map((value) => completionItem(value, value, "类型"));
       } else if (mode === "schema-default") {
@@ -5545,7 +5601,7 @@ export class DatabaseWorkbenchPanel {
       return [...(mode === "sql" ? getAiTagCompletions() : []), ...helperItems, ...commandItems, ...keyItems];
     }
 
-    function buildElasticCompletionItems(sqlText, mode) {
+	    function buildElasticCompletionItems(sqlText, mode) {
       const requestItems = getElasticRequestCompletions();
       const indexItems = getTableCompletions({ quote: false, kind: "ES Index" });
       const fieldItems = getCurrentColumnCompletions(sqlText).map((item) => ({ ...item, kind: "ES 字段" }));
@@ -5562,8 +5618,39 @@ export class DatabaseWorkbenchPanel {
         completionItem("filter", '"filter": []', "Query DSL"),
         completionItem("sort", '"sort": []', "Query DSL"),
       ];
-      return [...(mode === "sql" ? getAiTagCompletions() : []), ...requestItems, ...keywordItems, ...indexItems, ...fieldItems, ...jsonDslItems];
-    }
+	      return [...(mode === "sql" ? getAiTagCompletions() : []), ...requestItems, ...keywordItems, ...indexItems, ...fieldItems, ...jsonDslItems];
+	    }
+
+	    function buildMongoCompletionItems(sqlText, mode) {
+	      const collectionItems = getTableCompletions({ quote: false, kind: "Mongo 集合" });
+	      const fieldItems = getCurrentColumnCompletions(sqlText).map((item) => ({ ...item, kind: "Mongo 字段" }));
+	      const keywordItems = mongoKeywords.map((keyword) => completionItem(keyword, keyword + (keyword.startsWith("$") ? "" : " "), "Mongo 关键字"));
+	      const templates = getMongoCommandCompletions(mode);
+	      const filterItems = [
+	        completionItem("空过滤条件", "{}", "Mongo Filter"),
+	        completionItem("$in", '{ "' + (activeContextColumn || "_id") + '": { "$in": [] } }', "Mongo Filter", "包含多个值", -4),
+	        completionItem("$or", '{ "$or": [\\n  {  }\\n] }', "Mongo Filter", "或条件", -7),
+	      ];
+	      return [...(mode === "sql" ? getAiTagCompletions() : []), ...templates, ...collectionItems, ...fieldItems, ...keywordItems, ...(mode === "where" ? filterItems : [])];
+	    }
+
+	    function getMongoCommandCompletions(mode) {
+	      const collection = state.selectedTable || (state.tables?.[0]?.name) || "collection";
+	      const quotedCollection = JSON.stringify(collection);
+	      if (mode === "where") {
+	        return [
+	          completionItem("按 _id 查询", '{ "_id": ObjectId("") }', "Mongo Filter", "使用 ObjectId 精确查询", -5),
+	          completionItem("字段包含", '{ "field": { "$in": [] } }', "Mongo Filter", "按字段 IN 查询", -5),
+	        ];
+	      }
+	      return [
+	        completionItem("find 当前集合", "db.getCollection(" + quotedCollection + ").find({}).limit(" + (state.defaultLimit || 30) + ")", "Mongo 模板"),
+	        completionItem("count 当前集合", "db.getCollection(" + quotedCollection + ").countDocuments({})", "Mongo 模板"),
+	        completionItem("aggregate 当前集合", "db.getCollection(" + quotedCollection + ").aggregate([\\n  { \\\"$match\\\": {} }\\n])", "Mongo 模板"),
+	        completionItem("show collections", "show collections", "Mongo 命令"),
+	        completionItem("show dbs", "show dbs", "Mongo 命令"),
+	      ];
+	    }
 
     function getElasticRequestCompletions() {
       const index = state.selectedTable || "index";
@@ -5595,20 +5682,27 @@ export class DatabaseWorkbenchPanel {
       if (state.connectionType === "redis") {
         return [...getAiTagCompletions(), ...getTableCompletions({ quote: false, kind: "Redis Key" })];
       }
-      if (state.connectionType === "elasticsearch") {
-        return [
-          ...getAiTagCompletions(),
-          ...getTableCompletions({ quote: false, kind: "ES Index" }),
-          ...getFieldCompletions({ quote: false }),
-        ];
-      }
-      return [...getAiTagCompletions(), ...getTableCompletions(), ...getFieldCompletions()];
-    }
+	      if (state.connectionType === "elasticsearch") {
+	        return [
+	          ...getAiTagCompletions(),
+	          ...getTableCompletions({ quote: false, kind: "ES Index" }),
+	          ...getFieldCompletions({ quote: false }),
+	        ];
+	      }
+	      if (state.connectionType === "mongodb") {
+	        return [
+	          ...getAiTagCompletions(),
+	          ...getTableCompletions({ quote: false, kind: "Mongo 集合" }),
+	          ...getFieldCompletions({ quote: false }),
+	        ];
+	      }
+	      return [...getAiTagCompletions(), ...getTableCompletions(), ...getFieldCompletions()];
+	    }
 
     function keywordCompletions() {
-      const keywords = state.connectionType === "postgres" ? postgresKeywords : mysqlKeywords;
-      return keywords.map((keyword) => completionItem(keyword, keyword + " ", "关键字"));
-    }
+	      const keywords = state.connectionType === "mongodb" ? mongoKeywords : state.connectionType === "postgres" ? postgresKeywords : mysqlKeywords;
+	      return keywords.map((keyword) => completionItem(keyword, keyword + " ", "关键字"));
+	    }
 
     function getFunctionCompletions() {
       const functions = state.connectionType === "postgres"
@@ -5620,7 +5714,7 @@ export class DatabaseWorkbenchPanel {
 
     function getTableCompletions(options = {}) {
       const shouldQuote = options.quote !== false;
-      const kind = options.kind || (state.connectionType === "redis" ? "Redis Key" : state.connectionType === "elasticsearch" ? "ES Index" : "表");
+	      const kind = options.kind || (state.connectionType === "redis" ? "Redis Key" : state.connectionType === "elasticsearch" ? "ES Index" : state.connectionType === "mongodb" ? "Mongo 集合" : "表");
       return (state.tables || []).map((table) => completionItem(table.name, shouldQuote ? quoteCompletionIdentifier(table.name) : table.name, kind, table.comment || ""));
     }
 
@@ -5792,7 +5886,7 @@ export class DatabaseWorkbenchPanel {
 
     function isSqlReservedWord(value) {
       const word = String(value || "").toUpperCase();
-      const keywords = state.connectionType === "postgres" ? postgresKeywords : mysqlKeywords;
+	      const keywords = state.connectionType === "mongodb" ? mongoKeywords : state.connectionType === "postgres" ? postgresKeywords : mysqlKeywords;
       return keywords.some((keyword) => keyword.split(" ")[0] === word) || ["ON", "WHERE", "LEFT", "RIGHT", "INNER", "GROUP", "ORDER", "LIMIT"].includes(word);
     }
 
@@ -5802,9 +5896,9 @@ export class DatabaseWorkbenchPanel {
 
     function quoteCompletionIdentifier(value) {
       const text = String(value || "");
-      if (state.connectionType === "redis" || state.connectionType === "elasticsearch") {
-        return text;
-      }
+	      if (state.connectionType === "redis" || state.connectionType === "elasticsearch" || state.connectionType === "mongodb") {
+	        return text;
+	      }
       const quote = state.connectionType === "postgres" ? '"' : String.fromCharCode(96);
       const escapedQuote = state.connectionType === "postgres" ? '""' : quote + quote;
       return /^[A-Za-z_][A-Za-z0-9_]*$/.test(text) ? text : quote + text.split(quote).join(escapedQuote) + quote;
@@ -6166,48 +6260,55 @@ export class DatabaseWorkbenchPanel {
       return state.connectionType === "redis" && !state.selectedTable ? "__redis_keys__" : state.selectedTable;
     }
 
-    function copyCurrentTableStructure() {
+	    function copyCurrentTableStructure() {
       if (!state.selectedTable) {
         setStatus("请先从左侧数据库树选择一张表。", true);
         return;
       }
 
       vscode.postMessage({ type: "copyTableDdl", table: state.selectedTable });
-      setStatus(state.connectionType === "redis" ? "正在读取 Key 信息..." : state.connectionType === "elasticsearch" ? "正在读取索引结构..." : "正在读取建表 SQL...", false);
-    }
+	      setStatus(state.connectionType === "redis" ? "正在读取 Key 信息..." : state.connectionType === "elasticsearch" ? "正在读取索引结构..." : state.connectionType === "mongodb" ? "正在读取集合结构..." : "正在读取建表 SQL...", false);
+	    }
 
-    function applyConnectionMode() {
-      const redis = state.connectionType === "redis";
-      const es = state.connectionType === "elasticsearch";
-      $("#copyStructureBtn").textContent = es ? "复制索引结构" : redis ? "复制 Key 信息" : "复制表结构";
-      $("#copyStructureBtn").style.display = redis ? "none" : "";
-      $("#editStructureBtn").style.display = redis || es ? "none" : "";
-      $("#quickAddBtn").style.display = redis || es ? "none" : "";
-      $("#operationLogBtn").style.display = redis || es ? "none" : "";
-      fieldPicker.style.display = redis ? "none" : "";
-      $("#fieldPickerBtn").textContent = es ? "选择显示字段" : redis ? "选择显示列" : "选择显示字段";
-      $("#toggleSqlBtn").textContent = $("#sqlDrawer").classList.contains("open")
-        ? (redis ? "收起命令 / AI" : es ? "收起查询 / AI" : "收起 SQL / AI")
-        : (redis ? "打开命令 / AI" : es ? "打开查询 / AI" : "打开 SQL / AI");
-      $("#runSqlBtn").textContent = redis ? "执行命令" : es ? "执行请求" : "执行 SQL";
-      $("#formatBtn").textContent = es ? "格式化 JSON" : "格式化";
-      const sqlLabel = document.querySelector('label[for="sqlInput"]');
-      if (sqlLabel) sqlLabel.textContent = redis ? "Redis 命令" : es ? "Elasticsearch 查询" : "SQL 编辑器";
-      whereInput.placeholder = redis
-        ? "Key 过滤：留空显示全部，例如 user:*、session:*"
-        : es
-          ? "快速查询：Lucene 语法或 JSON Query DSL，例如 status:published"
-          : "快速条件：例如 status = 'paid' AND id > 100";
-      sqlInput.placeholder = redis
-        ? "这里保持纯净，只放当前要执行的 Redis 命令。AI 提问请写到右侧时间线输入框。"
-        : es
-          ? "这里保持纯净，只放当前要执行的 Elasticsearch 查询。AI 提问请写到右侧时间线输入框。"
-          : "这里保持纯净，只放当前要执行的 SQL。AI 提问请写到右侧时间线输入框。";
-      aiPromptInput.placeholder = redis
-        ? "例如：@ai{查询 user:* 相关 Key}，或 @gen{生成一个 hash 测试数据}，用 @table{key} 指定 Key。"
-        : es
-          ? "例如：@ai{查询最近 10 条日志}，或 @gen{生成测试文档}，用 @table{index} 指定索引。"
-          : "例如：查询当前表 created_at 为空的数据；或 @ai{把当前 SQL 改成按 created_at 倒序}；用 @table{users} 添加额外表结构。";
+	    function applyConnectionMode() {
+	      const redis = state.connectionType === "redis";
+	      const es = state.connectionType === "elasticsearch";
+	      const mongo = state.connectionType === "mongodb";
+	      $("#copyStructureBtn").textContent = es ? "复制索引结构" : mongo ? "复制集合结构" : redis ? "复制 Key 信息" : "复制表结构";
+	      $("#copyStructureBtn").style.display = redis ? "none" : "";
+	      $("#editStructureBtn").style.display = redis || es || mongo ? "none" : "";
+	      $("#quickAddBtn").style.display = redis || es ? "none" : "";
+	      $("#operationLogBtn").style.display = redis || es ? "none" : "";
+	      fieldPicker.style.display = redis ? "none" : "";
+	      $("#fieldPickerBtn").textContent = es || mongo ? "选择显示字段" : redis ? "选择显示列" : "选择显示字段";
+	      $("#toggleSqlBtn").textContent = $("#sqlDrawer").classList.contains("open")
+	        ? (redis ? "收起命令 / AI" : es ? "收起查询 / AI" : mongo ? "收起命令 / AI" : "收起 SQL / AI")
+	        : (redis ? "打开命令 / AI" : es ? "打开查询 / AI" : mongo ? "打开命令 / AI" : "打开 SQL / AI");
+	      $("#runSqlBtn").textContent = redis ? "执行命令" : es ? "执行请求" : mongo ? "执行命令" : "执行 SQL";
+	      $("#formatBtn").textContent = es ? "格式化 JSON" : mongo ? "格式化 Mongo" : "格式化";
+	      const sqlLabel = document.querySelector('label[for="sqlInput"]');
+	      if (sqlLabel) sqlLabel.textContent = redis ? "Redis 命令" : es ? "Elasticsearch 查询" : mongo ? "MongoDB 命令" : "SQL 编辑器";
+	      whereInput.placeholder = redis
+	        ? "Key 过滤：留空显示全部，例如 user:*、session:*"
+	        : es
+	          ? "快速查询：Lucene 语法或 JSON Query DSL，例如 status:published"
+	          : mongo
+	            ? '快速查询：MongoDB Filter，例如 { "status": "active" }'
+	            : "快速条件：例如 status = 'paid' AND id > 100";
+	      sqlInput.placeholder = redis
+	        ? "这里保持纯净，只放当前要执行的 Redis 命令。AI 提问请写到右侧时间线输入框。"
+	        : es
+	          ? "这里保持纯净，只放当前要执行的 Elasticsearch 查询。AI 提问请写到右侧时间线输入框。"
+	          : mongo
+	            ? '这里保持纯净，只放当前要执行的 MongoDB 命令，例如 db.getCollection("users").find({}).limit(30)。AI 提问请写到右侧时间线输入框。'
+	            : "这里保持纯净，只放当前要执行的 SQL。AI 提问请写到右侧时间线输入框。";
+	      aiPromptInput.placeholder = redis
+	        ? "例如：@ai{查询 user:* 相关 Key}，或 @gen{生成一个 hash 测试数据}，用 @table{key} 指定 Key。"
+	        : es
+	          ? "例如：@ai{查询最近 10 条日志}，或 @gen{生成测试文档}，用 @table{index} 指定索引。"
+	          : mongo
+	            ? "例如：@ai{查询 status 为 active 的用户}，或 @gen{生成测试文档}，用 @table{collection} 指定集合。"
+	            : "例如：查询当前表 created_at 为空的数据；或 @ai{把当前 SQL 改成按 created_at 倒序}；用 @table{users} 添加额外表结构。";
       applyQueryConsoleMode();
     }
 
@@ -6221,7 +6322,8 @@ export class DatabaseWorkbenchPanel {
       $("#sqlDrawer").classList.add("open");
       $("#tableTitle").textContent = "查询控制台";
       $("#tableTitle").title = state.connectionName + " / " + state.database + " / 查询控制台";
-      $("#summary").innerHTML = '<span class="pill">' + state.database + '</span><span class="pill">' + state.tables.length + ' 张表</span>';
+	      const objectLabel = state.connectionType === "mongodb" ? " 个集合" : " 张表";
+	      $("#summary").innerHTML = '<span class="pill">' + state.database + '</span><span class="pill">' + state.tables.length + objectLabel + '</span>';
     }
 
     function openSchemaEditor() {
@@ -8495,8 +8597,9 @@ export class DatabaseWorkbenchPanel {
       updateExportButton();
       renderPagination(null);
       applyQueryConsoleMode();
-      setStatus("查询控制台已就绪：输入 SQL 或让 AI 生成后执行。", false);
-      result.innerHTML = '<div class="empty"><strong>查询控制台</strong>这里只有 SQL / AI 编辑器和执行结果预览。你可以直接写 SQL，也可以在右侧“继续告诉 AI”里描述需求。</div>';
+	      const consoleName = state.connectionType === "mongodb" ? "MongoDB 命令" : "SQL";
+	      setStatus("查询控制台已就绪：输入 " + consoleName + " 或让 AI 生成后执行。", false);
+	      result.innerHTML = '<div class="empty"><strong>查询控制台</strong>这里只有 ' + escapeHtml(consoleName) + ' / AI 编辑器和执行结果预览。你可以直接编写查询，也可以在右侧“继续告诉 AI”里描述需求。</div>';
     }
 
     function renderEmptyTable() {
@@ -8511,7 +8614,7 @@ export class DatabaseWorkbenchPanel {
       updateExportButton();
       renderPagination(null);
       $("#tableTitle").textContent = "选择一张表";
-      $("#summary").innerHTML = '<span class="pill">' + state.tables.length + ' 张表</span>';
+	      $("#summary").innerHTML = '<span class="pill">' + state.tables.length + (state.connectionType === "mongodb" ? ' 个集合' : ' 张表') + '</span>';
       if (state.queryConsole) {
         renderQueryConsoleIntro();
       }
@@ -8603,7 +8706,7 @@ export class DatabaseWorkbenchPanel {
       $("#summary").innerHTML = table.comment
         ? '<span class="pill table-comment" title="' + escapeHtml(table.comment) + '">' + escapeHtml(table.comment) + '</span>'
         : "";
-      const noun = state.connectionType === "redis" ? "Key" : state.connectionType === "elasticsearch" ? "索引" : "表";
+	      const noun = state.connectionType === "redis" ? "Key" : state.connectionType === "elasticsearch" ? "索引" : state.connectionType === "mongodb" ? "集合" : "表";
       result.innerHTML = '<div class="empty"><strong>正在读取预览数据</strong>已选择' + escapeHtml(noun) + ' ' + escapeHtml(table.name) + '，请稍候。</div>';
       renderPagination(null);
       setStatus("已选择" + noun + " " + table.name + "，正在读取预览数据...", false);
@@ -9826,8 +9929,8 @@ export class DatabaseWorkbenchPanel {
       quickFieldBtn.disabled = !canQuickField;
       relationBtn.disabled = !canRelation;
       deleteBtn.title = canDelete ? "" : getDeleteDisabledReason(row);
-      quickFieldBtn.title = canQuickField ? "用选中行字段值写入快速条件并查询当前表" : "快速条件查询仅支持 MySQL/PostgreSQL 表数据预览结果";
-      relationBtn.title = canRelation ? "用选中行字段值去查询另一张表" : "关联查询仅支持 MySQL/PostgreSQL 表数据预览结果";
+	      quickFieldBtn.title = canQuickField ? "用选中行字段值写入快速条件并查询当前表" : "快速条件查询仅支持 MySQL/PostgreSQL/MongoDB 数据预览结果";
+	      relationBtn.title = canRelation ? "用选中行字段值去查询另一张表/集合" : "关联查询仅支持 MySQL/PostgreSQL/MongoDB 数据预览结果";
     }
 
     function canDeleteContextRows(row) {
@@ -9846,14 +9949,14 @@ export class DatabaseWorkbenchPanel {
     }
 
     function canOpenRelationQueryForRows() {
-      return (state.connectionType === "mysql" || state.connectionType === "postgres")
+	      return (state.connectionType === "mysql" || state.connectionType === "postgres" || state.connectionType === "mongodb")
         && !state.queryConsole
         && Boolean(state.selectedTable && state.currentTable && state.currentResult?.rows?.length)
         && getContextRowIndexes().length > 0;
     }
 
     function canOpenQuickFieldQueryForRows() {
-      return (state.connectionType === "mysql" || state.connectionType === "postgres")
+	      return (state.connectionType === "mysql" || state.connectionType === "postgres" || state.connectionType === "mongodb")
         && !state.queryConsole
         && !hasPendingEdits()
         && Boolean(state.selectedTable && state.currentTable && state.currentResult?.rows?.length)
@@ -9931,7 +10034,7 @@ export class DatabaseWorkbenchPanel {
         return;
       }
       if (!canOpenQuickFieldQueryForRows()) {
-        setStatus("快速条件查询仅支持 MySQL/PostgreSQL 表数据预览结果。", true);
+	        setStatus("快速条件查询仅支持 MySQL/PostgreSQL/MongoDB 数据预览结果。", true);
         return;
       }
       const rowIndexes = getContextRowIndexes();
@@ -10002,7 +10105,7 @@ export class DatabaseWorkbenchPanel {
 
     function openRelationQueryDialog() {
       if (!canOpenRelationQueryForRows()) {
-        setStatus("关联查询仅支持 MySQL/PostgreSQL 表数据预览结果。", true);
+	        setStatus("关联查询仅支持 MySQL/PostgreSQL/MongoDB 数据预览结果。", true);
         return;
       }
       const rowIndexes = getContextRowIndexes();
@@ -10111,7 +10214,7 @@ export class DatabaseWorkbenchPanel {
       const uniqueValues = dedupeRelationPreviewValues(values);
       const missingRows = state.relationQuery.rowIndexes.length - values.length;
       $("#confirmRelationQueryBtn").disabled = !state.relationQuery.sourceColumn || !state.relationQuery.targetTable || !state.relationQuery.targetColumn || !uniqueValues.length;
-      relationMeta.innerHTML = '已选择 <strong>' + state.relationQuery.rowIndexes.length + '</strong> 行，从当前表 <strong>' + escapeHtml(state.selectedTable) + '</strong> 取字段值，再到目标表字段执行 IN 查询。';
+	      relationMeta.innerHTML = '已选择 <strong>' + state.relationQuery.rowIndexes.length + '</strong> 行，从当前' + (state.connectionType === "mongodb" ? '集合' : '表') + ' <strong>' + escapeHtml(state.selectedTable) + '</strong> 取字段值，再到目标' + (state.connectionType === "mongodb" ? '集合' : '表') + '字段执行 IN 查询。';
       relationPreview.innerHTML = '<div>方向：<strong>' + escapeHtml(state.selectedTable + "." + state.relationQuery.sourceColumn) + '</strong> → <strong>' + escapeHtml(state.relationQuery.targetTable + "." + state.relationQuery.targetColumn) + '</strong></div>'
         + '<div>可用值：' + uniqueValues.length + ' 个' + (missingRows > 0 ? '，' + missingRows + ' 行缺少该字段值' : '') + '</div>'
         + '<div>预览：' + escapeHtml(uniqueValues.slice(0, 12).map(formatValue).join(", ") || "没有可用值") + (uniqueValues.length > 12 ? " ..." : "") + '</div>';
@@ -11074,7 +11177,9 @@ export class DatabaseWorkbenchPanel {
 
     function isJsonColumn(column) {
       const type = String(state.columnTypes[column] || "").toLowerCase();
-      return /\\bjsonb?\\b/.test(type) || (state.connectionType === "elasticsearch" && /\\b(object|nested|flattened)\\b/.test(type));
+      return /\\bjsonb?\\b/.test(type)
+        || (state.connectionType === "elasticsearch" && /\\b(object|nested|flattened)\\b/.test(type))
+        || (state.connectionType === "mongodb" && /\\b(object|array)\\b/.test(type));
     }
 
     function isRedisJsonValueColumn(column, value) {
@@ -11098,6 +11203,7 @@ export class DatabaseWorkbenchPanel {
     }
 
     function isAutoManagedColumn(column) {
+      if (state.connectionType === "mongodb" && column === "_id") return true;
       const meta = state.columnMeta[column] || {};
       const extra = String(meta.extra || "").toLowerCase();
       const hasDefault = meta.defaultValue !== undefined && meta.defaultValue !== null;
@@ -11792,6 +11898,44 @@ function buildElasticQueryBody(queryText: string): Record<string, unknown> {
   return { query: { query_string: { query: text } } };
 }
 
+function buildMongoQuickFindCommand(
+  collection: string,
+  filterText: string,
+  limit: number,
+  page = 1,
+  sortColumn?: string,
+  sortDirection?: "asc" | "desc"
+): string {
+  const filter = buildMongoFilterExpression(filterText);
+  const skip = limit > 0 ? Math.max(0, Math.floor(page - 1) * limit) : 0;
+  let command = `db.getCollection(${JSON.stringify(collection)}).find(${filter})`;
+  if (sortColumn) {
+    command += `.sort({ ${JSON.stringify(sortColumn)}: ${normalizeSortDirection(sortDirection) === "desc" ? -1 : 1} })`;
+  }
+  if (skip > 0) {
+    command += `.skip(${skip})`;
+  }
+  if (limit > 0) {
+    command += `.limit(${limit})`;
+  }
+  return command;
+}
+
+function buildMongoQuickCountCommand(collection: string, filterText: string): string {
+  return `db.getCollection(${JSON.stringify(collection)}).countDocuments(${buildMongoFilterExpression(filterText)})`;
+}
+
+function buildMongoFilterExpression(filterText: string): string {
+  const text = filterText.trim();
+  if (!text) {
+    return "{}";
+  }
+  if (!text.startsWith("{")) {
+    throw new Error("MongoDB 快速查询条件需要填写 JSON Filter，例如 { \"status\": \"active\" }。");
+  }
+  return text;
+}
+
 function buildSqlPaginationPlan(
   type: DbConnectionConfig["type"],
   sql: string,
@@ -12038,9 +12182,12 @@ function buildUpdateSql(
   primaryValues: Record<string, unknown>,
   changes: Record<string, unknown>
 ): string {
-  if (type === "elasticsearch") {
-    return buildElasticUpdateSql(table, primaryKeys, primaryValues, changes);
-  }
+	if (type === "elasticsearch") {
+	  return buildElasticUpdateSql(table, primaryKeys, primaryValues, changes);
+	}
+	if (type === "mongodb") {
+	  return buildMongoUpdateSql(table, primaryKeys, primaryValues, changes);
+	}
 
   const assignments = Object.entries(changes)
     .filter(([column]) => !primaryKeys.includes(column))
@@ -12092,6 +12239,56 @@ function buildElasticIndexDocumentSql(table: string, row: Record<string, unknown
   return `PUT /${encodePathPart(String(row._index || table))}/_doc/${encodePathPart(String(id))}?refresh=true\n${JSON.stringify(doc, null, 2)}`;
 }
 
+function buildMongoUpdateSql(
+  collection: string,
+  primaryKeys: string[],
+  primaryValues: Record<string, unknown>,
+  changes: Record<string, unknown>
+): string {
+  const filter = buildMongoPrimaryFilter(primaryKeys, primaryValues, "UPDATE");
+  const document = Object.fromEntries(Object.entries(changes)
+    .filter(([column]) => !primaryKeys.includes(column))
+    .map(([column, value]) => [column, toMongoDocumentValue(value)]));
+  if (!Object.keys(document).length) {
+    throw new Error("没有可更新的 MongoDB 文档字段。");
+  }
+  return `db.getCollection(${JSON.stringify(collection)}).updateOne(${filter}, { "$set": ${toMongoLiteral(document)} });`;
+}
+
+function buildMongoPrimaryFilter(primaryKeys: string[], primaryValues: Record<string, unknown>, action: string): string {
+  if (primaryKeys.length !== 1 || primaryKeys[0] !== "_id") {
+    throw new Error(`MongoDB ${action} 目前只能使用 _id 作为主键。`);
+  }
+  const value = primaryValues._id;
+  if (value === undefined || value === null || String(value).trim() === "") {
+    throw new Error(`MongoDB ${action} 缺少 _id，无法执行。`);
+  }
+  return `{ "_id": ${toMongoLiteral(value, "_id")} }`;
+}
+
+function buildMongoIdsFilter(primaryKeys: string[], primaryValuesList: Array<Record<string, unknown>>, action: string): string {
+  if (primaryKeys.length !== 1 || primaryKeys[0] !== "_id") {
+    throw new Error(`MongoDB ${action} 目前只能使用 _id 作为主键。`);
+  }
+  const ids = primaryValuesList.map((primaryValues) => primaryValues._id);
+  if (ids.some((id) => id === undefined || id === null || String(id).trim() === "")) {
+    throw new Error(`MongoDB ${action} 缺少 _id，无法执行。`);
+  }
+  if (ids.length === 1) {
+    return `{ "_id": ${toMongoLiteral(ids[0], "_id")} }`;
+  }
+  return `{ "_id": { "$in": [${ids.map((id) => toMongoLiteral(id, "_id")).join(", ")}] } }`;
+}
+
+function buildMongoInsertDocumentsSql(collection: string, rows: Record<string, unknown>[]): string {
+  if (!rows.length) {
+    throw new Error("缺少待写入文档，无法构造 MongoDB insertMany。");
+  }
+  return rows.length === 1
+    ? `db.getCollection(${JSON.stringify(collection)}).insertOne(${toMongoLiteral(toMongoDocument(rowWithoutUndefined(rows[0])))});`
+    : `db.getCollection(${JSON.stringify(collection)}).insertMany(${toMongoLiteral(rows.map((row) => toMongoDocument(rowWithoutUndefined(row))))});`;
+}
+
 function collectElasticIds(primaryKeys: string[], primaryValuesList: Array<Record<string, unknown>>, action: string): string[] {
   if (primaryKeys.length !== 1 || primaryKeys[0] !== "_id") {
     throw new Error(`ES ${action} 只能使用 _id 作为主键。`);
@@ -12131,10 +12328,13 @@ function buildDeleteRowsSql(
   if (!primaryKeys.length || !primaryValuesList.length) {
     throw new Error("缺少主键或待删除行，无法构造 DELETE。");
   }
-  if (type === "elasticsearch") {
-    const ids = collectElasticIds(primaryKeys, primaryValuesList, "DELETE");
-    return buildElasticDeleteRowsSql(table, ids);
-  }
+	if (type === "elasticsearch") {
+	  const ids = collectElasticIds(primaryKeys, primaryValuesList, "DELETE");
+	  return buildElasticDeleteRowsSql(table, ids);
+	}
+	if (type === "mongodb") {
+	  return `db.getCollection(${JSON.stringify(table)}).deleteMany(${buildMongoIdsFilter(primaryKeys, primaryValuesList, "DELETE")});`;
+	}
 
   const rows = primaryValuesList.map((primaryValues) => primaryKeys.map((primaryKey) => {
     const value = primaryValues[primaryKey];
@@ -12158,9 +12358,9 @@ export function buildRelationQuerySql(
   targetColumn: string,
   values: unknown[]
 ): string {
-  if (type !== "mysql" && type !== "postgres") {
-    throw new Error("关联查询暂时只支持 MySQL 和 PostgreSQL。");
-  }
+	if (type !== "mysql" && type !== "postgres" && type !== "mongodb") {
+	  throw new Error("关联查询暂时只支持 MySQL、PostgreSQL 和 MongoDB。");
+	}
   const safeSourceTable = sourceTable.trim();
   const safeSourceColumn = sourceColumn.trim();
   const safeTargetTable = targetTable.trim();
@@ -12171,7 +12371,10 @@ export function buildRelationQuerySql(
   if (!values.some((value) => value !== undefined)) {
     throw new Error("选中行里没有可用于关联查询的字段值。");
   }
-  const where = buildFieldValueConditionSql(type, safeTargetColumn, values);
+	const where = buildFieldValueConditionSql(type, safeTargetColumn, values);
+	if (type === "mongodb") {
+	  return `db.getCollection(${JSON.stringify(safeTargetTable)}).find(${where}).limit(${getQueryConfig().defaultLimit});`;
+	}
 
   return [
     `SELECT *`,
@@ -12181,9 +12384,9 @@ export function buildRelationQuerySql(
 }
 
 export function buildFieldValueConditionSql(type: DbConnectionConfig["type"], column: string, values: unknown[]): string {
-  if (type !== "mysql" && type !== "postgres") {
-    throw new Error("字段快速条件查询暂时只支持 MySQL 和 PostgreSQL。");
-  }
+	if (type !== "mysql" && type !== "postgres" && type !== "mongodb") {
+	  throw new Error("字段快速条件查询暂时只支持 MySQL、PostgreSQL 和 MongoDB。");
+	}
   const safeColumn = column.trim();
   if (!safeColumn) {
     throw new Error("请选择要作为快速条件的字段。");
@@ -12194,9 +12397,12 @@ export function buildFieldValueConditionSql(type: DbConnectionConfig["type"], co
     throw new Error("选中行里没有可用于快速条件查询的字段值。");
   }
 
-  const nonNullValues = uniqueValues.filter((value) => value !== null);
-  const hasNull = uniqueValues.length !== nonNullValues.length;
-  const quotedColumn = quoteIdentifier(type, safeColumn);
+	const nonNullValues = uniqueValues.filter((value) => value !== null);
+	const hasNull = uniqueValues.length !== nonNullValues.length;
+	if (type === "mongodb") {
+	  return buildMongoFieldValueFilter(safeColumn, nonNullValues, hasNull);
+	}
+	const quotedColumn = quoteIdentifier(type, safeColumn);
   const conditions: string[] = [];
   if (nonNullValues.length) {
     conditions.push(`${quotedColumn} IN (${nonNullValues.map(toSqlLiteral).join(", ")})`);
@@ -12224,6 +12430,23 @@ function dedupeSqlValues(values: unknown[]): unknown[] {
   return result;
 }
 
+function buildMongoFieldValueFilter(column: string, nonNullValues: unknown[], hasNull: boolean): string {
+  const conditions: string[] = [];
+  if (nonNullValues.length) {
+    const fieldFilter = nonNullValues.length === 1
+      ? `{ ${JSON.stringify(column)}: ${toMongoLiteral(nonNullValues[0], column)} }`
+      : `{ ${JSON.stringify(column)}: { "$in": [${nonNullValues.map((value) => toMongoLiteral(value, column)).join(", ")}] } }`;
+    conditions.push(fieldFilter);
+  }
+  if (hasNull) {
+    conditions.push(`{ ${JSON.stringify(column)}: null }`);
+  }
+  if (!conditions.length) {
+    throw new Error("选中行里没有可用于快速条件查询的字段值。");
+  }
+  return conditions.length === 1 ? conditions[0] : `{ "$or": [${conditions.join(", ")}] }`;
+}
+
 function normalizeSqlValueKey(value: unknown): string {
   if (value instanceof Date) {
     return `date:${value.toISOString()}`;
@@ -12247,13 +12470,15 @@ function buildRollbackSql(type: DbConnectionConfig["type"], log: OperationLogEnt
       throw new Error("删除日志缺少修改前数据，无法回滚。");
     }
     const primaryKeys = getPrimaryKeysFromSnapshots(log);
-    return {
-      table: log.tableName,
-      statements: type === "elasticsearch"
-        ? rows.map((row) => buildElasticIndexDocumentSql(log.tableName, row))
-        : [buildInsertRowsSql(type, log.tableName, rows)],
-      primaryKeys,
-      primaryValuesList: log.snapshots.map((snapshot) => snapshot.rowKey).filter((rowKey) => Object.keys(rowKey).length > 0),
+	    return {
+	      table: log.tableName,
+	      statements: type === "elasticsearch"
+	        ? rows.map((row) => buildElasticIndexDocumentSql(log.tableName, row))
+	        : type === "mongodb"
+	          ? [buildMongoInsertDocumentsSql(log.tableName, rows)]
+	        : [buildInsertRowsSql(type, log.tableName, rows)],
+	      primaryKeys,
+	      primaryValuesList: log.snapshots.map((snapshot) => snapshot.rowKey).filter((rowKey) => Object.keys(rowKey).length > 0),
     };
   }
   if (log.operationType === "insert") {
@@ -12300,10 +12525,13 @@ function buildSelectRowsByPrimaryKeysSql(
   if (!primaryKeys.length || !primaryValuesList.length) {
     throw new Error("缺少主键或目标行，无法查询修改前数据。");
   }
-  if (type === "elasticsearch") {
-    const ids = collectElasticIds(primaryKeys, primaryValuesList, "查询");
-    return `POST /${encodePathPart(table)}/_search\n${JSON.stringify({ query: { ids: { values: ids } }, size: Math.max(ids.length, 1) }, null, 2)}`;
-  }
+	if (type === "elasticsearch") {
+	  const ids = collectElasticIds(primaryKeys, primaryValuesList, "查询");
+	  return `POST /${encodePathPart(table)}/_search\n${JSON.stringify({ query: { ids: { values: ids } }, size: Math.max(ids.length, 1) }, null, 2)}`;
+	}
+	if (type === "mongodb") {
+	  return `db.getCollection(${JSON.stringify(table)}).find(${buildMongoIdsFilter(primaryKeys, primaryValuesList, "查询")}).limit(${Math.max(primaryValuesList.length, 1)})`;
+	}
   const rows = primaryValuesList.map((primaryValues) => primaryKeys.map((primaryKey) => {
     const value = primaryValues[primaryKey];
     if (value === undefined || value === null) {
@@ -12318,7 +12546,10 @@ function buildSelectRowsByPrimaryKeysSql(
 }
 
 function buildInsertSql(type: DbConnectionConfig["type"], table: string, values: Record<string, unknown>): string {
-  const entries = Object.entries(values);
+	if (type === "mongodb") {
+	  return `db.getCollection(${JSON.stringify(table)}).insertOne(${toMongoLiteral(toMongoDocument(rowWithoutUndefined(values)))});`;
+	}
+	const entries = Object.entries(values);
   const quotedTable = quoteIdentifier(type, table);
   if (entries.length === 0) {
     return type === "postgres"
@@ -12332,7 +12563,10 @@ function buildInsertSql(type: DbConnectionConfig["type"], table: string, values:
 }
 
 function buildInsertRowsSql(type: DbConnectionConfig["type"], table: string, rows: Record<string, unknown>[]): string {
-  if (!rows.length) {
+	if (type === "mongodb") {
+	  return buildMongoInsertDocumentsSql(table, rows);
+	}
+	if (!rows.length) {
     throw new Error("缺少待恢复数据，无法构造 INSERT。");
   }
   const columns = collectRowColumns(rows);
@@ -13698,6 +13932,66 @@ function toSqlLiteral(value: unknown): string {
   return `'${text.replace(/'/g, "''")}'`;
 }
 
+function toMongoLiteral(value: unknown, column?: string): string {
+  if (value === null || value === undefined) {
+    return "null";
+  }
+  if (column === "_id" && typeof value === "string" && /^[0-9a-fA-F]{24}$/.test(value.trim())) {
+    return `ObjectId(${JSON.stringify(value.trim())})`;
+  }
+  if (value instanceof Date) {
+    return `ISODate(${JSON.stringify(value.toISOString())})`;
+  }
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? String(value) : "null";
+  }
+  if (typeof value === "boolean") {
+    return value ? "true" : "false";
+  }
+  if (typeof value === "string") {
+    const parsed = parseJsonDocumentValue(value);
+    if (parsed !== undefined) {
+      return toMongoLiteral(parsed, column);
+    }
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => toMongoLiteral(toMongoDocumentValue(item))).join(", ")}]`;
+  }
+  if (typeof value === "object") {
+    return `{ ${Object.entries(value as Record<string, unknown>).map(([key, item]) => `${JSON.stringify(key)}: ${toMongoLiteral(toMongoDocumentValue(item), key)}`).join(", ")} }`;
+  }
+  return JSON.stringify(value);
+}
+
+function toMongoDocumentValue(value: unknown): unknown {
+  if (typeof value === "string") {
+    const parsed = parseJsonDocumentValue(value);
+    return parsed === undefined ? value : parsed;
+  }
+  return value;
+}
+
+function toMongoDocument(row: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(row).map(([key, value]) => [key, toMongoDocumentValue(value)]));
+}
+
+function rowWithoutUndefined(row: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(row).filter(([, value]) => value !== undefined));
+}
+
+function parseJsonDocumentValue(value: string): unknown {
+  const text = value.trim();
+  if (!/^[\[{]/.test(text)) {
+    return undefined;
+  }
+  try {
+    return JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+}
+
 function formatStringForSqlLiteral(value: string): string {
   const date = parseIsoUtcDate(value);
   return date ? formatDateForSql(date) : value;
@@ -13732,6 +14026,7 @@ function clampLimit(limit: number): number {
 function getAiLoadingMessage(type: DbConnectionConfig["type"]): string {
   if (type === "redis") return "正在根据 Redis Key 信息生成命令...";
   if (type === "elasticsearch") return "正在根据索引结构生成 Elasticsearch 查询...";
+  if (type === "mongodb") return "正在根据集合结构生成 MongoDB 查询...";
   return "正在根据表结构生成 SQL...";
 }
 
