@@ -2,6 +2,7 @@ import { DbConnectionWithSecret, QueryResult, TableInfo, TableSummary } from "..
 import { ElasticsearchWorkbenchClient } from "./clients/elasticsearch";
 import { KafkaWorkbenchClient } from "./clients/kafka";
 import { MongoWorkbenchClient } from "./clients/mongodb";
+import { MqttWorkbenchClient } from "./clients/mqtt";
 import { MySqlClient } from "./clients/mysql";
 import { PostgresClient } from "./clients/postgres";
 import { RedisWorkbenchClient } from "./clients/redis";
@@ -75,6 +76,12 @@ export class DatabaseService {
     if (connection.type === "kafka") {
       const size = limit < 0 ? 100 : Math.max(1, limit);
       const command = `CONSUME ${JSON.stringify(table)} LIMIT ${size}`;
+      const result = await withClient(connection, database, (client) => client.query(command, limit));
+      return { sql: command, result };
+    }
+    if (connection.type === "mqtt") {
+      const size = limit < 0 ? 100 : Math.max(1, limit);
+      const command = `SUBSCRIBE ${JSON.stringify(table)} LIMIT ${size} TIMEOUT 10000`;
       const result = await withClient(connection, database, (client) => client.query(command, limit));
       return { sql: command, result };
     }
@@ -227,6 +234,9 @@ async function createClient(connection: DbConnectionWithSecret, database?: strin
   }
   if (connection.type === "kafka") {
     return KafkaWorkbenchClient.connect(connection, database);
+  }
+  if (connection.type === "mqtt") {
+    return MqttWorkbenchClient.connect(connection, database);
   }
 
   return ElasticsearchWorkbenchClient.connect(connection);

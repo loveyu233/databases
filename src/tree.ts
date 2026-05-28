@@ -3,7 +3,7 @@ import { DatabaseService } from "./database/service";
 import { ConnectionStore } from "./storage";
 import { ConnectionGroup, ConnectionGroupColor, DatabaseNode, DbConnectionConfig } from "./types";
 
-type DatabaseFilterScope = "database" | "index" | "topic";
+type DatabaseFilterScope = "database" | "index" | "topic" | "subscription";
 const CONNECTION_DRAG_MIME = "application/vnd.databaseWorkbench.connectionIds";
 const GROUP_DECORATION_SCHEME = "database-workbench-group";
 
@@ -62,7 +62,7 @@ export class ConnectionsTreeProvider implements vscode.TreeDataProvider<TreeNode
     }
 
     if (node.kind === "databaseFilter") {
-      const target = node.scope === "index" ? "索引" : node.scope === "topic" ? "Topic" : getDatabaseDescription(node.connection.type);
+      const target = node.scope === "index" ? "索引" : node.scope === "topic" ? "Topic" : node.scope === "subscription" ? "订阅 Topic" : getDatabaseDescription(node.connection.type);
       const item = new vscode.TreeItem(`[${node.selected}/${node.total}] 选择显示${target}`, vscode.TreeItemCollapsibleState.None);
       item.tooltip = `选择哪些${target}显示在左侧连接树中`;
       item.contextValue = "databaseWorkbench.databaseFilter";
@@ -112,10 +112,10 @@ export class ConnectionsTreeProvider implements vscode.TreeDataProvider<TreeNode
       ? `${pinned ? "已置顶。\n" : ""}${node.table}\n${node.comment.trim()}`
       : `${pinned ? "已置顶： " : ""}${node.table}`;
     item.contextValue = `databaseWorkbench.table.${node.connection.type}.${pinned ? "pinned" : "unpinned"}`;
-    item.iconPath = new vscode.ThemeIcon(node.connection.type === "redis" ? "symbol-key" : node.connection.type === "elasticsearch" ? "symbol-array" : node.connection.type === "mongodb" ? "symbol-object" : node.connection.type === "tdengine" ? "pulse" : node.connection.type === "kafka" ? "radio-tower" : "table");
+    item.iconPath = new vscode.ThemeIcon(node.connection.type === "redis" ? "symbol-key" : node.connection.type === "elasticsearch" ? "symbol-array" : node.connection.type === "mongodb" ? "symbol-object" : node.connection.type === "tdengine" ? "pulse" : node.connection.type === "kafka" || node.connection.type === "mqtt" ? "radio-tower" : "table");
     item.command = {
       command: "databaseWorkbench.openTable",
-      title: node.connection.type === "mongodb" ? "查看集合信息" : node.connection.type === "tdengine" ? "查看时序表信息" : node.connection.type === "kafka" ? "查看 Topic 消息" : "查看表信息",
+      title: node.connection.type === "mongodb" ? "查看集合信息" : node.connection.type === "tdengine" ? "查看时序表信息" : node.connection.type === "kafka" ? "查看 Topic 消息" : node.connection.type === "mqtt" ? "订阅 Topic 消息" : "查看表信息",
       arguments: [node],
     };
     return item;
@@ -166,6 +166,15 @@ export class ConnectionsTreeProvider implements vscode.TreeDataProvider<TreeNode
             ...this.sortPinnedFirst(databases.map((database): TreeNode => this.getCachedNode({ kind: "database", connection: node.connection, database }))),
           ];
         }
+        if (connection.type === "mqtt") {
+          const topics = (await this.databaseService.listTableSummaries(connection, "subscriptions")).map((item) => item.name);
+          const selectedTopics = await this.resolveSelectedNames(connection.id, topics);
+          this.updateConnectionCount(node, selectedTopics.length, topics.length);
+          return [
+            this.getCachedNode({ kind: "databaseFilter", connection: node.connection, scope: "subscription", selected: selectedTopics.length, total: topics.length }),
+            ...this.sortPinnedFirst(databases.map((database): TreeNode => this.getCachedNode({ kind: "database", connection: node.connection, database }))),
+          ];
+        }
 
         const selectedDatabases = await this.resolveSelectedNames(connection.id, databases);
         this.updateConnectionCount(node, selectedDatabases.length, databases.length);
@@ -200,7 +209,7 @@ export class ConnectionsTreeProvider implements vscode.TreeDataProvider<TreeNode
             tableCount: schemaTables.length,
           })));
         }
-        const visibleTables = node.connection.type === "elasticsearch" || node.connection.type === "kafka"
+        const visibleTables = node.connection.type === "elasticsearch" || node.connection.type === "kafka" || node.connection.type === "mqtt"
           ? filterBySavedNames(tables, this.store.getDatabaseFilter(node.connection.id))
           : tables;
         return this.sortPinnedFirst(visibleTables.map((table) => this.getCachedNode({
@@ -565,6 +574,7 @@ function getDatabaseDescription(type: DbConnectionConfig["type"]): string {
   if (type === "mongodb") return "数据库";
   if (type === "tdengine") return "数据库";
   if (type === "kafka") return "Topic 空间";
+  if (type === "mqtt") return "订阅空间";
   return "数据库";
 }
 
@@ -574,6 +584,7 @@ function getTableDescription(type: DbConnectionConfig["type"]): string {
   if (type === "mongodb") return "Collection";
   if (type === "tdengine") return "时序表";
   if (type === "kafka") return "Topic";
+  if (type === "mqtt") return "订阅 Topic";
   return "表";
 }
 

@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 
-export type DatabaseType = "mysql" | "postgres" | "redis" | "elasticsearch" | "mongodb" | "tdengine" | "kafka";
+export type DatabaseType = "mysql" | "postgres" | "redis" | "elasticsearch" | "mongodb" | "tdengine" | "kafka" | "mqtt";
 
 export type DbConnectionConfig = {
   id: string;

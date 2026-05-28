@@ -660,6 +660,14 @@ export class DatabaseWorkbenchPanel {
       this.panel.webview.postMessage({ type: "result", sql: command, result });
       return;
     }
+    if (this.connection.type === "mqtt") {
+      const size = safeLimit < 0 ? queryConfig.maxRows : Math.max(1, safeLimit);
+      const command = where.trim() || `SUBSCRIBE ${JSON.stringify(table)} LIMIT ${size} TIMEOUT 10000`;
+      this.lastQueryErrorSql = command;
+      const result = await this.databaseService.query(connection, this.database, command, safeLimit < 0 ? -1 : queryConfig.maxRows);
+      this.panel.webview.postMessage({ type: "result", sql: command, result });
+      return;
+    }
     let totalRows = 0;
     let totalPages = 1;
     let currentPage = safePage;
@@ -692,12 +700,12 @@ export class DatabaseWorkbenchPanel {
 
   private async runSql(sql: string, limit?: number, page?: number, sortColumn?: string, sortDirection?: "asc" | "desc"): Promise<void> {
     if (!sql.trim()) {
-      throw new Error(this.connection.type === "redis" ? "请先输入 Redis 命令。" : this.connection.type === "elasticsearch" ? "请先输入 Elasticsearch 查询。" : this.connection.type === "mongodb" ? "请先输入 MongoDB 命令。" : this.connection.type === "kafka" ? "请先输入 Kafka 命令。" : this.connection.type === "tdengine" ? "请先输入 TDengine SQL。" : "请先输入 SQL。");
+      throw new Error(this.connection.type === "redis" ? "请先输入 Redis 命令。" : this.connection.type === "elasticsearch" ? "请先输入 Elasticsearch 查询。" : this.connection.type === "mongodb" ? "请先输入 MongoDB 命令。" : this.connection.type === "kafka" ? "请先输入 Kafka 命令。" : this.connection.type === "mqtt" ? "请先输入 MQTT 命令。" : this.connection.type === "tdengine" ? "请先输入 TDengine SQL。" : "请先输入 SQL。");
     }
 
     let executableSql = sql.trim();
     let executeAllStatements: string[] | undefined;
-    if (this.connection.type !== "redis" && this.connection.type !== "elasticsearch" && this.connection.type !== "mongodb" && this.connection.type !== "kafka") {
+    if (this.connection.type !== "redis" && this.connection.type !== "elasticsearch" && this.connection.type !== "mongodb" && this.connection.type !== "kafka" && this.connection.type !== "mqtt") {
       const picked = await this.pickSqlStatementToRun(executableSql);
       if (!picked) {
         this.panel.webview.postMessage({ type: "loading", area: "query", message: "已取消执行。" });
@@ -712,8 +720,8 @@ export class DatabaseWorkbenchPanel {
 
     const connection = await this.requireConnection();
     const queryConfig = getQueryConfig();
-    this.panel.webview.postMessage({ type: "loading", area: "query", message: this.connection.type === "redis" ? "正在执行 Redis 命令..." : this.connection.type === "elasticsearch" ? "正在执行 Elasticsearch 查询..." : this.connection.type === "mongodb" ? "正在执行 MongoDB 命令..." : this.connection.type === "kafka" ? "正在执行 Kafka 命令..." : "正在执行 SQL..." });
-    if (this.connection.type === "redis" || this.connection.type === "elasticsearch" || this.connection.type === "mongodb" || this.connection.type === "kafka") {
+    this.panel.webview.postMessage({ type: "loading", area: "query", message: this.connection.type === "redis" ? "正在执行 Redis 命令..." : this.connection.type === "elasticsearch" ? "正在执行 Elasticsearch 查询..." : this.connection.type === "mongodb" ? "正在执行 MongoDB 命令..." : this.connection.type === "kafka" ? "正在执行 Kafka 命令..." : this.connection.type === "mqtt" ? "正在执行 MQTT 命令..." : "正在执行 SQL..." });
+    if (this.connection.type === "redis" || this.connection.type === "elasticsearch" || this.connection.type === "mongodb" || this.connection.type === "kafka" || this.connection.type === "mqtt") {
       this.lastQueryErrorSql = executableSql;
       const result = await this.databaseService.query(connection, this.database, executableSql, clampLimit(limit ?? queryConfig.defaultLimit));
       this.panel.webview.postMessage({ type: "result", sql: executableSql, result });
@@ -2044,7 +2052,7 @@ export class DatabaseWorkbenchPanel {
         }
         return;
       }
-      const failedLabel = this.connection.type === "redis" ? "Redis命令执行失败" : this.connection.type === "elasticsearch" ? "Elasticsearch查询执行失败" : this.connection.type === "mongodb" ? "MongoDB命令执行失败" : this.connection.type === "tdengine" ? "TDengine SQL执行失败" : "SQL执行失败";
+      const failedLabel = this.connection.type === "redis" ? "Redis命令执行失败" : this.connection.type === "elasticsearch" ? "Elasticsearch查询执行失败" : this.connection.type === "mongodb" ? "MongoDB命令执行失败" : this.connection.type === "mqtt" ? "MQTT命令执行失败" : this.connection.type === "tdengine" ? "TDengine SQL执行失败" : "SQL执行失败";
       this.panel.webview.postMessage({ type: "error", area, message: `${failedLabel}，正在使用 AI 搜索错误...` });
       const message = await this.formatDatabaseError(error, this.lastQueryErrorSql);
       this.panel.webview.postMessage({ type: "error", area, message });
