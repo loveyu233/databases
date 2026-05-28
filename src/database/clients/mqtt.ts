@@ -170,7 +170,7 @@ export class MqttWorkbenchClient implements DbClient {
     try {
       return await callback(client);
     } finally {
-      await client.endAsync(true).catch(() => undefined);
+      await client.endAsync(false).catch(() => undefined);
     }
   }
 }
