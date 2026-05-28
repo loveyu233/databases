@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { DatabaseService } from "./database/clients";
+import { DatabaseService } from "./database/service";
 import { ConnectionStore } from "./storage";
 import { ConnectionGroup, ConnectionGroupColor, DatabaseNode, DbConnectionConfig } from "./types";
 

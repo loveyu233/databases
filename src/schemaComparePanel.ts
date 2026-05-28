@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import * as vscode from "vscode";
-import { DatabaseService } from "./database/clients";
+import { DatabaseService } from "./database/service";
 import { areTableSchemasEqual, buildSchemaSyncSql } from "./schemaSync";
 import { ConnectionStore } from "./storage";
 import { DbConnectionConfig, DbConnectionWithSecret, getSqlConfirmFontSize, TableInfo, TableSummary } from "./types";

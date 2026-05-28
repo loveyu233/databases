@@ -2,7 +2,7 @@ import { createDecipheriv, randomUUID } from "node:crypto";
 import * as fs from "node:fs/promises";
 import * as vscode from "vscode";
 import { testAiConnection } from "./ai";
-import { DatabaseService } from "./database/clients";
+import { DatabaseService } from "./database/service";
 import { registerOfflineLicenseCommands, requireProFeature } from "./license/offlineLicense";
 import { SchemaComparePanel } from "./schemaComparePanel";
 import { showSqlConfirmDialog } from "./sqlConfirmDialog";
