@@ -118,7 +118,7 @@ Module._load = function patchedLoad(request, parent, isMain) {
   return originalLoad.apply(this, arguments);
 };
 
-const { DatabaseService } = require("../out/database/clients");
+const { DatabaseService } = require("../out/database/service");
 const { ConnectionsTreeProvider } = require("../out/tree");
 
 const connection = {
