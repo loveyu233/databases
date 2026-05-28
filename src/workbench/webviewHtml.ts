@@ -168,10 +168,18 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
 	    .sql-highlight-wrap textarea {
 	      position: relative;
 	      z-index: 1;
+	      box-sizing: border-box;
 	      color: transparent;
 	      -webkit-text-fill-color: transparent;
 	      caret-color: var(--fg);
 	      background: transparent;
+	      font-family: var(--mono);
+	      font-weight: 400;
+	      font-style: normal;
+	      letter-spacing: normal;
+	      font-variant-ligatures: none;
+	      font-kerning: none;
+	      tab-size: 2;
 	    }
 	    .sql-highlight-wrap .field::placeholder,
 	    .sql-highlight-wrap textarea::placeholder {
@@ -200,7 +208,13 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
 	      overflow-wrap: anywhere;
 	      font-family: var(--mono);
 	      font-size: 12px;
+	      font-weight: 400;
+	      font-style: normal;
 	      line-height: 1.55;
+	      letter-spacing: normal;
+	      font-variant-ligatures: none;
+	      font-kerning: none;
+	      tab-size: 2;
 	    }
 	    .quick-sql-highlight .field,
 	    .quick-sql-highlight .sql-highlight-code {
@@ -236,6 +250,18 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
 	    }
 	    .editor-sql-highlight textarea {
 	      background: transparent;
+	      box-sizing: border-box;
+	      width: 100%;
+	      padding: 11px 12px;
+	      white-space: pre-wrap;
+	      overflow-wrap: anywhere;
+	      word-break: break-word;
+	      font-weight: 400;
+	      font-style: normal;
+	      letter-spacing: normal;
+	      font-variant-ligatures: none;
+	      font-kerning: none;
+	      tab-size: 2;
 	    }
 	    .editor-sql-highlight .sql-highlight-code {
 	      padding: 11px 12px;
@@ -285,6 +311,17 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
 	    .sql-highlight-code .sql-token-field-7,
 	    .code-suggest-label .sql-token-table-7,
 	    .code-suggest-label .sql-token-field-7 { color: #c084fc; }
+	    .sql-highlight-wrap .sql-highlight-code span {
+	      font: inherit;
+	      font-weight: 400;
+	      font-style: normal;
+	      letter-spacing: inherit;
+	      padding: 0;
+	      margin: 0;
+	      border: 0;
+	      border-radius: 0;
+	      background: transparent;
+	    }
 
 	    .sql-drawer { border-bottom: 1px solid var(--line); background: var(--panel); display: none; }
   .sql-drawer.open { display: block; }
@@ -800,6 +837,7 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
   .edit-shortcuts button.hidden { display: none; }
   .cell-editor {
     width: 100%;
+    box-sizing: border-box;
     min-height: 180px;
     border: 0;
     color: var(--fg);
@@ -807,6 +845,11 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
     padding: 12px 14px;
     font-family: var(--mono);
     font-size: 13px;
+    font-weight: 400;
+    font-style: normal;
+    letter-spacing: normal;
+    font-variant-ligatures: none;
+    font-kerning: none;
     line-height: 1.6;
     outline: none;
     resize: vertical;
@@ -827,8 +870,14 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
     color: var(--fg);
     font-family: var(--mono);
     font-size: 13px;
+    font-weight: 400;
+    font-style: normal;
+    letter-spacing: normal;
+    font-variant-ligatures: none;
+    font-kerning: none;
     line-height: 1.6;
     white-space: pre-wrap;
+    overflow-wrap: anywhere;
     word-break: break-word;
     overflow: hidden;
     pointer-events: none;
@@ -843,6 +892,9 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
     background: transparent;
     caret-color: var(--fg);
     tab-size: 2;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    word-break: break-word;
   }
   .json-editor-wrap.json-active .cell-editor::selection {
     background: rgba(78, 151, 224, .24);
@@ -857,6 +909,17 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
   .json-token.boolean { color: var(--vscode-debugTokenExpression-boolean, #569cd6); }
   .json-token.null { color: #c586c0; }
   .json-token.punctuation { color: var(--muted); }
+  .json-editor-highlight .json-token {
+    font: inherit;
+    font-weight: 400;
+    font-style: normal;
+    letter-spacing: inherit;
+    padding: 0;
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+  }
   .enum-editor {
     display: none;
     padding: 14px;
