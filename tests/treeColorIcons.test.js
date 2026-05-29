@@ -37,5 +37,8 @@ assert.ok(treeSource.includes('"assets", "icons", "tree"'));
 assert.ok(treeSource.includes("getGroupIcon"));
 assert.ok(treeSource.includes("getDatabaseIcon"));
 assert.ok(treeSource.includes("getTableIcon"));
+assert.ok(treeSource.includes("buildGroupTreeLabel"));
+assert.ok(treeSource.includes('new vscode.FileDecoration(GROUP_DECORATION_BADGE'));
+assert.ok(treeSource.includes("分组 · ${connections.length} 个连接"));
 
 console.log("ok - 侧边栏彩色语义图标资源和映射");

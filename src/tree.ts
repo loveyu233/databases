@@ -6,6 +6,8 @@ import { ConnectionGroup, ConnectionGroupColor, DatabaseNode, DatabaseType, DbCo
 type DatabaseFilterScope = "database" | "index" | "topic" | "subscription" | "key";
 const CONNECTION_DRAG_MIME = "application/vnd.databaseWorkbench.connectionIds";
 const GROUP_DECORATION_SCHEME = "database-workbench-group";
+const GROUP_LABEL_MARK = "▌";
+const GROUP_DECORATION_BADGE = "组";
 const CONNECTION_ICON_FILES: Record<DatabaseType, string> = {
   mysql: "mysql.svg",
   postgres: "postgres.svg",
@@ -59,13 +61,15 @@ export class ConnectionsTreeProvider implements vscode.TreeDataProvider<TreeNode
   getTreeItem(node: TreeNode): vscode.TreeItem {
     if (node.kind === "group") {
       const connections = this.store.getAll().filter((connection) => connection.groupId === node.group.id);
-      const item = new vscode.TreeItem(node.group.name, vscode.TreeItemCollapsibleState.Expanded);
+      const item = new vscode.TreeItem(buildGroupTreeLabel(node.group.name), vscode.TreeItemCollapsibleState.Expanded);
       const pinned = this.isPinned(node);
-      item.description = `${pinned ? "置顶 · " : ""}${connections.length} 个连接`;
+      item.id = getTreeNodePinKey(node);
+      item.description = `${pinned ? "置顶 · " : ""}分组 · ${connections.length} 个连接`;
       item.tooltip = `分组：${node.group.name}\n${pinned ? "已置顶。\n" : ""}可把连接拖拽到此分组中。`;
       item.contextValue = `databaseWorkbench.group.node.${pinned ? "pinned" : "unpinned"}`;
       item.iconPath = this.getGroupIcon(node.group.color);
       item.resourceUri = getGroupDecorationUri(node.group);
+      item.accessibilityInformation = { label: `分组 ${node.group.name}，${connections.length} 个连接`, role: "treeitem" };
       return item;
     }
 
@@ -462,7 +466,7 @@ export class ConnectionGroupDecorationProvider implements vscode.FileDecorationP
       return undefined;
     }
     const color = normalizeGroupColor(uri.query);
-    return new vscode.FileDecoration(undefined, `分组颜色：${getGroupColorLabel(color)}`, new vscode.ThemeColor(`databaseWorkbench.group.${color}`));
+    return new vscode.FileDecoration(GROUP_DECORATION_BADGE, `分组颜色：${getGroupColorLabel(color)}`, new vscode.ThemeColor(`databaseWorkbench.group.${color}`));
   }
 }
 
@@ -598,6 +602,14 @@ function getGroupDecorationUri(group: ConnectionGroup): vscode.Uri {
     path: `/${encodeURIComponent(group.id)}`,
     query: group.color,
   });
+}
+
+function buildGroupTreeLabel(name: string): vscode.TreeItemLabel {
+  const label = `${GROUP_LABEL_MARK} ${name}`;
+  return {
+    label,
+    highlights: [[0, GROUP_LABEL_MARK.length]],
+  };
 }
 
 function parseDraggedConnectionIds(value: string): string[] {
