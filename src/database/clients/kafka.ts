@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { Kafka, logLevel, type Admin, type EachMessagePayload, type IHeaders } from "kafkajs";
+import { Kafka, logLevel, type Admin, type EachMessagePayload, type IHeaders, type IResourceConfigEntry } from "kafkajs";
 import { DbConnectionWithSecret, QueryResult, TableInfo, TableSummary } from "../../types";
 import { DbClient } from "../core/client";
 import { sliceRows } from "../core/utils";
@@ -14,7 +14,7 @@ type KafkaCommand =
   | { kind: "listGroups" }
   | { kind: "describeTopic"; topic: string }
   | { kind: "describeGroup"; groupId: string }
-  | { kind: "createTopic"; topic: string; partitions: number; replicationFactor: number }
+  | { kind: "createTopic"; topic: string; partitions: number; replicationFactor: number; configEntries?: IResourceConfigEntry[] }
   | { kind: "deleteTopic"; topic: string }
   | { kind: "produce"; topic: string; key?: string; value: string }
   | { kind: "consume"; topic: string; limit: number; fromBeginning: boolean; timeoutMs: number };
@@ -160,9 +160,20 @@ export class KafkaWorkbenchClient implements DbClient {
       return this.withAdmin(async (admin) => {
         const created = await admin.createTopics({
           waitForLeaders: true,
-          topics: [{ topic: command.topic, numPartitions: command.partitions, replicationFactor: command.replicationFactor }],
+          topics: [{
+            topic: command.topic,
+            numPartitions: command.partitions,
+            replicationFactor: command.replicationFactor,
+            configEntries: command.configEntries,
+          }],
         });
-        return buildRowsResult([{ topic: command.topic, partitions: command.partitions, replicationFactor: command.replicationFactor, created }], "CREATE TOPIC", created ? 1 : 0);
+        return buildRowsResult([{
+          topic: command.topic,
+          partitions: command.partitions,
+          replicationFactor: command.replicationFactor,
+          configs: Object.fromEntries((command.configEntries || []).map((item) => [item.name, item.value])),
+          created,
+        }], "CREATE TOPIC", created ? 1 : 0);
       });
     }
     if (command.kind === "deleteTopic") {
@@ -340,7 +351,14 @@ export function parseKafkaCommand(commandText: string, maxRows = DEFAULT_CONSUME
   if (createTopic) {
     const partitions = parsePositiveOption(createTopic.rest, "PARTITIONS", 1);
     const replicationFactor = parsePositiveOption(createTopic.rest, "REPLICATION_FACTOR", 1);
-    return { kind: "createTopic", topic: createTopic.name, partitions, replicationFactor };
+    const configEntries = parseKafkaConfigEntries(createTopic.rest);
+    return {
+      kind: "createTopic",
+      topic: createTopic.name,
+      partitions,
+      replicationFactor,
+      ...(configEntries.length ? { configEntries } : {}),
+    };
   }
   const consume = parseNamedCommand(text, /^CONSUME\s+/i);
   if (consume) {
@@ -416,6 +434,22 @@ function parsePositiveOption(source: string, name: string, fallback: number): nu
     throw new Error(`${name} 必须是大于 0 的整数。`);
   }
   return value;
+}
+
+function parseKafkaConfigEntries(source: string): IResourceConfigEntry[] {
+  const entries: IResourceConfigEntry[] = [];
+  const regex = /\bCONFIG\s+([A-Za-z0-9._-]+)\s*=\s*("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`|[^\s;]+)/ig;
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(source))) {
+    entries.push({ name: match[1], value: parseKafkaValueToken(match[2]) });
+  }
+  return dedupeKafkaConfigEntries(entries);
+}
+
+function dedupeKafkaConfigEntries(entries: IResourceConfigEntry[]): IResourceConfigEntry[] {
+  const map = new Map<string, string>();
+  entries.forEach((entry) => map.set(entry.name, entry.value));
+  return [...map.entries()].map(([name, value]) => ({ name, value }));
 }
 
 function parseKafkaValueToken(value: string, keepRaw = false): string {

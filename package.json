@@ -297,6 +297,11 @@
           "group": "inline@1"
         },
         {
+          "command": "databaseWorkbench.createResource",
+          "when": "view == databaseWorkbench.connections && viewItem =~ /databaseWorkbench\\.database\\.kafka\\./",
+          "group": "inline@1"
+        },
+        {
           "command": "databaseWorkbench.filterDatabases",
           "when": "view == databaseWorkbench.connections && viewItem == databaseWorkbench.databaseFilter",
           "group": "inline@1"
@@ -329,6 +334,11 @@
         {
           "command": "databaseWorkbench.createResource",
           "when": "view == databaseWorkbench.connections && viewItem =~ /databaseWorkbench\\.database\\.mqtt\\./",
+          "group": "1_manage@3"
+        },
+        {
+          "command": "databaseWorkbench.createResource",
+          "when": "view == databaseWorkbench.connections && viewItem =~ /databaseWorkbench\\.database\\.kafka\\./",
           "group": "1_manage@3"
         },
         {

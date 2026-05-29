@@ -2380,12 +2380,14 @@ function buildCreateResourcePlan(type: DatabaseType, payload: Record<string, unk
   }
   if (type === "kafka") {
     assertKafkaTopicName(name);
-    const partitions = parsePositiveInteger(asInputString(payload.partitions)) ?? 1;
-    const replicationFactor = parsePositiveInteger(asInputString(payload.replicationFactor)) ?? 1;
+    const partitions = parsePositiveInteger(asInputString(payload.partitions), "分区数") ?? 1;
+    const replicationFactor = parsePositiveInteger(asInputString(payload.replicationFactor), "副本数") ?? 1;
+    const configEntries = buildKafkaTopicConfigEntries(payload);
+    const configSql = configEntries.map((item) => ` CONFIG ${item.name}=${quoteKafkaConfigValue(item.value)}`).join("");
     return {
       name,
       targetLabel: "Topic",
-      sql: `CREATE TOPIC ${quoteKafkaName(name)} PARTITIONS ${partitions} REPLICATION_FACTOR ${replicationFactor};`,
+      sql: `CREATE TOPIC ${quoteKafkaName(name)} PARTITIONS ${partitions} REPLICATION_FACTOR ${replicationFactor}${configSql};`,
     };
   }
   if (type === "mqtt") {
@@ -2472,6 +2474,79 @@ function quoteKafkaName(name: string): string {
   return /^[A-Za-z0-9._-]+$/.test(name) ? name : JSON.stringify(name);
 }
 
+function buildKafkaTopicConfigEntries(payload: Record<string, unknown>): Array<{ name: string; value: string }> {
+  const configs = new Map<string, string>();
+  addKafkaTopicConfig(configs, "cleanup.policy", asInputString(payload.cleanupPolicy), validateKafkaCleanupPolicy);
+  addKafkaTopicConfig(configs, "retention.ms", asInputString(payload.retentionMs), (value) => validateIntegerConfig(value, "retention.ms", -1));
+  addKafkaTopicConfig(configs, "retention.bytes", asInputString(payload.retentionBytes), (value) => validateIntegerConfig(value, "retention.bytes", -1));
+  addKafkaTopicConfig(configs, "segment.bytes", asInputString(payload.segmentBytes), (value) => validateIntegerConfig(value, "segment.bytes", 1));
+  addKafkaTopicConfig(configs, "max.message.bytes", asInputString(payload.maxMessageBytes), (value) => validateIntegerConfig(value, "max.message.bytes", 1));
+  addKafkaTopicConfig(configs, "min.insync.replicas", asInputString(payload.minInsyncReplicas), (value) => validateIntegerConfig(value, "min.insync.replicas", 1));
+  addKafkaTopicConfig(configs, "compression.type", asInputString(payload.compressionType), validateKafkaCompressionType);
+  parseKafkaCustomConfigs(asInputString(payload.customConfigs)).forEach((item) => addKafkaTopicConfig(configs, item.name, item.value));
+  return [...configs.entries()].map(([name, value]) => ({ name, value }));
+}
+
+function addKafkaTopicConfig(
+  configs: Map<string, string>,
+  name: string,
+  value: string,
+  validate?: (value: string) => void
+): void {
+  const key = name.trim();
+  const normalizedValue = value.trim();
+  if (!key || !normalizedValue) return;
+  assertKafkaConfigName(key);
+  if (/[\r\n]/.test(normalizedValue)) {
+    throw new Error(`Kafka 配置 ${key} 的值不能包含换行。`);
+  }
+  validate?.(normalizedValue);
+  configs.set(key, normalizedValue);
+}
+
+function parseKafkaCustomConfigs(value: string): Array<{ name: string; value: string }> {
+  return value
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith("#"))
+    .map((line) => {
+      const index = line.indexOf("=");
+      if (index <= 0) {
+        throw new Error("Kafka 自定义配置需要按 key=value 每行填写。");
+      }
+      return { name: line.slice(0, index).trim(), value: line.slice(index + 1).trim() };
+    });
+}
+
+function assertKafkaConfigName(name: string): void {
+  if (!/^[A-Za-z0-9._-]+$/.test(name)) {
+    throw new Error("Kafka 配置名只能包含字母、数字、点号、下划线和短横线。");
+  }
+}
+
+function validateKafkaCleanupPolicy(value: string): void {
+  if (!["delete", "compact", "compact,delete"].includes(value)) {
+    throw new Error("cleanup.policy 只能是 delete、compact 或 compact,delete。");
+  }
+}
+
+function validateKafkaCompressionType(value: string): void {
+  if (!["producer", "uncompressed", "gzip", "snappy", "lz4", "zstd"].includes(value)) {
+    throw new Error("compression.type 只能是 producer、uncompressed、gzip、snappy、lz4 或 zstd。");
+  }
+}
+
+function validateIntegerConfig(value: string, label: string, min: number): void {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < min) {
+    throw new Error(`${label} 必须是大于等于 ${min} 的整数。`);
+  }
+}
+
+function quoteKafkaConfigValue(value: string): string {
+  return /^[^\s"'`;]+$/.test(value) ? value : JSON.stringify(value);
+}
+
 function assertMqttTopicFilter(name: string): void {
   const parsed = parseMqttTopicFilters(name);
   if (parsed.length !== 1 || parsed[0] !== name.trim()) {
@@ -2544,11 +2619,11 @@ function parseOptionalJsonObject(value: string, label: string): Record<string, u
   return parsed as Record<string, unknown>;
 }
 
-function parsePositiveInteger(value: string): number | undefined {
+function parsePositiveInteger(value: string, label = "分片数"): number | undefined {
   if (!value.trim()) return undefined;
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed < 1) {
-    throw new Error("分片数必须是大于 0 的整数。");
+    throw new Error(`${label}必须是大于 0 的整数。`);
   }
   return parsed;
 }
@@ -2593,9 +2668,9 @@ function renderCreateResourceHtml(connection: DbConnectionConfig, targetLabel: s
     th { width: 180px; text-align: left; vertical-align: top; padding: 16px; color: var(--vscode-descriptionForeground); font-weight: 600; border-bottom: 1px solid var(--vscode-panel-border); background: color-mix(in srgb, var(--vscode-sideBar-background) 84%, var(--vscode-button-background)); }
     td { padding: 14px 16px; border-bottom: 1px solid var(--vscode-panel-border); }
     tr:last-child th, tr:last-child td { border-bottom: 0; }
-    input, textarea { width: 100%; box-sizing: border-box; border: 1px solid var(--vscode-input-border, transparent); border-radius: 8px; color: var(--vscode-input-foreground); background: var(--vscode-input-background); padding: 9px 10px; font-family: var(--vscode-font-family); outline: none; }
+    input, textarea, select { width: 100%; box-sizing: border-box; border: 1px solid var(--vscode-input-border, transparent); border-radius: 8px; color: var(--vscode-input-foreground); background: var(--vscode-input-background); padding: 9px 10px; font-family: var(--vscode-font-family); outline: none; }
     textarea { min-height: 130px; resize: vertical; font-family: var(--vscode-editor-font-family); }
-    input:focus, textarea:focus { border-color: var(--vscode-focusBorder); }
+    input:focus, textarea:focus, select:focus { border-color: var(--vscode-focusBorder); }
     .help { margin-top: 6px; color: var(--vscode-descriptionForeground); font-size: 12px; line-height: 1.5; }
     .actions { display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin-top: 16px; }
     button { border: 0; border-radius: 8px; padding: 9px 14px; cursor: pointer; color: var(--vscode-button-foreground); background: var(--vscode-button-background); }
@@ -2656,6 +2731,14 @@ function renderCreateResourceHtml(connection: DbConnectionConfig, targetLabel: s
 	        initialCollection: $("#initialCollectionInput")?.value || "",
 	        partitions: $("#partitionsInput")?.value || "",
 	        replicationFactor: $("#replicationFactorInput")?.value || "",
+	        cleanupPolicy: $("#cleanupPolicyInput")?.value || "",
+	        retentionMs: $("#retentionMsInput")?.value || "",
+	        retentionBytes: $("#retentionBytesInput")?.value || "",
+	        segmentBytes: $("#segmentBytesInput")?.value || "",
+	        maxMessageBytes: $("#maxMessageBytesInput")?.value || "",
+	        minInsyncReplicas: $("#minInsyncReplicasInput")?.value || "",
+	        compressionType: $("#compressionTypeInput")?.value || "",
+	        customConfigs: $("#customConfigsInput")?.value || "",
 	        qos: $("#qosInput")?.value || "",
 	        timeoutMs: $("#timeoutInput")?.value || "",
 	      };
@@ -2665,7 +2748,7 @@ function renderCreateResourceHtml(connection: DbConnectionConfig, targetLabel: s
       vscode.postMessage({ type: "submitCreateResource", payload: payload() });
     });
     $("#resetBtn").addEventListener("click", () => {
-      document.querySelectorAll("input, textarea").forEach((item) => item.value = item.dataset.default || "");
+      document.querySelectorAll("input, textarea, select").forEach((item) => item.value = item.dataset.default || "");
       setStatus("", "");
     });
     window.addEventListener("message", (event) => {
@@ -2736,6 +2819,61 @@ function renderCreateResourceRows(type: DatabaseType): string {
             <input id="replicationFactorInput" value="1" data-default="1" placeholder="replication factor" />
           </div>
           <div class="help">默认创建 1 个分区、1 个副本；生产环境请按 Kafka 集群 Broker 数量调整副本数。</div>
+        </td>
+      </tr>
+      <tr>
+        <th>清理策略</th>
+        <td>
+          <select id="cleanupPolicyInput" data-default="">
+            <option value="">使用 Broker 默认值</option>
+            <option value="delete">delete：按保留时间/大小清理</option>
+            <option value="compact">compact：按 Key 压缩保留最新值</option>
+            <option value="compact,delete">compact,delete：压缩并按保留策略清理</option>
+          </select>
+          <div class="help">对应 Kafka Topic 配置 cleanup.policy，Kafka UI 中常用于区分事件流和状态表类 Topic。</div>
+        </td>
+      </tr>
+      <tr>
+        <th>保留策略</th>
+        <td>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+            <input id="retentionMsInput" data-default="" placeholder="retention.ms，例如 604800000；-1 表示不过期" />
+            <input id="retentionBytesInput" data-default="" placeholder="retention.bytes，例如 1073741824；-1 表示不限大小" />
+          </div>
+          <div class="help">留空则使用 Broker 默认值；适合控制消息按时间或 Topic 总大小保留。</div>
+        </td>
+      </tr>
+      <tr>
+        <th>可靠性 / 消息大小</th>
+        <td>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;">
+            <input id="minInsyncReplicasInput" data-default="" placeholder="min.insync.replicas" />
+            <input id="maxMessageBytesInput" data-default="" placeholder="max.message.bytes" />
+            <input id="segmentBytesInput" data-default="" placeholder="segment.bytes" />
+          </div>
+          <div class="help">min.insync.replicas 常配合生产端 acks=all 使用；其他两项用于限制单条消息大小和日志段大小。</div>
+        </td>
+      </tr>
+      <tr>
+        <th>压缩类型</th>
+        <td>
+          <select id="compressionTypeInput" data-default="">
+            <option value="">使用 Broker 默认值</option>
+            <option value="producer">producer：沿用 Producer 压缩</option>
+            <option value="uncompressed">uncompressed</option>
+            <option value="gzip">gzip</option>
+            <option value="snappy">snappy</option>
+            <option value="lz4">lz4</option>
+            <option value="zstd">zstd</option>
+          </select>
+          <div class="help">对应 compression.type，保留为空时不显式写入 Topic 配置。</div>
+        </td>
+      </tr>
+      <tr>
+        <th>自定义配置</th>
+        <td>
+          <textarea id="customConfigsInput" spellcheck="false" placeholder="message.timestamp.type=CreateTime&#10;delete.retention.ms=86400000"></textarea>
+          <div class="help">每行一个 key=value，会合并到 CREATE TOPIC 的 CONFIG 中；同名配置以后面的值为准。</div>
         </td>
       </tr>`;
   }

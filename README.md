@@ -328,6 +328,7 @@ CONSUME orders.created LIMIT 20
 CONSUME orders.created FROM LATEST LIMIT 20 TIMEOUT 5000
 PRODUCE orders.created KEY user-1 VALUE {"id":1,"status":"created"}
 CREATE TOPIC orders.created PARTITIONS 3 REPLICATION_FACTOR 1
+CREATE TOPIC orders.created PARTITIONS 6 REPLICATION_FACTOR 3 CONFIG cleanup.policy=compact,delete CONFIG retention.ms=-1 CONFIG compression.type=zstd
 DELETE TOPIC orders.created
 ```
 
@@ -335,7 +336,9 @@ Kafka 操作说明：
 
 - 预览和快速查询默认使用 `CONSUME <topic> LIMIT N`，适合快速查看消息内容。
 - `FROM LATEST` 可用于等待新消息；默认从头开始消费，并使用临时 consumer group，不会影响已有业务消费组 offset。
-- 连接右键“创建”可创建 Topic，右键 Topic 可删除 Topic。
+- 连接或 `topics` Topic 空间右键“创建”可创建 Topic；表单支持分区数、副本数、清理策略、保留时间 / 大小、最小同步副本、消息大小、日志段大小、压缩类型和自定义 `key=value` 配置。
+- 创建 Topic 时会生成可预览的 `CREATE TOPIC ... CONFIG key=value` 命令，适合把 Kafka UI 常用 Topic 参数一次填齐。
+- 右键 Topic 可删除 Topic。
 - 打开 Topic 标签页后，顶部“刷新数据”前的“发送消息”按钮可打开弹窗；可填写 Topic、可选 Key 和消息内容，弹窗会预览实际执行的 `PRODUCE` 命令。
 - 表格不开放双击编辑，复杂消息写入也可以在查询控制台手写 `PRODUCE` 命令。
 
