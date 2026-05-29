@@ -32,6 +32,7 @@ const fakeVscode = {
   TreeItemCollapsibleState: { None: 0, Collapsed: 1, Expanded: 2 },
   Uri: { joinPath: (...parts) => ({ parts }) },
   ViewColumn: { One: 1 },
+  commands: { executeCommand: async () => {} },
   env: { clipboard: { writeText: async () => {} } },
   window: {
     createWebviewPanel() {},
@@ -60,8 +61,9 @@ const { DatabaseWorkbenchPanel } = require("../out/workbenchPanel");
 function createPanel() {
   return {
     active: true,
+    disposed: false,
     title: "",
-    dispose() {},
+    dispose() { this.disposed = true; },
     onDidChangeViewState() {},
     onDidDispose() {},
     reveal() {},
@@ -95,15 +97,21 @@ function createWorkbench(initialTable, overrides = {}) {
     globalState: overrides.globalState || { get() {}, update() {} },
     secrets: { delete() {}, get() {}, store() {} },
   };
-  const store = { getAll: () => [] };
+  const connection = { id: "pg", name: "pg", type: "postgres" };
+  const store = overrides.store || {
+    getAll: () => [],
+    getWithSecret: async () => ({ ...connection, password: "" }),
+  };
   return new DatabaseWorkbenchPanel(
-    createPanel(),
+    overrides.panel || createPanel(),
     context,
     store,
-    {},
-    { id: "pg", name: "pg", type: "postgres" },
+    overrides.databaseService || {},
+    connection,
     "db",
-    initialTable
+    initialTable,
+    overrides.panelKey,
+    overrides.options
   );
 }
 
@@ -253,6 +261,31 @@ const unchangedEnumDraft = {
 };
 assert.equal(existingEnumWorkbench.buildSchemaDraftStatements(unchangedEnumDraft).statements.length, 0, "已有 enum 字段用 enum(...) 展示时不应误判为类型修改");
 assert.equal(existingEnumWorkbench.buildSchemaDraftStatements({ ...unchangedEnumDraft, ddlRole: "xtj_smart_pen_owner" }).statements.length, 0, "没有 DDL 修改时即使设置 role 也不应生成 SET ROLE");
+
+const createPanelInstance = createPanel();
+const createTableWorkbench = createWorkbench(undefined, {
+  panel: createPanelInstance,
+  options: { schemaEditorMode: "createTable" },
+  databaseService: {
+    queryStatements: async () => {},
+    loadSchema: async () => [{
+      name: "devices",
+      columns: [{ name: "id", type: "bigint", nullable: false, comment: "" }],
+      indexes: [],
+      foreignKeys: [],
+      checks: [],
+      triggers: [],
+    }],
+    query: async () => ({ columns: [], rows: [], rowCount: 0, elapsedMs: 0 }),
+  },
+});
+createTableWorkbench.pendingSchemaEditorMode = "createTable";
+createTableWorkbench.applySchemaDraft(createDraft, true).then(() => {
+  assert.equal(createPanelInstance.disposed, true, "创建表成功后应自动关闭新建表标签页");
+}).catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
 
 const addEnumValueDraft = {
   ...unchangedEnumDraft,

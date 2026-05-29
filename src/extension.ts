@@ -768,7 +768,7 @@ async function openConnectionEditor(
   existing?: DbConnectionConfig,
   initialGroupId?: string
 ): Promise<void> {
-  let activeKey = existing ? `edit:${existing.id}` : initialGroupId ? `new:${initialGroupId}` : "new";
+  const activeKey = existing ? `edit:${existing.id}` : initialGroupId ? `new:${initialGroupId}` : "new";
   const opened = connectionEditorPanels.get(activeKey);
   if (opened) {
     opened.reveal(vscode.ViewColumn.One);
@@ -790,9 +790,7 @@ async function openConnectionEditor(
         const wasNew = !existing;
         existing = await saveConnectionFromEditor(panel, store, existing, message.payload as ConnectionEditorPayload);
         if (wasNew) {
-          connectionEditorPanels.delete(activeKey);
-          activeKey = `edit:${existing.id}`;
-          connectionEditorPanels.set(activeKey, panel);
+          panel.dispose();
         }
         return;
       }
@@ -969,6 +967,7 @@ async function importConnectionDraftToEditor(panel: vscode.WebviewPanel, store: 
         message: `已导入 ${savedCount} 个连接${parsed.hasGroups ? "并恢复分组" : ""}，左侧连接树已刷新。`,
       });
       vscode.window.setStatusBarMessage(`Database Workbench: 已导入 ${savedCount} 个连接。`, 2500);
+      panel.dispose();
       return;
     }
     if (action !== "选择一个填入") {
@@ -994,6 +993,7 @@ async function importConnectionDraftToEditor(panel: vscode.WebviewPanel, store: 
         message: `已批量导入 ${savedCount} 个连接，左侧连接树已刷新。`,
       });
       vscode.window.setStatusBarMessage(`Database Workbench: 已批量导入 ${savedCount} 个连接。`, 2500);
+      panel.dispose();
       return;
     }
     if (action !== "选择一个填入") {
@@ -1859,6 +1859,7 @@ async function submitCreateResource(
   await vscode.commands.executeCommand("databaseWorkbench.refresh");
   panel.webview.postMessage({ type: "createResourceStatus", ok: true, message: `${plan.targetLabel}「${plan.name}」已${actionLabel}，左侧连接树已刷新。` });
   vscode.window.setStatusBarMessage(`Database Workbench: ${plan.targetLabel} ${plan.name} 已${actionLabel}。`, 2500);
+  panel.dispose();
 }
 
 type ConnectionDraft = Omit<DbConnectionConfig, "id"> & { password: string };

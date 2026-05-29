@@ -1378,6 +1378,9 @@ export class DatabaseWorkbenchPanel {
     await vscode.commands.executeCommand("databaseWorkbench.refresh");
     this.panel.webview.postMessage({ type: "schemaDraftApplied", ddlRoleOptions });
     vscode.window.setStatusBarMessage(createMode ? "Database Workbench: 新表已创建。" : "Database Workbench: 表结构修改已提交。", 2000);
+    if (createMode) {
+      this.panel.dispose();
+    }
   }
 
   private async formatSchemaDraftError(error: unknown, sql: string): Promise<string> {
