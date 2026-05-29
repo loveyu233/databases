@@ -1,4 +1,5 @@
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
 
 const { parseKafkaCommand } = require("../out/database/clients/kafka");
 const packageJson = require("../package.json");
@@ -50,8 +51,13 @@ assert.deepEqual(parseKafkaCommand("CREATE TOPIC orders.created PARTITIONS 3 REP
 assert.equal(packageJson.dependencies.kafkajs, "^2.2.4");
 assert.ok(packageJson.description.includes("Kafka"));
 assert.ok(packageJson.keywords.includes("kafka"));
-assert.ok(packageJson.activationEvents.includes("onCommand:databaseWorkbench.sendKafkaMessage"));
-assert.ok(packageJson.contributes.commands.some((item) => item.command === "databaseWorkbench.sendKafkaMessage"));
-assert.ok(packageJson.contributes.menus["view/item/context"].some((item) => item.command === "databaseWorkbench.sendKafkaMessage" && item.when.includes("table\\.kafka")));
+assert.ok(!packageJson.activationEvents.includes("onCommand:databaseWorkbench.sendKafkaMessage"));
+assert.ok(!packageJson.contributes.commands.some((item) => item.command === "databaseWorkbench.sendKafkaMessage"));
+assert.ok(!packageJson.contributes.menus["view/item/context"].some((item) => item.command === "databaseWorkbench.sendKafkaMessage"));
+
+const webviewSource = fs.readFileSync("src/workbench/webviewHtml.ts", "utf8");
+assert.ok(webviewSource.includes('id="sendMessageBtn"'));
+assert.ok(webviewSource.includes('state.connectionType === "kafka"'));
+assert.ok(webviewSource.includes("PRODUCE "));
 
 console.log("ok - Kafka command parsing and package metadata");

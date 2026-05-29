@@ -335,8 +335,8 @@ Kafka 操作说明：
 
 - 预览和快速查询默认使用 `CONSUME <topic> LIMIT N`，适合快速查看消息内容。
 - `FROM LATEST` 可用于等待新消息；默认从头开始消费，并使用临时 consumer group，不会影响已有业务消费组 offset。
-- 右键 Topic 可发送测试消息或删除 Topic；连接右键“创建”可创建 Topic。
-- 发送消息会打开独立页面，可填写可选 Key 和消息内容；确认弹窗会预览实际执行的 `PRODUCE` 命令。
+- 连接右键“创建”可创建 Topic，右键 Topic 可删除 Topic。
+- 打开 Topic 标签页后，顶部“刷新数据”前的“发送消息”按钮可打开弹窗；可填写 Topic、可选 Key 和消息内容，弹窗会预览实际执行的 `PRODUCE` 命令。
 - 表格不开放双击编辑，复杂消息写入也可以在查询控制台手写 `PRODUCE` 命令。
 
 
@@ -367,8 +367,9 @@ MQTT 操作说明：
 
 - 预览和快速查询默认使用 `SUBSCRIBE <topic> LIMIT N TIMEOUT 10000`，适合临时查看消息。
 - 在 `subscriptions` 订阅空间右键“创建”可添加订阅 Topic；右键订阅 Topic 可从连接配置中移除。
-- 发布消息请使用 `PUBLISH <topic> PAYLOAD <内容>`；发布 Topic 不允许包含 `+` 或 `#` 通配符。
-- 表格不开放双击编辑，消息写入统一通过 `PUBLISH` 命令完成。
+- 打开订阅 Topic 标签页后，顶部“刷新数据”前的“发送消息”按钮可打开弹窗；可以指定发布 Topic、QoS 和消息内容，弹窗会预览实际执行的 `PUBLISH` 命令。
+- 发布 Topic 不允许包含 `+` 或 `#` 通配符；如果当前订阅 Topic 是通配符，需要在弹窗里手动填写实际发布 Topic。
+- 表格不开放双击编辑，复杂消息写入也可以在查询控制台手写 `PUBLISH` 命令。
 
 ## AI 辅助，Pro
 

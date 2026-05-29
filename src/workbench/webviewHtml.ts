@@ -1288,6 +1288,14 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
   .export-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
   .relation-dialog { width: min(640px, 96vw); }
   .quick-field-dialog { width: min(560px, 96vw); }
+  .send-message-dialog { width: min(680px, 96vw); }
+  .send-message-value-row { align-items: start; }
+  .send-message-value-row textarea {
+    min-height: 160px;
+    resize: vertical;
+    font-family: var(--mono);
+    line-height: 1.55;
+  }
   .relation-preview {
     border: 1px solid var(--line);
     border-radius: 10px;
@@ -1683,6 +1691,7 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
       <span class="summary" id="summary"><span class="pill">等待选择</span></span>
     </div>
     <div class="top-actions">
+      <button class="secondary" id="sendMessageBtn">发送消息</button>
       <button class="secondary" id="refreshBtn">刷新数据</button>
       <input class="field auto-refresh" id="autoRefreshInput" inputmode="numeric" pattern="\\d*" value="0" title="自动刷新间隔，单位秒；0 表示关闭自动刷新" />
       <button class="secondary" id="copyStructureBtn">复制表结构</button>
@@ -1802,6 +1811,23 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
   </div>
 </div>
 <div class="code-suggest" id="codeSuggest"></div>
+<div class="export-overlay" id="sendMessageOverlay" role="dialog" aria-modal="true" aria-labelledby="sendMessageDialogTitle">
+  <div class="export-dialog send-message-dialog">
+    <div class="export-title" id="sendMessageDialogTitle">发送消息</div>
+    <div class="export-meta" id="sendMessageMeta">向当前 Topic 发送一条消息。</div>
+    <div class="export-form">
+      <label class="export-row"><span>Topic</span><input class="field" id="sendMessageTopicInput" /></label>
+      <label class="export-row" id="sendMessageKeyRow"><span>Key</span><input class="field" id="sendMessageKeyInput" placeholder="可选，例如 user-1" /></label>
+      <label class="export-row" id="sendMessageQosRow"><span>QoS</span><select class="field" id="sendMessageQosInput"><option value="0">0 - 最多一次</option><option value="1">1 - 至少一次</option><option value="2">2 - 仅一次</option></select></label>
+      <label class="export-row send-message-value-row"><span>消息内容</span><textarea class="field" id="sendMessageValueInput" spellcheck="false" placeholder='例如：{"hello":"world"}'></textarea></label>
+      <div class="relation-preview" id="sendMessagePreview"></div>
+    </div>
+    <div class="export-actions">
+      <button class="secondary" id="cancelSendMessageBtn">取消</button>
+      <button id="confirmSendMessageBtn">发送消息</button>
+    </div>
+  </div>
+</div>
 <div class="export-overlay" id="exportOverlay" role="dialog" aria-modal="true" aria-labelledby="exportDialogTitle">
   <div class="export-dialog" id="exportDialog">
     <div class="export-title" id="exportDialogTitle">导出预览数据</div>
@@ -2106,6 +2132,15 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
   const relationTargetTable = $("#relationTargetTable");
   const relationTargetColumn = $("#relationTargetColumn");
   const relationPreview = $("#relationPreview");
+  const sendMessageOverlay = $("#sendMessageOverlay");
+  const sendMessageMeta = $("#sendMessageMeta");
+  const sendMessageTopicInput = $("#sendMessageTopicInput");
+  const sendMessageKeyRow = $("#sendMessageKeyRow");
+  const sendMessageKeyInput = $("#sendMessageKeyInput");
+  const sendMessageQosRow = $("#sendMessageQosRow");
+  const sendMessageQosInput = $("#sendMessageQosInput");
+  const sendMessageValueInput = $("#sendMessageValueInput");
+  const sendMessagePreview = $("#sendMessagePreview");
   const rowContextMenu = $("#rowContextMenu");
   const codeSuggest = $("#codeSuggest");
   const fieldPicker = $("#fieldPicker");
@@ -2464,7 +2499,17 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
   // 尽早通知扩展侧初始化，避免后续非关键交互绑定异常导致表页一直停留在静态占位态。
   vscode.postMessage({ type: "ready" });
 
+	    $("#sendMessageBtn").addEventListener("click", openSendMessageDialog);
 	    $("#refreshBtn").addEventListener("click", () => refreshData({ confirmQuickWhere: true }));
+	    $("#cancelSendMessageBtn").addEventListener("click", closeSendMessageDialog);
+	    $("#confirmSendMessageBtn").addEventListener("click", confirmSendMessage);
+	    sendMessageOverlay.addEventListener("click", (event) => {
+	      if (event.target === sendMessageOverlay) closeSendMessageDialog();
+	    });
+	    [sendMessageTopicInput, sendMessageKeyInput, sendMessageQosInput, sendMessageValueInput].forEach((item) => {
+	      if (item) item.addEventListener("input", updateSendMessagePreview);
+	      if (item && item.tagName === "SELECT") item.addEventListener("change", updateSendMessagePreview);
+	    });
 	    $("#cancelDiscardRefreshBtn").addEventListener("click", () => closeDiscardRefreshDialog());
 	    $("#confirmDiscardRefreshBtn").addEventListener("click", () => confirmDiscardRefresh());
 	    $("#refreshWithoutQuickBtn").addEventListener("click", () => confirmQuickRefresh(false));
@@ -4364,6 +4409,98 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
     return state.connectionType === "redis" && !state.selectedTable ? "__redis_keys__" : state.selectedTable;
   }
 
+	    function openSendMessageDialog() {
+	      if (state.connectionType !== "kafka" && state.connectionType !== "mqtt") {
+	        setStatus("当前连接类型不支持发送消息。", true);
+	        return;
+	      }
+	      if (!state.selectedTable) {
+	        setStatus("请先从左侧数据库树选择一个 Topic。", true);
+	        return;
+	      }
+	      const kafka = state.connectionType === "kafka";
+	      const defaultTopic = kafka ? state.selectedTable : getDefaultMqttPublishTopic(state.selectedTable);
+	      $("#sendMessageDialogTitle").textContent = kafka ? "发送 Kafka 消息" : "发送 MQTT 消息";
+	      sendMessageMeta.textContent = kafka
+	        ? "向当前 Kafka Topic 写入一条消息，可指定可选 Key。"
+	        : "向指定 MQTT Topic 发布一条消息，可指定 QoS。";
+	      sendMessageTopicInput.value = defaultTopic;
+	      sendMessageTopicInput.placeholder = kafka ? "例如：orders.created" : "例如：sensors/device-1/status";
+	      sendMessageKeyInput.value = "";
+	      sendMessageValueInput.value = "";
+	      sendMessageQosInput.value = "0";
+	      sendMessageKeyRow.style.display = kafka ? "grid" : "none";
+	      sendMessageQosRow.style.display = kafka ? "none" : "grid";
+	      updateSendMessagePreview();
+	      sendMessageOverlay.classList.add("open");
+	      setTimeout(() => (sendMessageTopicInput.value ? sendMessageValueInput : sendMessageTopicInput).focus(), 0);
+	    }
+
+	    function closeSendMessageDialog() {
+	      sendMessageOverlay.classList.remove("open");
+	    }
+
+	    function updateSendMessagePreview() {
+	      if (!sendMessagePreview) return;
+	      const command = buildSendMessageCommand({ validate: false });
+	      sendMessagePreview.innerHTML = '<div>预览命令：</div><strong>' + escapeHtml(command || "-") + '</strong>';
+	    }
+
+	    function confirmSendMessage() {
+	      const command = buildSendMessageCommand({ validate: true });
+	      if (!command) return;
+	      closeSendMessageDialog();
+	      state.lastQueryMode = "sql";
+	      state.sortColumn = "";
+	      state.sortDirection = "asc";
+	      preserveSqlInputOnNextResult = true;
+	      sqlInput.value = command;
+	      updateSqlInputHighlight(sqlInput);
+	      vscode.postMessage({ type: "runSql", sql: command, limit: Number(limitInput.value || state.defaultLimit), page: 1 });
+	      setStatus("正在发送消息...", false);
+	    }
+
+	    function buildSendMessageCommand(options = {}) {
+	      const validate = options.validate === true;
+	      const topic = (sendMessageTopicInput.value || "").trim();
+	      const value = sendMessageValueInput.value || "";
+	      if (validate && !topic) {
+	        setStatus("请填写要发送消息的 Topic。", true);
+	        sendMessageTopicInput.focus();
+	        return "";
+	      }
+	      if (state.connectionType === "kafka") {
+	        const key = (sendMessageKeyInput.value || "").trim();
+	        return "PRODUCE " + quoteCommandName(topic || "topic")
+	          + (key ? " KEY " + quoteCommandValue(key) : "")
+	          + " VALUE " + quoteCommandValue(value) + ";";
+	      }
+	      const qos = sendMessageQosInput.value || "0";
+	      if (validate && !/^[012]$/.test(qos)) {
+	        setStatus("MQTT QoS 只能选择 0、1 或 2。", true);
+	        sendMessageQosInput.focus();
+	        return "";
+	      }
+	      if (validate && /[+#]/.test(topic)) {
+	        setStatus("MQTT 发布 Topic 不能包含 + 或 # 通配符。", true);
+	        sendMessageTopicInput.focus();
+	        return "";
+	      }
+	      return "PUBLISH " + quoteCommandName(topic || "topic") + " QOS " + qos + " PAYLOAD " + quoteCommandValue(value) + ";";
+	    }
+
+	    function getDefaultMqttPublishTopic(topic) {
+	      return /[+#]/.test(String(topic || "")) ? "" : String(topic || "");
+	    }
+
+	    function quoteCommandName(value) {
+	      return JSON.stringify(String(value || ""));
+	    }
+
+	    function quoteCommandValue(value) {
+	      return JSON.stringify(String(value ?? ""));
+	    }
+
 	    function copyCurrentTableStructure() {
     if (!state.selectedTable) {
       setStatus("请先从左侧数据库树选择一张表。", true);
@@ -4381,6 +4518,8 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
 	      const tdengine = state.connectionType === "tdengine";
 	      const kafka = state.connectionType === "kafka";
 	      const mqtt = state.connectionType === "mqtt";
+	      $("#sendMessageBtn").style.display = kafka || mqtt ? "" : "none";
+	      $("#sendMessageBtn").textContent = "发送消息";
 	      $("#copyStructureBtn").textContent = es ? "复制索引结构" : mongo ? "复制集合结构" : tdengine ? "复制时序表结构" : kafka ? "复制 Topic 结构" : mqtt ? "复制订阅命令" : redis ? "复制 Key 信息" : "复制表结构";
 	      $("#copyStructureBtn").style.display = redis ? "none" : "";
 	      $("#editStructureBtn").style.display = redis || es || mongo || tdengine || kafka || mqtt ? "none" : "";
