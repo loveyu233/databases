@@ -2,7 +2,7 @@
   "name": "loveyu-database-workbench",
   "displayName": "Database Workbench",
   "description": "在 VS Code 中管理 MySQL、PostgreSQL、Redis、Elasticsearch、MongoDB、TDengine、Kafka、MQTT、ETCD，并通过 AI 生成查询。",
-  "version": "1.0.21",
+  "version": "1.0.22",
   "publisher": "loveyu",
   "license": "MIT",
   "repository": {
