@@ -137,7 +137,7 @@ export class EtcdWorkbenchClient implements DbClient {
 export function parseEtcdCommand(commandText: string, maxRows = ETCD_DEFAULT_LIMIT): EtcdCommand {
   const text = stripTrailingSemicolon(commandText).trim();
   if (!text) {
-    throw new Error("请输入 etcd 命令，例如 SHOW KEYS、GET /config/app 或 PUT /config/app VALUE {...}。");
+    throw new Error("请输入 ETCD 命令，例如 SHOW KEYS、GET /config/app 或 PUT /config/app VALUE {...}。");
   }
 
   const showKeys = text.match(/^SHOW\s+KEYS(?:\s+([\s\S]+))?$/i);
@@ -177,7 +177,7 @@ export function parseEtcdCommand(commandText: string, maxRows = ETCD_DEFAULT_LIM
     return { kind: "delete", key: del.name };
   }
 
-  throw new Error("暂不支持该 etcd 命令。支持 SHOW KEYS、GET、PREFIX、PUT、DELETE、DELETE_PREFIX。");
+  throw new Error("暂不支持该 ETCD 命令。支持 SHOW KEYS、GET、PREFIX、PUT、DELETE、DELETE_PREFIX。");
 }
 
 function buildEtcdRowsResult(response: IRangeResponse, command: string, preview: boolean): QueryResult {
@@ -211,7 +211,7 @@ function normalizeEtcdKeyValue(kv: IKeyValue, preview: boolean): Record<string, 
 
 function buildEtcdColumns() {
   return [
-    { name: "key", type: "etcd-key", nullable: false, key: "PRI", comment: "etcd Key" },
+    { name: "key", type: "etcd-key", nullable: false, key: "PRI", comment: "ETCD Key" },
     { name: "value", type: "string", nullable: true, comment: "Key 当前值" },
     { name: "version", type: "int", nullable: false, comment: "Key 版本" },
     { name: "createRevision", type: "revision", nullable: false, comment: "创建 Revision" },

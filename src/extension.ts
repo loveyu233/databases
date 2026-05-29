@@ -692,8 +692,11 @@ function renderConnectionsExportHtml(model: ConnectionsExportModel): string {
       return '<label class="row ' + (child ? 'child' : '') + '">' +
         '<input type="checkbox" class="connection-check" value="' + escapeAttr(connection.id) + '" />' +
         '<span><span class="name">' + escapeHtml(connection.name) + '</span> ' +
-        '<span class="meta">' + escapeHtml(connection.type + '://' + connection.host + ':' + connection.port) + '</span></span>' +
+        '<span class="meta">' + escapeHtml(connectionTypeLabel(connection.type) + '://' + connection.host + ':' + connection.port) + '</span></span>' +
       '</label>';
+    }
+    function connectionTypeLabel(type) {
+      return type === "etcd" ? "ETCD" : type;
     }
     function render() {
       if (!data.groups.length && !data.connections.length) {
@@ -1689,7 +1692,7 @@ async function openQueryConsole(
     throw new Error("没有拿到数据库节点信息，请刷新左侧数据库树后重试。");
   }
   if (databaseNode.connection.type !== "mysql" && databaseNode.connection.type !== "postgres" && databaseNode.connection.type !== "mongodb" && databaseNode.connection.type !== "tdengine" && databaseNode.connection.type !== "kafka" && databaseNode.connection.type !== "mqtt" && databaseNode.connection.type !== "etcd") {
-    vscode.window.showWarningMessage("查询控制台暂时只支持 MySQL、PostgreSQL、MongoDB、TDengine、Kafka、MQTT 和 etcd。");
+    vscode.window.showWarningMessage("查询控制台暂时只支持 MySQL、PostgreSQL、MongoDB、TDengine、Kafka、MQTT 和 ETCD。");
     return;
   }
 
@@ -2043,7 +2046,7 @@ function renderConnectionEditorHtml(existing: DbConnectionConfig | undefined, gr
                   <option value="tdengine">TDengine</option>
                   <option value="kafka">Kafka</option>
 	                  <option value="mqtt">MQTT</option>
-                  <option value="etcd">etcd</option>
+                  <option value="etcd">ETCD</option>
                 </select>
               </div>
               <div class="field">
@@ -2128,7 +2131,7 @@ function renderConnectionEditorHtml(existing: DbConnectionConfig | undefined, gr
       tdengine: { port: 6041, username: "root", name: "TDengine 本地连接", databaseLabel: "默认数据库", databaseHint: "可留空；默认通过 taosAdapter WebSocket 端口连接。", databasePlaceholder: "例如：power" },
       kafka: { port: 9092, username: "", name: "Kafka 本地连接", databaseLabel: "Topic 筛选", databaseHint: "可留空；支持通配符和逗号分隔，例如 order-*、user-*,event-*。填写用户名时会使用 SASL/PLAIN。", databasePlaceholder: "例如：order-* / user-*,event-*" },
 	      mqtt: { port: 1883, username: "", name: "MQTT 本地连接", databaseLabel: "初始订阅 Topic", databaseHint: "可留空；保存连接后可在左侧 subscriptions 订阅空间右键添加新的订阅 Topic。这里也可预填多个 Topic，用逗号分隔，支持 + 和 #。", databasePlaceholder: "可留空，例如：sensors/+/temperature, test/#" },
-      etcd: { port: 2379, username: "", name: "etcd 本地连接", databaseLabel: "Key 前缀筛选", databaseHint: "可留空；填写后左侧只展示匹配此前缀的 Key，例如 /config/、/services/。", databasePlaceholder: "可留空，例如：/config/" },
+      etcd: { port: 2379, username: "", name: "ETCD 本地连接", databaseLabel: "Key 前缀筛选", databaseHint: "可留空；填写后左侧只展示匹配此前缀的 Key，例如 /config/、/services/。", databasePlaceholder: "可留空，例如：/config/" },
     };
     const $ = (selector) => document.querySelector(selector);
     const typeInput = $("#typeInput");
@@ -2188,7 +2191,7 @@ function renderConnectionEditorHtml(existing: DbConnectionConfig | undefined, gr
       $("#usernameHint").textContent = type === "redis" || type === "elasticsearch" || type === "mongodb" || type === "etcd" ? "用户名可留空，本地 Docker 默认无认证时直接留空。" : type === "kafka" ? "用户名可留空；填写后会按 SASL/PLAIN 使用用户名和密码认证。" : type === "mqtt" ? "用户名可留空；填写后会作为 MQTT 用户名和密码认证。" : type === "tdengine" ? "TDengine 默认用户名通常是 root，默认密码通常是 taosdata。" : "MySQL / PostgreSQL 通常需要用户名。";
       $("#insecureTlsRow").style.display = (type === "elasticsearch" || type === "kafka" || type === "mqtt") && sslInput.checked ? "flex" : "none";
       $("#tlsRisk").classList.toggle("show", (type === "elasticsearch" || type === "kafka" || type === "mqtt") && sslInput.checked && allowInsecureTlsInput.checked);
-      $("#summaryBadge").textContent = type + "://" + (hostInput.value || "127.0.0.1") + ":" + (portInput.value || meta.port);
+      $("#summaryBadge").textContent = (type === "etcd" ? "ETCD" : type) + "://" + (hostInput.value || "127.0.0.1") + ":" + (portInput.value || meta.port);
     }
     function resetForm() {
       typeInput.value = initial.type;
@@ -2294,7 +2297,7 @@ async function pickConnection(store: ConnectionStore, placeHolder: string): Prom
   const picked = await vscode.window.showQuickPick(
     connections.map((connection) => ({
       label: connection.name,
-      description: `${connection.type}://${connection.host}:${connection.port}`,
+      description: `${getConnectionTypeDisplayName(connection.type)}://${connection.host}:${connection.port}`,
       detail: connection.username,
       connection,
     })),
@@ -2681,6 +2684,7 @@ function renderCreateResourceHtml(connection: DbConnectionConfig, targetLabel: s
   const isKafka = connection.type === "kafka";
   const isMqtt = connection.type === "mqtt";
   const isEtcd = connection.type === "etcd";
+  const connectionTypeLabel = getConnectionTypeDisplayName(connection.type);
   return `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -2717,7 +2721,7 @@ function renderCreateResourceHtml(connection: DbConnectionConfig, targetLabel: s
     <div class="hero">
       <div>
         <h1>${escapeHtml(actionLabel)}${escapeHtml(targetLabel)}</h1>
-        <div class="meta">${escapeHtml(connection.name)} · ${escapeHtml(connection.type)}://${escapeHtml(connection.host)}:${connection.port}</div>
+        <div class="meta">${escapeHtml(connection.name)} · ${escapeHtml(connectionTypeLabel)}://${escapeHtml(connection.host)}:${connection.port}</div>
       </div>
     </div>
     <section class="card">
@@ -2791,6 +2795,10 @@ function renderCreateResourceHtml(connection: DbConnectionConfig, targetLabel: s
   </script>
 </body>
 </html>`;
+}
+
+function getConnectionTypeDisplayName(type: DatabaseType): string {
+  return type === "etcd" ? "ETCD" : type;
 }
 
 function renderCreateResourceRows(type: DatabaseType): string {

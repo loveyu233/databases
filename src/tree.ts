@@ -74,7 +74,7 @@ export class ConnectionsTreeProvider implements vscode.TreeDataProvider<TreeNode
       const count = this.connectionCounts.get(node.connection.id);
       const countText = count ? ` [${count.selected}/${count.total}]` : "";
       const pinned = this.isPinned(node);
-      item.description = `${pinned ? "置顶 · " : ""}${node.connection.type}://${node.connection.host}:${node.connection.port}${countText}`;
+      item.description = `${pinned ? "置顶 · " : ""}${getConnectionTypeLabel(node.connection.type)}://${node.connection.host}:${node.connection.port}${countText}`;
       item.tooltip = `${pinned ? "已置顶。\n" : ""}${node.connection.username}@${node.connection.host}:${node.connection.port}`;
       item.contextValue = `databaseWorkbench.connection.${node.connection.type}.${pinned ? "pinned" : "unpinned"}`;
       item.iconPath = this.getConnectionIcon(node.connection.type);
@@ -665,6 +665,10 @@ function getConnectionFallbackIcon(type: DatabaseType): string {
   if (type === "kafka" || type === "mqtt") return "radio-tower";
   if (type === "postgres") return "elephant";
   return "database";
+}
+
+function getConnectionTypeLabel(type: DatabaseType): string {
+  return type === "etcd" ? "ETCD" : type;
 }
 
 function filterBySavedNames<T extends { name: string }>(items: T[], saved: string[] | undefined): T[] {

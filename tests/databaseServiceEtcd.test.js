@@ -56,11 +56,11 @@ assert.deepEqual(parseEtcdCommand("DELETE_PREFIX /config/", 30), {
   prefix: "/config/",
 });
 
-assert.throws(() => parseEtcdCommand(""), /请输入 etcd 命令/);
+assert.throws(() => parseEtcdCommand(""), /请输入 ETCD 命令/);
 assert.throws(() => parseEtcdCommand("PUT /config/app"), /PUT 命令需要 VALUE/);
 
 assert.equal(packageJson.dependencies.etcd3, "^1.1.2");
-assert.ok(packageJson.description.includes("etcd"));
+assert.ok(packageJson.description.includes("ETCD"));
 assert.ok(packageJson.keywords.includes("etcd"));
 
 const menuItems = packageJson.contributes.menus["view/item/context"];
@@ -76,9 +76,10 @@ for (const icon of ["mysql.svg", "postgres.svg", "redis.svg", "elasticsearch.svg
 assert.ok(treeSource.includes('"assets", "icons"'));
 assert.ok(treeSource.includes('scope: "key"'));
 assert.ok(treeSource.includes('node.connection.type === "etcd" ? "查看 Key 信息"'));
+assert.ok(treeSource.includes('type === "etcd" ? "ETCD" : type'));
 
 const extensionSource = fs.readFileSync(path.join(__dirname, "../src/extension.ts"), "utf8");
-assert.ok(extensionSource.includes('<option value="etcd">etcd</option>'));
+assert.ok(extensionSource.includes('<option value="etcd">ETCD</option>'));
 assert.ok(extensionSource.includes('etcd: { port: 2379'));
 assert.ok(extensionSource.includes("PUT ${quoteEtcdToken(name)} VALUE ${quoteEtcdValue(value)};"));
 assert.ok(extensionSource.includes("DELETE ${quoteEtcdToken(node.table)};"));
@@ -87,6 +88,6 @@ const webviewSource = fs.readFileSync(path.join(__dirname, "../src/workbench/web
 assert.ok(webviewSource.includes("const etcdKeywords"));
 assert.ok(webviewSource.includes("buildEtcdCompletionItems"));
 assert.ok(webviewSource.includes('state.connectionType === "etcd"'));
-assert.ok(webviewSource.includes("执行 etcd 命令"));
+assert.ok(webviewSource.includes("执行 ETCD 命令"));
 
 console.log("ok - etcd command parsing, menus, and icon wiring");

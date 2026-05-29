@@ -435,7 +435,7 @@ function buildMessages(prompt: string, schema: string, database: string, dialect
       {
         role: "system",
         content: [
-          "你是资深 etcd 工程师，擅长把自然语言需求转换为 Database Workbench 可执行的 etcd 命令。",
+          "你是资深 ETCD 工程师，擅长把自然语言需求转换为 Database Workbench 可执行的 ETCD 命令。",
           "只返回一条最终可执行命令，不要解释，不要 Markdown 代码块。",
           "默认生成只读命令；除非用户明确要求，不要生成 PUT、SET、DELETE、DEL、DELETE_PREFIX 等变更命令。",
           "浏览 Key 时使用 SHOW KEYS PREFIX prefix LIMIT n 或 PREFIX prefix LIMIT n，查看单个 Key 使用 GET key。",
@@ -445,7 +445,7 @@ function buildMessages(prompt: string, schema: string, database: string, dialect
       },
       {
         role: "user",
-        content: `etcd Key 空间：${database}\n\nKey 信息：\n${schema}\n\n需求描述：\n${prompt}`,
+        content: `ETCD Key 空间：${database}\n\nKey 信息：\n${schema}\n\n需求描述：\n${prompt}`,
       },
     ];
   }
