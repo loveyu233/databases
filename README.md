@@ -650,6 +650,20 @@ MongoDB 数据库只有在创建集合或写入文档后才会真正存在。插
 
 插件使用 TDengine 官方 WebSocket 连接器访问 taosAdapter，默认端口是 `6041`。如果你的 taosAdapter 端口或反向代理地址不同，请在连接配置里改成实际端口；开启 SSL 后会使用 `wss://`。
 
+### 空 VS Code 中关闭插件标签页，为什么整个窗口也关闭？
+
+插件的 Topic、查询控制台、创建连接、创建资源、新建表等页面都是 VS Code Webview 编辑器标签页。如果当前 VS Code 是空窗口，并且系统或用户设置开启了 `window.closeWhenEmpty`，关闭最后一个插件标签页时 VS Code 会认为窗口已经为空，从而自动关闭整个窗口。
+
+如果不希望出现这个行为，可以在 VS Code `settings.json` 中设置：
+
+```json
+{
+  "window.closeWhenEmpty": false
+}
+```
+
+这个设置属于 VS Code 本身，不是插件配置；修改后空窗口关闭最后一个插件标签页也会保留 VS Code 窗口。
+
 ### 操作日志会不会占用很多空间？
 
 如果频繁修改大表，日志会增长。可以调整 `databaseWorkbench.log.maxEntriesPerTable`，也可以把日志目录改到更安全、更大的磁盘位置，并定期清理。
