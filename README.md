@@ -44,6 +44,7 @@ Database Workbench 是一个在 VS Code 内使用的数据库工作台。它把�
 ## 核心特性
 
 - **统一连接树**：按分组、连接、数据库 / Schema / DB / 索引 / 集合展示资源。
+- **彩色语义图标**：连接、分组、筛选、数据库空间、schema、表 / Key / Topic / 集合都使用独立彩色图标，资源类型更容易区分。
 - **一致的工作台体验**：点击左侧资源后，右侧标签页展示预览、快速条件、SQL / 命令编辑器、AI 时间线和结果表格。
 - **多数据源支持**：MySQL、PostgreSQL、Redis、Elasticsearch、MongoDB、TDengine、Kafka、MQTT、etcd 使用同一套操作习惯。
 - **可视化数据编辑**：双击编辑、JSON 格式化与高亮、枚举/布尔快捷按钮、快速新增、右键删除和批量删除。

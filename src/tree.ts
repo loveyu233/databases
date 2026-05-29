@@ -17,6 +17,14 @@ const CONNECTION_ICON_FILES: Record<DatabaseType, string> = {
   mqtt: "mqtt.svg",
   etcd: "etcd.svg",
 };
+const GROUP_ICON_FILES: Record<ConnectionGroupColor, string> = {
+  red: "group-red.svg",
+  orange: "group-orange.svg",
+  yellow: "group-yellow.svg",
+  green: "group-green.svg",
+  blue: "group-blue.svg",
+  purple: "group-purple.svg",
+};
 
 export type TreeNode =
   | { kind: "group"; group: ConnectionGroup }
@@ -56,7 +64,7 @@ export class ConnectionsTreeProvider implements vscode.TreeDataProvider<TreeNode
       item.description = `${pinned ? "置顶 · " : ""}${connections.length} 个连接`;
       item.tooltip = `分组：${node.group.name}\n${pinned ? "已置顶。\n" : ""}可把连接拖拽到此分组中。`;
       item.contextValue = `databaseWorkbench.group.node.${pinned ? "pinned" : "unpinned"}`;
-      item.iconPath = new vscode.ThemeIcon("folder", new vscode.ThemeColor(`databaseWorkbench.group.${node.group.color}`));
+      item.iconPath = this.getGroupIcon(node.group.color);
       item.resourceUri = getGroupDecorationUri(node.group);
       return item;
     }
@@ -78,7 +86,7 @@ export class ConnectionsTreeProvider implements vscode.TreeDataProvider<TreeNode
       const item = new vscode.TreeItem(`[${node.selected}/${node.total}] 选择显示${target}`, vscode.TreeItemCollapsibleState.None);
       item.tooltip = `选择哪些${target}显示在左侧连接树中`;
       item.contextValue = "databaseWorkbench.databaseFilter";
-      item.iconPath = new vscode.ThemeIcon("filter");
+      item.iconPath = this.getTreeIcon("filter.svg", "filter");
       item.command = {
         command: "databaseWorkbench.filterDatabases",
         title: `筛选显示${target}`,
@@ -96,7 +104,7 @@ export class ConnectionsTreeProvider implements vscode.TreeDataProvider<TreeNode
       item.description = `${pinned ? "置顶 · " : ""}${getDatabaseDescription(node.connection.type)}`;
       item.tooltip = pinned ? `已置顶：${node.database}` : node.database;
       item.contextValue = `databaseWorkbench.database.${node.connection.type}.${pinned ? "pinned" : "unpinned"}`;
-      item.iconPath = new vscode.ThemeIcon(node.connection.type === "redis" ? "server-process" : node.connection.type === "etcd" ? "key" : "database");
+      item.iconPath = this.getDatabaseIcon(node.connection.type);
       if (node.connection.type === "redis") {
         item.command = {
           command: "databaseWorkbench.openDatabase",
@@ -112,7 +120,7 @@ export class ConnectionsTreeProvider implements vscode.TreeDataProvider<TreeNode
       item.description = typeof node.tableCount === "number" ? `${node.tableCount} 张表` : "schema";
       item.tooltip = `Schema：${node.schema}`;
       item.contextValue = `databaseWorkbench.schema.${node.connection.type}`;
-      item.iconPath = new vscode.ThemeIcon("symbol-namespace");
+      item.iconPath = this.getTreeIcon("schema.svg", "symbol-namespace");
       return item;
     }
 
@@ -124,7 +132,7 @@ export class ConnectionsTreeProvider implements vscode.TreeDataProvider<TreeNode
       ? `${pinned ? "已置顶。\n" : ""}${node.table}\n${node.comment.trim()}`
       : `${pinned ? "已置顶： " : ""}${node.table}`;
     item.contextValue = `databaseWorkbench.table.${node.connection.type}.${pinned ? "pinned" : "unpinned"}`;
-    item.iconPath = new vscode.ThemeIcon(node.connection.type === "redis" || node.connection.type === "etcd" ? "symbol-key" : node.connection.type === "elasticsearch" ? "symbol-array" : node.connection.type === "mongodb" ? "symbol-object" : node.connection.type === "tdengine" ? "pulse" : node.connection.type === "kafka" || node.connection.type === "mqtt" ? "radio-tower" : "table");
+    item.iconPath = this.getTableIcon(node.connection.type);
     item.command = {
       command: "databaseWorkbench.openTable",
       title: node.connection.type === "mongodb" ? "查看集合信息" : node.connection.type === "tdengine" ? "查看时序表信息" : node.connection.type === "kafka" ? "查看 Topic 消息" : node.connection.type === "mqtt" ? "订阅 Topic 消息" : node.connection.type === "etcd" ? "查看 Key 信息" : "查看表信息",
@@ -363,6 +371,37 @@ export class ConnectionsTreeProvider implements vscode.TreeDataProvider<TreeNode
       return new vscode.ThemeIcon(getConnectionFallbackIcon(type));
     }
     return vscode.Uri.joinPath(this.extensionUri, "assets", "icons", CONNECTION_ICON_FILES[type]);
+  }
+
+  private getGroupIcon(color: ConnectionGroupColor): vscode.ThemeIcon | vscode.Uri {
+    return this.getTreeIcon(GROUP_ICON_FILES[color], "folder", `databaseWorkbench.group.${color}`);
+  }
+
+  private getDatabaseIcon(type: DatabaseType): vscode.ThemeIcon | vscode.Uri {
+    if (type === "redis") return this.getTreeIcon("redis-db.svg", "server-process");
+    if (type === "elasticsearch") return this.getTreeIcon("index-space.svg", "symbol-array");
+    if (type === "tdengine") return this.getTreeIcon("timeseries-table.svg", "pulse");
+    if (type === "kafka") return this.getTreeIcon("topic-space.svg", "radio-tower");
+    if (type === "mqtt") return this.getTreeIcon("subscription-space.svg", "radio-tower");
+    if (type === "etcd") return this.getTreeIcon("key-space.svg", "key");
+    return this.getTreeIcon("database.svg", "database");
+  }
+
+  private getTableIcon(type: DatabaseType): vscode.ThemeIcon | vscode.Uri {
+    if (type === "redis" || type === "etcd") return this.getTreeIcon("key.svg", "symbol-key");
+    if (type === "elasticsearch") return this.getTreeIcon("index.svg", "symbol-array");
+    if (type === "mongodb") return this.getTreeIcon("collection.svg", "symbol-object");
+    if (type === "tdengine") return this.getTreeIcon("timeseries-table.svg", "pulse");
+    if (type === "kafka") return this.getTreeIcon("topic.svg", "radio-tower");
+    if (type === "mqtt") return this.getTreeIcon("subscription.svg", "radio-tower");
+    return this.getTreeIcon("table.svg", "table");
+  }
+
+  private getTreeIcon(file: string, fallback: string, fallbackColor?: string): vscode.ThemeIcon | vscode.Uri {
+    if (!this.extensionUri) {
+      return new vscode.ThemeIcon(fallback, fallbackColor ? new vscode.ThemeColor(fallbackColor) : undefined);
+    }
+    return vscode.Uri.joinPath(this.extensionUri, "assets", "icons", "tree", file);
   }
 
   private async resolveSelectedNames(connectionId: string, available: string[]): Promise<string[]> {
