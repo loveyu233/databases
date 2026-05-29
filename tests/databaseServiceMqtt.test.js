@@ -68,6 +68,7 @@ assert.ok(webviewSource.includes("Received payload"));
 assert.ok(webviewSource.includes("function mergeMqttMessageHistory"));
 assert.ok(webviewSource.includes("function sortMqttMessageRowsForDisplay"));
 assert.ok(webviewSource.includes("MQTT_MESSAGE_HISTORY_LIMIT"));
+assert.ok(webviewSource.includes('message.type === "mqttLiveMessage"'));
 assert.ok(webviewSource.includes("__dbwMessageKind"));
 assert.ok(webviewSource.includes("subtitleLine"));
 assert.ok(!webviewSource.includes("message-foot"));
@@ -75,6 +76,13 @@ assert.ok(!webviewSource.includes("message-foot"));
 const mqttClientSource = fs.readFileSync("src/database/clients/mqtt.ts", "utf8");
 assert.ok(mqttClientSource.includes("columns: MQTT_MESSAGE_COLUMNS"));
 assert.ok(mqttClientSource.includes("normalizePublishedMqttMessage"));
+assert.ok(mqttClientSource.includes("createMqttLiveSubscription"));
+assert.ok(mqttClientSource.includes("reconnectPeriod: live ? 2000 : 0"));
 assert.ok(!mqttClientSource.includes("payloadSize: Buffer.byteLength(command.payload)"));
+
+const workbenchPanelSource = fs.readFileSync("src/workbenchPanel.ts", "utf8");
+assert.ok(workbenchPanelSource.includes("startMqttLiveSubscription"));
+assert.ok(workbenchPanelSource.includes('type: "mqttLiveMessage"'));
+assert.ok(workbenchPanelSource.includes("SUBSCRIBE ${JSON.stringify(table)} LIVE"));
 
 console.log("ok - MQTT command parsing and package metadata");

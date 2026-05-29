@@ -7,14 +7,19 @@ import { sliceRows } from "../core/utils";
 const MQTT_SUBSCRIPTION_SPACE = "subscriptions";
 const DEFAULT_SUBSCRIBE_LIMIT = 50;
 const DEFAULT_SUBSCRIBE_TIMEOUT_MS = 10000;
-const MQTT_MESSAGE_COLUMNS = ["topic", "qos", "retain", "dup", "timestamp", "payload", "json", "size", "messageId"];
+export const MQTT_MESSAGE_COLUMNS = ["topic", "qos", "retain", "dup", "timestamp", "payload", "json", "size", "messageId"];
 
-type MqttCommand =
+export type MqttCommand =
   | { kind: "showSubscriptions" }
   | { kind: "ping" }
   | { kind: "subscribe"; topic: string; qos: 0 | 1 | 2; limit: number; timeoutMs: number }
   | { kind: "unsubscribe"; topic: string }
   | { kind: "publish"; topic: string; qos: 0 | 1 | 2; retain: boolean; payload: string };
+
+export type MqttLiveSubscription = {
+  topic: string;
+  dispose(): Promise<void>;
+};
 
 export class MqttWorkbenchClient implements DbClient {
   private readonly options: IClientOptions;
@@ -22,18 +27,7 @@ export class MqttWorkbenchClient implements DbClient {
 
   private constructor(config: DbConnectionWithSecret, database?: string) {
     this.topicFilters = parseMqttTopicFilters(database && database !== MQTT_SUBSCRIPTION_SPACE ? database : config.database);
-    this.options = {
-      protocol: config.ssl ? "mqtts" : "mqtt",
-      host: config.host,
-      port: config.port,
-      username: config.username || undefined,
-      password: config.password || undefined,
-      clientId: sanitizeMqttClientId(`database-workbench-${config.name || "client"}-${randomUUID().slice(0, 8)}`),
-      clean: true,
-      reconnectPeriod: 0,
-      connectTimeout: 10000,
-      rejectUnauthorized: config.ssl ? !config.allowInsecureTls : undefined,
-    };
+    this.options = createMqttClientOptions(config, "client");
   }
 
   static async connect(config: DbConnectionWithSecret, database?: string): Promise<MqttWorkbenchClient> {
@@ -174,6 +168,98 @@ export class MqttWorkbenchClient implements DbClient {
       await client.endAsync(false).catch(() => undefined);
     }
   }
+}
+
+export async function createMqttLiveSubscription(
+  config: DbConnectionWithSecret,
+  topic: string,
+  onMessage: (row: Record<string, unknown>) => void,
+  onError: (error: unknown) => void,
+  onStatus?: (message: string) => void,
+  qos: 0 | 1 | 2 = 0
+): Promise<MqttLiveSubscription> {
+  assertMqttTopicFilter(topic);
+  const client = await connectAsync(createMqttClientOptions(config, "live", true));
+  let disposed = false;
+  let subscribed = false;
+  const handleMessage = (receivedTopic: string, payload: Buffer, packet: IPublishPacket) => {
+    if (!disposed) {
+      onMessage(normalizeMqttMessage(receivedTopic, payload, packet));
+    }
+  };
+  const handleError = (error: unknown) => {
+    if (!disposed) {
+      onError(error);
+    }
+  };
+  const handleClose = () => {
+    if (!disposed) {
+      onStatus?.("MQTT 持续订阅连接已断开，正在等待重连。");
+    }
+  };
+  const handleReconnect = () => {
+    if (!disposed) {
+      onStatus?.("MQTT 持续订阅正在重连。");
+    }
+  };
+  const handleConnect = () => {
+    if (!disposed && subscribed) {
+      onStatus?.(`MQTT 已连接，正在持续订阅 ${topic}。`);
+    }
+  };
+
+  client.on("message", handleMessage);
+  client.on("error", handleError);
+  client.on("close", handleClose);
+  client.on("reconnect", handleReconnect);
+  client.on("connect", handleConnect);
+  try {
+    await client.subscribeAsync(topic, { qos });
+    subscribed = true;
+    onStatus?.(`MQTT 已持续订阅 ${topic}，新消息会实时展示。`);
+  } catch (error) {
+    disposed = true;
+    client.off("message", handleMessage);
+    client.off("error", handleError);
+    client.off("close", handleClose);
+    client.off("reconnect", handleReconnect);
+    client.off("connect", handleConnect);
+    await client.endAsync(true).catch(() => undefined);
+    throw error;
+  }
+
+  return {
+    topic,
+    async dispose() {
+      if (disposed) return;
+      disposed = true;
+      client.off("message", handleMessage);
+      client.off("error", handleError);
+      client.off("close", handleClose);
+      client.off("reconnect", handleReconnect);
+      client.off("connect", handleConnect);
+      if (subscribed) {
+        await client.unsubscribeAsync(topic).catch(() => undefined);
+      }
+      await client.endAsync(false).catch(() => undefined);
+    },
+  };
+}
+
+function createMqttClientOptions(config: DbConnectionWithSecret, label: string, live = false): IClientOptions {
+  return {
+    protocol: config.ssl ? "mqtts" : "mqtt",
+    host: config.host,
+    port: config.port,
+    username: config.username || undefined,
+    password: config.password || undefined,
+    clientId: sanitizeMqttClientId(`database-workbench-${label}-${config.name || "client"}-${randomUUID().slice(0, 8)}`),
+    clean: true,
+    reconnectPeriod: live ? 2000 : 0,
+    connectTimeout: 10000,
+    resubscribe: live,
+    rejectUnauthorized: config.ssl ? !config.allowInsecureTls : undefined,
+  };
 }
 
 export function parseMqttCommand(commandText: string, maxRows = DEFAULT_SUBSCRIBE_LIMIT): MqttCommand {

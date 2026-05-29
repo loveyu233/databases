@@ -345,6 +345,7 @@ export type PanelToWebviewMessage =
   | { type: "importCompleted"; insertedRows: number; message: string }
   | { type: "loading"; area: "schema" | "query" | "ai"; message: string }
   | { type: "result"; sql: string; result: QueryResult }
+  | { type: "mqttLiveMessage"; sql: string; result: QueryResult; status?: string }
   | { type: "editsApplied" }
   | { type: "rowDeleteCanceled" }
   | { type: "redisKeyDetail"; key: string; keyType: string; page: number; pageSize: number; totalRows: number; totalPages: number; columns: string[]; rows: Record<string, unknown>[]; search?: string; fuzzySearch?: boolean; sortDirection?: "asc" | "desc"; memoryUsage?: number | null }

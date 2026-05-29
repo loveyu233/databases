@@ -2507,9 +2507,9 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
       setStatus(message.message, false);
       return;
     }
-    if (message.type === "result") {
-      autoRefreshWaiting = false;
-      state.lastSql = message.sql || state.lastSql;
+	    if (message.type === "result") {
+	      autoRefreshWaiting = false;
+	      state.lastSql = message.sql || state.lastSql;
       if (preserveSqlInputOnNextResult) {
         preserveSqlInputOnNextResult = false;
 	        } else if (state.lastQueryMode === "sql") {
@@ -2518,6 +2518,13 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
 	        }
 	      renderResult(prepareResultForRender(message.result));
 	      return;
+    }
+    if (message.type === "mqttLiveMessage") {
+      autoRefreshWaiting = false;
+      state.lastSql = message.sql || state.lastSql;
+      renderResult(prepareResultForRender(message.result));
+      if (message.status) setStatus(message.status, false);
+      return;
     }
     if (message.type === "editsApplied") {
       clearPendingEdits();
@@ -3931,10 +3938,13 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
 	      const quotedTopic = JSON.stringify(topic);
 	      const topicItems = getTableCompletions({ quote: false, kind: "MQTT Topic" });
 	      const keywordItems = mqttKeywords.map((keyword) => completionItem(keyword, keyword + " ", "MQTT 关键字"));
+	      const subscribeTemplate = state.queryConsole
+	        ? "SUBSCRIBE " + quotedTopic + " LIMIT " + (state.defaultLimit || 30) + " TIMEOUT 10000"
+	        : "SUBSCRIBE " + quotedTopic + " LIMIT " + (state.defaultLimit || 30) + " LIVE";
 	      const templates = [
 	        completionItem("SHOW SUBSCRIPTIONS", "SHOW SUBSCRIPTIONS", "MQTT 命令"),
 	        completionItem("PING", "PING", "MQTT 命令"),
-	        completionItem("订阅当前 Topic", "SUBSCRIBE " + quotedTopic + " LIMIT " + (state.defaultLimit || 30) + " TIMEOUT 10000", "MQTT 模板"),
+	        completionItem(state.queryConsole ? "订阅当前 Topic" : "持续订阅当前 Topic", subscribeTemplate, "MQTT 模板"),
 	        completionItem("发布测试消息", 'PUBLISH ' + quotedTopic + ' QOS 0 PAYLOAD {"hello":"world"}', "MQTT 模板"),
 	      ];
 	      return [...(mode === "sql" ? getAiTagCompletions() : []), ...templates, ...topicItems, ...keywordItems];
@@ -4746,7 +4756,7 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
 	            : kafka
 	              ? '快速命令：留空消费当前 Topic，例如 CONSUME "orders" LIMIT 20'
 	              : mqtt
-	                ? '快速订阅：留空订阅当前 Topic，例如 SUBSCRIBE "sensors/#" LIMIT 20 TIMEOUT 10000'
+	                ? '快速订阅：留空会持续订阅当前 Topic，例如 SUBSCRIBE "sensors/#" LIMIT 20 LIVE'
 	                : tdengine
 	                ? "快速条件：例如 ts >= now - 1d AND current > 10"
 	                : "快速条件：例如 status = 'paid' AND id > 100";

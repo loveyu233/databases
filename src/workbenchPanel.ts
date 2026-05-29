@@ -3,6 +3,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import * as vscode from "vscode";
 import { generateCreateTableSqlByPrompt, generateSqlByPrompt, translateDatabaseErrorToChinese } from "./ai";
+import { createMqttLiveSubscription, MQTT_MESSAGE_COLUMNS, parseMqttCommand, type MqttLiveSubscription } from "./database/clients/mqtt";
 import { DatabaseService } from "./database/service";
 import { hasProFeature, requireProFeature } from "./license/offlineLicense";
 import { OperationLogService, type CreateOperationLogInput } from "./logService";
@@ -113,6 +114,9 @@ export class DatabaseWorkbenchPanel {
   private panelKey: string;
   private readonly createTablePanel: boolean;
   private readonly operationLogService = new OperationLogService();
+  private mqttLiveSubscription: MqttLiveSubscription | undefined;
+  private mqttLiveSubscriptionKey = "";
+  private mqttLiveSubscriptionGeneration = 0;
 
   private constructor(
     private readonly panel: vscode.WebviewPanel,
@@ -258,6 +262,7 @@ export class DatabaseWorkbenchPanel {
 
   private dispose(): void {
     DatabaseWorkbenchPanel.panels.delete(this.panelKey);
+    void this.stopMqttLiveSubscription();
     if (DatabaseWorkbenchPanel.activePanelKey === this.panelKey) {
       DatabaseWorkbenchPanel.activePanelKey = "";
       DatabaseWorkbenchPanel.activeTreeSelectionChangedEmitter.fire({ kind: "database", connectionId: this.connection.id, database: this.database });
@@ -554,7 +559,94 @@ export class DatabaseWorkbenchPanel {
   private async previewTable(table: string): Promise<void> {
     const queryConfig = getQueryConfig();
     this.panel.webview.postMessage({ type: "loading", area: "query", message: `正在预览 ${table}...` });
+    if (this.connection.type === "mqtt") {
+      await this.startMqttLiveSubscription(table, 0, `SUBSCRIBE ${JSON.stringify(table)} LIVE`);
+      return;
+    }
     await this.runQuickQuery(table, "", queryConfig.defaultLimit, 1, undefined, undefined, false);
+  }
+
+  private async startMqttLiveSubscription(topic: string, qos: 0 | 1 | 2, command: string): Promise<void> {
+    if (this.connection.type !== "mqtt" || this.queryConsole || this.createTablePanel) {
+      return;
+    }
+    const key = `${this.connection.id}:${this.database}:${topic}:${qos}`;
+    if (this.mqttLiveSubscription && this.mqttLiveSubscriptionKey === key) {
+      this.panel.webview.postMessage({ type: "loading", area: "query", message: `MQTT 正在持续订阅 ${topic}。` });
+      return;
+    }
+
+    await this.stopMqttLiveSubscription();
+    const generation = ++this.mqttLiveSubscriptionGeneration;
+    const liveCommand = command || `SUBSCRIBE ${JSON.stringify(topic)} LIVE`;
+    this.lastQueryErrorSql = liveCommand;
+    this.panel.webview.postMessage({
+      type: "mqttLiveMessage",
+      sql: liveCommand,
+      status: `正在持续订阅 MQTT Topic ${topic}...`,
+      result: this.createMqttLiveResult(topic, [], 0, qos, liveCommand, true),
+    });
+
+    try {
+      const connection = await this.requireConnection();
+      const subscription = await createMqttLiveSubscription(
+        connection,
+        topic,
+        (row) => {
+          if (generation !== this.mqttLiveSubscriptionGeneration) return;
+          this.panel.webview.postMessage({
+            type: "mqttLiveMessage",
+            sql: liveCommand,
+            result: this.createMqttLiveResult(topic, [row], 0, qos, liveCommand),
+          });
+        },
+        (error) => {
+          if (generation !== this.mqttLiveSubscriptionGeneration) return;
+          this.panel.webview.postMessage({ type: "error", area: "query", message: `MQTT 持续订阅失败：${getErrorMessage(error)}` });
+        },
+        (message) => {
+          if (generation !== this.mqttLiveSubscriptionGeneration) return;
+          this.panel.webview.postMessage({ type: "loading", area: "query", message });
+        },
+        qos
+      );
+      if (generation !== this.mqttLiveSubscriptionGeneration) {
+        await subscription.dispose();
+        return;
+      }
+      this.mqttLiveSubscription = subscription;
+      this.mqttLiveSubscriptionKey = key;
+    } catch (error) {
+      if (generation !== this.mqttLiveSubscriptionGeneration) return;
+      this.panel.webview.postMessage({ type: "error", area: "query", message: `MQTT 持续订阅失败：${getErrorMessage(error)}` });
+    }
+  }
+
+  private async stopMqttLiveSubscription(): Promise<void> {
+    this.mqttLiveSubscriptionGeneration += 1;
+    const subscription = this.mqttLiveSubscription;
+    this.mqttLiveSubscription = undefined;
+    this.mqttLiveSubscriptionKey = "";
+    if (subscription) {
+      await subscription.dispose().catch(() => undefined);
+    }
+  }
+
+  private createMqttLiveResult(topic: string, rows: Record<string, unknown>[], elapsedMs: number, qos: 0 | 1 | 2, command: string, initializing = false): QueryResult {
+    return {
+      columns: MQTT_MESSAGE_COLUMNS,
+      rows,
+      rowCount: rows.length,
+      command: "SUBSCRIBE",
+      elapsedMs,
+      metadata: {
+        topic,
+        qos,
+        live: true,
+        initializing,
+        command,
+      },
+    };
   }
 
   private async runQuickQuery(
@@ -662,8 +754,14 @@ export class DatabaseWorkbenchPanel {
     }
     if (this.connection.type === "mqtt") {
       const size = safeLimit < 0 ? queryConfig.maxRows : Math.max(1, safeLimit);
-      const command = where.trim() || `SUBSCRIBE ${JSON.stringify(table)} LIMIT ${size} TIMEOUT 10000`;
+      const command = where.trim() || `SUBSCRIBE ${JSON.stringify(table)} LIMIT ${size} LIVE`;
       this.lastQueryErrorSql = command;
+      const parsed = parseMqttCommand(command, size);
+      if (parsed.kind === "subscribe") {
+        await this.startMqttLiveSubscription(parsed.topic, parsed.qos, command);
+        return;
+      }
+      await this.stopMqttLiveSubscription();
       const result = await this.databaseService.query(connection, this.database, command, safeLimit < 0 ? -1 : queryConfig.maxRows);
       this.panel.webview.postMessage({ type: "result", sql: command, result });
       return;
@@ -721,7 +819,18 @@ export class DatabaseWorkbenchPanel {
     const connection = await this.requireConnection();
     const queryConfig = getQueryConfig();
     this.panel.webview.postMessage({ type: "loading", area: "query", message: this.connection.type === "redis" ? "正在执行 Redis 命令..." : this.connection.type === "elasticsearch" ? "正在执行 Elasticsearch 查询..." : this.connection.type === "mongodb" ? "正在执行 MongoDB 命令..." : this.connection.type === "kafka" ? "正在执行 Kafka 命令..." : this.connection.type === "mqtt" ? "正在执行 MQTT 命令..." : "正在执行 SQL..." });
-    if (this.connection.type === "redis" || this.connection.type === "elasticsearch" || this.connection.type === "mongodb" || this.connection.type === "kafka" || this.connection.type === "mqtt") {
+    if (this.connection.type === "mqtt") {
+      this.lastQueryErrorSql = executableSql;
+      const parsed = parseMqttCommand(executableSql, clampLimit(limit ?? queryConfig.defaultLimit));
+      if (!this.queryConsole && parsed.kind === "subscribe") {
+        await this.startMqttLiveSubscription(parsed.topic, parsed.qos, executableSql);
+        return;
+      }
+      const result = await this.databaseService.query(connection, this.database, executableSql, clampLimit(limit ?? queryConfig.defaultLimit));
+      this.panel.webview.postMessage({ type: "result", sql: executableSql, result });
+      return;
+    }
+    if (this.connection.type === "redis" || this.connection.type === "elasticsearch" || this.connection.type === "mongodb" || this.connection.type === "kafka") {
       this.lastQueryErrorSql = executableSql;
       const result = await this.databaseService.query(connection, this.database, executableSql, clampLimit(limit ?? queryConfig.defaultLimit));
       this.panel.webview.postMessage({ type: "result", sql: executableSql, result });
