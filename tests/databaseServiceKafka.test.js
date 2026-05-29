@@ -59,5 +59,7 @@ const webviewSource = fs.readFileSync("src/workbench/webviewHtml.ts", "utf8");
 assert.ok(webviewSource.includes('id="sendMessageBtn"'));
 assert.ok(webviewSource.includes('state.connectionType === "kafka"'));
 assert.ok(webviewSource.includes("PRODUCE "));
+assert.ok(webviewSource.includes("function renderMessageStreamResult"));
+assert.ok(webviewSource.includes("Consumed record"));
 
 console.log("ok - Kafka command parsing and package metadata");

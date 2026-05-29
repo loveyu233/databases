@@ -63,6 +63,8 @@ assert.ok(webviewSource.includes("PUBLISH "));
 assert.ok(webviewSource.includes('id="formatSendMessageJsonBtn"'));
 assert.ok(webviewSource.includes("function formatSendMessageJson()"));
 assert.ok(webviewSource.includes("sendMessageJsonHighlight"));
+assert.ok(webviewSource.includes("function renderMessageStreamResult"));
+assert.ok(webviewSource.includes("Received payload"));
 
 const mqttClientSource = fs.readFileSync("src/database/clients/mqtt.ts", "utf8");
 assert.ok(mqttClientSource.includes("columns: MQTT_MESSAGE_COLUMNS"));

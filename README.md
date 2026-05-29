@@ -314,7 +314,7 @@ orders-*
 user-*,event-*
 ```
 
-左侧树会在 `topics` 下展示 Topic。点击 Topic 后，右侧会按限制条数消费消息并展示 `topic`、`partition`、`offset`、`timestamp`、`key`、`value`、`headers`、`size` 等字段。
+左侧树会在 `topics` 下展示 Topic。点击 Topic 后，右侧会按限制条数消费消息，并以消息流卡片展示 `topic`、`partition`、`offset`、`timestamp`、`key`、`value`、`headers`、`size` 等信息，避免把消息队列硬塞进传统 SQL 表格。
 
 查询控制台支持的常用 Kafka 命令：
 
@@ -350,7 +350,7 @@ MQTT 默认连接 `host:1883`。用户名和密码都可以留空；开启 SSL/T
 sensors/+/temperature, test/#
 ```
 
-左侧树会在 `subscriptions` 下展示已添加的订阅 Topic。点击某个订阅 Topic 后，右侧会打开新的标签页临时订阅并展示 `topic`、`qos`、`retain`、`dup`、`timestamp`、`payload`、`json`、`size`、`messageId` 等字段。
+左侧树会在 `subscriptions` 下展示已添加的订阅 Topic。点击某个订阅 Topic 后，右侧会打开新的标签页临时订阅，并以消息流卡片展示 `topic`、`qos`、`retain`、`dup`、`timestamp`、`payload`、`json`、`size`、`messageId` 等信息。
 
 查询控制台支持的常用 MQTT 命令：
 

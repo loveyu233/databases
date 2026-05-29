@@ -614,6 +614,108 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
     line-height: 1;
     vertical-align: 1px;
   }
+  .message-stream {
+    min-height: 100%;
+    padding: 14px;
+    display: grid;
+    align-content: start;
+    gap: 12px;
+    background:
+      radial-gradient(circle at top right, rgba(14, 99, 156, .11), transparent 30rem),
+      linear-gradient(180deg, rgba(255,255,255,.018), transparent 18rem);
+  }
+  .message-stream-head {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 14px;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    background: color-mix(in srgb, var(--panel) 92%, var(--bg));
+    box-shadow: 0 12px 28px rgba(0,0,0,.18);
+  }
+  .message-stream-title { min-width: 0; display: grid; gap: 4px; }
+  .message-stream-title strong { color: var(--fg); font-size: 14px; }
+  .message-stream-title span { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .message-stream-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+  .message-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    border: 1px solid rgba(127,127,127,.24);
+    border-radius: 999px;
+    padding: 3px 8px;
+    color: var(--muted);
+    background: rgba(255,255,255,.025);
+    font-size: 11px;
+    white-space: nowrap;
+  }
+  .message-pill.strong { color: var(--fg); border-color: color-mix(in srgb, var(--button) 45%, var(--line)); background: color-mix(in srgb, var(--button) 12%, transparent); }
+  .message-card {
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    background: color-mix(in srgb, var(--panel) 88%, var(--bg));
+    box-shadow: 0 16px 38px rgba(0,0,0,.18);
+    overflow: hidden;
+  }
+  .message-card-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 14px;
+    border-bottom: 1px solid rgba(127,127,127,.18);
+    background: rgba(255,255,255,.018);
+  }
+  .message-topic { min-width: 0; display: grid; gap: 5px; }
+  .message-topic strong {
+    color: var(--fg);
+    font-family: var(--mono);
+    font-size: 13px;
+    overflow-wrap: anywhere;
+  }
+  .message-topic span { color: var(--muted); font-size: 12px; }
+  .message-meta-line { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+  .message-body { padding: 12px 14px; display: grid; gap: 12px; }
+  .message-payload {
+    margin: 0;
+    max-height: 360px;
+    overflow: auto;
+    border: 1px solid rgba(127,127,127,.20);
+    border-radius: 12px;
+    padding: 12px;
+    color: var(--fg);
+    background: rgba(0,0,0,.18);
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.65;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+  .message-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    color: var(--muted);
+    font-size: 12px;
+  }
+  .message-foot button { padding: 5px 9px; font-size: 11px; }
+  .message-empty {
+    border: 1px dashed color-mix(in srgb, var(--button) 38%, var(--line));
+    border-radius: 16px;
+    padding: 34px 18px;
+    color: var(--muted);
+    text-align: center;
+    background: color-mix(in srgb, var(--button) 6%, transparent);
+  }
+  .message-empty strong { display: block; color: var(--fg); font-size: 15px; margin-bottom: 8px; }
+  .message-fields { margin-top: 12px; display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
   .pending-cell { background: rgba(255, 193, 7, .16); }
   .row-context-menu {
     position: fixed;
@@ -4615,7 +4717,7 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
 	      $("#editStructureBtn").style.display = redis || es || mongo || tdengine || kafka || mqtt ? "none" : "";
 	      $("#quickAddBtn").style.display = redis || es || tdengine || kafka || mqtt ? "none" : "";
 	      $("#operationLogBtn").style.display = redis || es || kafka || mqtt ? "none" : "";
-	      fieldPicker.style.display = redis ? "none" : "";
+	      fieldPicker.style.display = redis || kafka || mqtt ? "none" : "";
 	      $("#fieldPickerBtn").textContent = es || mongo || tdengine || kafka || mqtt ? "选择显示字段" : redis ? "选择显示列" : "选择显示字段";
 	      $("#toggleSqlBtn").textContent = $("#sqlDrawer").classList.contains("open")
 	        ? (redis ? "收起命令 / AI" : es ? "收起查询 / AI" : mongo ? "收起命令 / AI" : kafka ? "收起 Kafka / AI" : mqtt ? "收起 MQTT / AI" : tdengine ? "收起 SQL / AI" : "收起 SQL / AI")
@@ -7122,8 +7224,12 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
     hideRowContextMenu();
     teardownResultHorizontalScrollbar();
     const allColumns = mergeColumns(state.quickInsert.active ? getSchemaColumnNames() : [], queryResult.columns || []);
-    const columns = getVisibleColumns(allColumns);
     setStatus(buildResultStatus(queryResult), false, true);
+    if (shouldRenderMessageStream(queryResult, allColumns)) {
+      renderMessageStreamResult(queryResult, rowsToRender, allColumns);
+      return;
+    }
+    const columns = getVisibleColumns(allColumns);
     if (!allColumns.length) {
       result.innerHTML = '<div class="empty"><strong>执行完成</strong>没有返回列。</div>';
       return;
@@ -7178,6 +7284,137 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
       cell.addEventListener("mousedown", (event) => startRowSelection(event, cell));
       cell.addEventListener("mouseenter", () => extendRowSelection(cell));
     });
+  }
+
+  function shouldRenderMessageStream(queryResult, columns) {
+    const command = String(queryResult?.command || "").toUpperCase();
+    if (state.connectionType === "mqtt") {
+      return command === "SUBSCRIBE" || command === "PUBLISH" || columns.includes("payload");
+    }
+    if (state.connectionType === "kafka") {
+      return command === "CONSUME" || command === "PRODUCE" || (columns.includes("value") && columns.includes("topic"));
+    }
+    return false;
+  }
+
+  function renderMessageStreamResult(queryResult, rowsToRender, columns) {
+    const rows = rowsToRender || [];
+    const command = String(queryResult?.command || "").toUpperCase();
+    const product = state.connectionType === "mqtt" ? "MQTT" : "Kafka";
+    const action = state.connectionType === "mqtt"
+      ? (command === "PUBLISH" ? "已发布消息" : "订阅消息")
+      : (command === "PRODUCE" ? "已发送消息" : "消费消息");
+    const head = '<div class="message-stream-head">'
+      + '<div class="message-stream-title"><strong>' + escapeHtml(product + " " + action) + '</strong><span>' + escapeHtml(state.selectedTable || state.database || product) + '</span></div>'
+      + '<div class="message-stream-actions">'
+      + '<span class="message-pill strong">' + escapeHtml(command || product) + '</span>'
+      + '<span class="message-pill">' + rows.length + ' 条</span>'
+      + (queryResult?.elapsedMs !== undefined ? '<span class="message-pill">' + escapeHtml(String(queryResult.elapsedMs)) + ' ms</span>' : '')
+      + '</div></div>';
+    if (!rows.length) {
+      result.innerHTML = '<div class="message-stream">' + head
+        + '<div class="message-empty"><strong>' + escapeHtml(product + " 暂无消息") + '</strong><div>' + escapeHtml(getMessageEmptyHint(command)) + '</div>'
+        + '<div class="message-fields">' + (columns || []).map((column) => '<span class="message-pill">' + escapeHtml(column) + '</span>').join("") + '</div></div>'
+        + '</div>';
+      return;
+    }
+    const cards = rows.map((entry) => renderMessageCard(entry.row, entry.index, command)).join("");
+    result.innerHTML = '<div class="message-stream">' + head + cards + '</div>';
+    result.querySelectorAll("[data-copy-message-payload]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const rowIndex = Number(button.getAttribute("data-copy-message-payload"));
+        const row = rows.find((entry) => entry.index === rowIndex)?.row;
+        if (!row) return;
+        const payload = getMessagePayloadText(row);
+        vscode.postMessage({ type: "copyText", text: payload, successMessage: "消息内容已复制" });
+      });
+    });
+  }
+
+  function getMessageEmptyHint(command) {
+    if (state.connectionType === "mqtt") {
+      return command === "PUBLISH"
+        ? "消息已发送，但没有返回可展示的 payload。"
+        : "当前订阅窗口内没有收到消息，可以点击上方“发送消息”发布一条测试消息。";
+    }
+    return command === "PRODUCE"
+      ? "消息已发送，Broker 返回了空响应。"
+      : "当前消费窗口内没有读到消息，可以点击上方“发送消息”写入测试消息后刷新。";
+  }
+
+  function renderMessageCard(row, rowIndex, command) {
+    const topic = getMessageTopic(row);
+    const subtitle = getMessageSubtitle(row, command);
+    const payload = getMessagePayloadText(row);
+    const meta = getMessageMeta(row);
+    const payloadHtml = isJsonLikeText(payload) ? renderJsonHighlightedText(prettyJsonText(payload) || payload) : escapeHtml(payload || "(empty payload)");
+    const foot = getMessageFoot(row, payload);
+    return '<article class="message-card" data-row-index="' + rowIndex + '">'
+      + '<div class="message-card-head"><div class="message-topic"><strong>' + escapeHtml(topic) + '</strong><span>' + escapeHtml(subtitle) + '</span></div>'
+      + '<div class="message-meta-line">' + meta.map((item) => '<span class="message-pill">' + escapeHtml(item) + '</span>').join("") + '</div></div>'
+      + '<div class="message-body"><pre class="message-payload">' + payloadHtml + '</pre>'
+      + '<div class="message-foot"><span>' + escapeHtml(foot) + '</span><button class="secondary" data-copy-message-payload="' + rowIndex + '">复制消息内容</button></div></div>'
+      + '</article>';
+  }
+
+  function getMessageTopic(row) {
+    return String(row.topic || row.topicName || state.selectedTable || "topic");
+  }
+
+  function getMessageSubtitle(row, command) {
+    if (state.connectionType === "mqtt") {
+      return command === "PUBLISH" ? "Published payload" : "Received payload";
+    }
+    if (command === "PRODUCE") {
+      return "Produced record" + (row.baseOffset !== undefined ? " · offset " + row.baseOffset : "");
+    }
+    return "Consumed record" + (row.offset !== undefined ? " · offset " + row.offset : "");
+  }
+
+  function getMessageMeta(row) {
+    const items = [];
+    if (state.connectionType === "mqtt") {
+      if (row.qos !== undefined && row.qos !== "") items.push("QoS " + row.qos);
+      if (row.retain !== undefined && row.retain !== "") items.push(row.retain ? "retain" : "non-retain");
+      if (row.size !== undefined && row.size !== "") items.push(row.size + " bytes");
+      if (row.messageId !== undefined && row.messageId !== "") items.push("messageId " + row.messageId);
+    } else {
+      if (row.partition !== undefined && row.partition !== "") items.push("partition " + row.partition);
+      if (row.offset !== undefined && row.offset !== "") items.push("offset " + row.offset);
+      if (row.baseOffset !== undefined && row.baseOffset !== "") items.push("baseOffset " + row.baseOffset);
+      if (row.key !== undefined && row.key !== "") items.push("key " + row.key);
+      if (row.size !== undefined && row.size !== "") items.push(row.size + " bytes");
+      if (row.errorCode !== undefined && row.errorCode !== "") items.push("error " + row.errorCode);
+    }
+    return items;
+  }
+
+  function getMessagePayloadText(row) {
+    if (state.connectionType === "mqtt") {
+      if (row.json && typeof row.json === "object") return JSON.stringify(row.json, null, 2);
+      return String(row.payload ?? "");
+    }
+    if (row.value !== undefined) return String(row.value ?? "");
+    if (row.result !== undefined) return String(row.result ?? "");
+    return JSON.stringify(row, null, 2);
+  }
+
+  function getMessageFoot(row, payload) {
+    const time = row.timestamp ? formatValue(row.timestamp) : "";
+    const command = state.currentResult?.command ? String(state.currentResult.command) : "";
+    return [command, time, payload ? payload.length + " chars" : "empty"].filter(Boolean).join(" · ");
+  }
+
+  function isJsonLikeText(value) {
+    return /^[\s]*[\[{]/.test(String(value || ""));
+  }
+
+  function prettyJsonText(value) {
+    try {
+      return JSON.stringify(JSON.parse(String(value)), null, 2);
+    } catch {
+      return "";
+    }
   }
 
   function teardownResultHorizontalScrollbar() {
