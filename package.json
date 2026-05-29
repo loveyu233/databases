@@ -288,8 +288,13 @@
         },
         {
           "command": "databaseWorkbench.createResource",
-          "when": "view == databaseWorkbench.connections && viewItem =~ /databaseWorkbench\\.connection\\.(mysql|postgres|elasticsearch|mongodb|tdengine|kafka|mqtt)/",
+          "when": "view == databaseWorkbench.connections && viewItem =~ /databaseWorkbench\\.connection\\.(mysql|postgres|elasticsearch|mongodb|tdengine|kafka)/",
           "group": "inline@2"
+        },
+        {
+          "command": "databaseWorkbench.createResource",
+          "when": "view == databaseWorkbench.connections && viewItem =~ /databaseWorkbench\\.database\\.mqtt\\./",
+          "group": "inline@1"
         },
         {
           "command": "databaseWorkbench.filterDatabases",
@@ -308,7 +313,7 @@
         },
         {
           "command": "databaseWorkbench.createResource",
-          "when": "view == databaseWorkbench.connections && viewItem =~ /databaseWorkbench\\.connection\\.(mysql|postgres|elasticsearch|mongodb|tdengine|kafka|mqtt)/",
+          "when": "view == databaseWorkbench.connections && viewItem =~ /databaseWorkbench\\.connection\\.(mysql|postgres|elasticsearch|mongodb|tdengine|kafka)/",
           "group": "1_manage@3"
         },
         {
@@ -320,6 +325,11 @@
           "command": "databaseWorkbench.deleteDatabase",
           "when": "view == databaseWorkbench.connections && viewItem =~ /databaseWorkbench\\.database\\.(mysql|postgres|mongodb|tdengine)/",
           "group": "1_manage@2"
+        },
+        {
+          "command": "databaseWorkbench.createResource",
+          "when": "view == databaseWorkbench.connections && viewItem =~ /databaseWorkbench\\.database\\.mqtt\\./",
+          "group": "1_manage@3"
         },
         {
           "command": "databaseWorkbench.addTable",

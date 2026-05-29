@@ -40,5 +40,8 @@ assert.throws(() => parseMqttCommand("SUBSCRIBE sensors/#/bad"), /只能单独�
 assert.equal(packageJson.dependencies.mqtt, "^5.15.1");
 assert.ok(packageJson.description.includes("MQTT"));
 assert.ok(packageJson.keywords.includes("mqtt"));
+const createResourceMenus = packageJson.contributes.menus["view/item/context"].filter((item) => item.command === "databaseWorkbench.createResource");
+assert.ok(createResourceMenus.some((item) => item.when.includes("database\\.mqtt")));
+assert.ok(!createResourceMenus.some((item) => item.when.includes("connection\\.") && item.when.includes("mqtt")));
 
 console.log("ok - MQTT command parsing and package metadata");

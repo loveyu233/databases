@@ -58,9 +58,9 @@ Database Workbench 是一个在 VS Code 内使用的数据库工作台。它把�
 2. 点击连接树标题栏的 `+`。
 3. 选择「添加数据库连接」。
 4. 选择类型：MySQL / PostgreSQL / Redis / Elasticsearch / MongoDB / TDengine / Kafka / MQTT。
-5. 填写 host、port、username、password、默认数据库或认证库等信息。
+5. 填写 host、port、username、password、默认数据库或认证库等信息；MQTT 的初始订阅 Topic 可以留空。
 6. 点击「测试连接」。
-7. 展开连接，点击数据库、表、索引、集合、Redis DB、Kafka Topic 或 MQTT 订阅 Topic。
+7. 展开连接，点击数据库、表、索引、集合、Redis DB、Kafka Topic；MQTT 可在 `subscriptions` 订阅空间右键添加订阅 Topic 后点击打开。
 8. 在右侧标签页中查询、编辑、导出或使用 AI。
 
 命令面板也可以直接执行：
@@ -343,13 +343,13 @@ Kafka 操作说明：
 
 MQTT 默认连接 `host:1883`。用户名和密码都可以留空；开启 SSL/TLS 后会使用 `mqtts`，也可以在可信内网环境下允许自签名证书。
 
-连接配置中的“订阅 Topic”可以留空，也可以填写逗号分隔的多个 Topic 过滤器，支持 MQTT 标准通配符 `+` 和 `#`：
+推荐流程是先保存 MQTT 连接，再展开左侧连接树，在 `subscriptions` 订阅空间上右键选择“创建”来新增订阅 Topic。连接配置里的“初始订阅 Topic”可以留空，也可以预填逗号分隔的多个 Topic 过滤器，支持 MQTT 标准通配符 `+` 和 `#`：
 
 ```text
 sensors/+/temperature, test/#
 ```
 
-左侧树会在 `subscriptions` 下展示这些订阅 Topic。点击某个订阅 Topic 后，右侧会临时订阅并展示 `topic`、`qos`、`retain`、`dup`、`timestamp`、`payload`、`json`、`size`、`messageId` 等字段。
+左侧树会在 `subscriptions` 下展示已添加的订阅 Topic。点击某个订阅 Topic 后，右侧会打开新的标签页临时订阅并展示 `topic`、`qos`、`retain`、`dup`、`timestamp`、`payload`、`json`、`size`、`messageId` 等字段。
 
 查询控制台支持的常用 MQTT 命令：
 
@@ -365,7 +365,7 @@ UNSUBSCRIBE test/#
 MQTT 操作说明：
 
 - 预览和快速查询默认使用 `SUBSCRIBE <topic> LIMIT N TIMEOUT 10000`，适合临时查看消息。
-- 连接右键“创建”可添加一个订阅 Topic 到左侧树；右键订阅 Topic 可从连接配置中移除。
+- 在 `subscriptions` 订阅空间右键“创建”可添加订阅 Topic；右键订阅 Topic 可从连接配置中移除。
 - 发布消息请使用 `PUBLISH <topic> PAYLOAD <内容>`；发布 Topic 不允许包含 `+` 或 `#` 通配符。
 - 表格不开放双击编辑，消息写入统一通过 `PUBLISH` 命令完成。
 

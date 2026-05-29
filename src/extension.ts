@@ -112,7 +112,8 @@ export function activate(context: vscode.ExtensionContext): void {
       treeProvider.refresh();
     })),
     vscode.commands.registerCommand("databaseWorkbench.createResource", (node) => runSafely("打开创建页面失败", async () => {
-      await openCreateResourcePanel(context, store, databaseService, asConnectionNode(node)?.connection);
+      const target = asConnectionNode(node)?.connection ?? asDatabaseNode(node)?.connection;
+      await openCreateResourcePanel(context, store, databaseService, target);
     })),
     vscode.commands.registerCommand("databaseWorkbench.openTable", (node) => runSafely("打开表失败", async () => {
       await openTable(context, store, databaseService, node);
@@ -1792,15 +1793,16 @@ async function openCreateResourcePanel(
   }
 
   const targetLabel = getCreateTargetLabel(connection.type);
+  const actionLabel = connection.type === "mqtt" ? "添加" : "创建";
   const panel = vscode.window.createWebviewPanel(
     "databaseWorkbench.createResource",
-    `创建${targetLabel} · ${connection.name}`,
+    `${actionLabel}${targetLabel} · ${connection.name}`,
     vscode.ViewColumn.One,
     { enableScripts: true, retainContextWhenHidden: true }
   );
   createResourcePanels.set(key, panel);
   panel.onDidDispose(() => createResourcePanels.delete(key));
-  panel.webview.html = renderCreateResourceHtml(connection, targetLabel);
+  panel.webview.html = renderCreateResourceHtml(connection, targetLabel, actionLabel);
   panel.webview.onDidReceiveMessage((message: { type?: string; payload?: Record<string, unknown> }) => {
     void runSafely("创建失败", async () => {
       if (message.type === "submitCreateResource") {
@@ -2115,7 +2117,7 @@ function renderConnectionEditorHtml(existing: DbConnectionConfig | undefined, gr
       mongodb: { port: 27017, username: "", name: "MongoDB 本地连接", databaseLabel: "默认认证库", databaseHint: "可留空；无认证 MongoDB 直接留空，有认证时可填写 admin 或业务库。", databasePlaceholder: "例如：admin / app_blog" },
       tdengine: { port: 6041, username: "root", name: "TDengine 本地连接", databaseLabel: "默认数据库", databaseHint: "可留空；默认通过 taosAdapter WebSocket 端口连接。", databasePlaceholder: "例如：power" },
       kafka: { port: 9092, username: "", name: "Kafka 本地连接", databaseLabel: "Topic 筛选", databaseHint: "可留空；支持通配符和逗号分隔，例如 order-*、user-*,event-*。填写用户名时会使用 SASL/PLAIN。", databasePlaceholder: "例如：order-* / user-*,event-*" },
-	      mqtt: { port: 1883, username: "", name: "MQTT 本地连接", databaseLabel: "订阅 Topic", databaseHint: "可留空；支持 MQTT 通配符 + 和 #，多个 Topic 用逗号分隔，例如 sensors/+/temperature、test/#。", databasePlaceholder: "例如：sensors/+/temperature, test/#" },
+	      mqtt: { port: 1883, username: "", name: "MQTT 本地连接", databaseLabel: "初始订阅 Topic", databaseHint: "可留空；保存连接后可在左侧 subscriptions 订阅空间右键添加新的订阅 Topic。这里也可预填多个 Topic，用逗号分隔，支持 + 和 #。", databasePlaceholder: "可留空，例如：sensors/+/temperature, test/#" },
     };
     const $ = (selector) => document.querySelector(selector);
     const typeInput = $("#typeInput");
@@ -2568,7 +2570,7 @@ function escapeSqlString(value: string): string {
   return value.replace(/'/g, "''");
 }
 
-function renderCreateResourceHtml(connection: DbConnectionConfig, targetLabel: string): string {
+function renderCreateResourceHtml(connection: DbConnectionConfig, targetLabel: string, actionLabel = "创建"): string {
   const nonce = randomUUID().replace(/-/g, "");
   const isElastic = connection.type === "elasticsearch";
   const isMongo = connection.type === "mongodb";
@@ -2609,7 +2611,7 @@ function renderCreateResourceHtml(connection: DbConnectionConfig, targetLabel: s
   <main class="shell">
     <div class="hero">
       <div>
-        <h1>创建${escapeHtml(targetLabel)}</h1>
+        <h1>${escapeHtml(actionLabel)}${escapeHtml(targetLabel)}</h1>
         <div class="meta">${escapeHtml(connection.name)} · ${escapeHtml(connection.type)}://${escapeHtml(connection.host)}:${connection.port}</div>
       </div>
     </div>
@@ -2630,7 +2632,7 @@ function renderCreateResourceHtml(connection: DbConnectionConfig, targetLabel: s
     <div class="actions">
       <div class="status" id="status"></div>
       <button class="secondary" id="resetBtn">重置</button>
-      <button id="submitBtn">提交创建</button>
+      <button id="submitBtn">提交${escapeHtml(actionLabel)}</button>
     </div>
   </main>
   <script nonce="${nonce}">
@@ -2659,7 +2661,7 @@ function renderCreateResourceHtml(connection: DbConnectionConfig, targetLabel: s
 	      };
     }
     $("#submitBtn").addEventListener("click", () => {
-      setStatus("正在提交创建请求...", "");
+      setStatus(${JSON.stringify(`正在提交${actionLabel}请求...`)}, "");
       vscode.postMessage({ type: "submitCreateResource", payload: payload() });
     });
     $("#resetBtn").addEventListener("click", () => {
