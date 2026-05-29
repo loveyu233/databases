@@ -1427,20 +1427,36 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
     pointer-events: none;
     tab-size: 2;
   }
+  .send-message-json-highlight .json-token {
+    font: inherit;
+    font-weight: 400;
+    font-style: normal;
+    letter-spacing: inherit;
+    padding: 0;
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+  }
   .send-message-json-wrap textarea {
     position: relative;
     z-index: 1;
+    width: 100%;
+    box-sizing: border-box;
     border: 0;
+    padding: 9px 11px;
     background: transparent;
     color: transparent;
     -webkit-text-fill-color: transparent;
     caret-color: var(--fg);
+    font-family: var(--mono);
     font-size: 13px;
     font-weight: 400;
     font-style: normal;
     letter-spacing: normal;
     font-variant-ligatures: none;
     font-kerning: none;
+    line-height: 1.55;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
     word-break: break-word;
@@ -2364,6 +2380,9 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
   let completionUsage = normalizeCompletionUsage(webviewPersistedState.completionUsage);
   const autocompleteBound = new WeakSet();
   const composingInputs = new WeakSet();
+  const mqttMessageHistory = new Map();
+  const MQTT_MESSAGE_HISTORY_LIMIT = 500;
+  const MQTT_MESSAGE_COLUMNS = ["topic", "qos", "retain", "dup", "timestamp", "payload", "json", "size", "messageId"];
   const mysqlKeywords = [
     "SELECT", "DISTINCT", "FROM", "WHERE", "AND", "OR", "NOT", "NULL", "IS", "IS NULL", "IS NOT NULL", "IN", "LIKE", "BETWEEN", "EXISTS",
     "JOIN", "LEFT JOIN", "RIGHT JOIN", "INNER JOIN", "FULL JOIN", "CROSS JOIN", "ON", "AS", "GROUP BY", "HAVING",
@@ -2505,8 +2524,8 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
 	          sqlInput.value = state.lastSql;
 	          updateSqlInputHighlight(sqlInput);
 	        }
-      renderResult(message.result);
-      return;
+	      renderResult(prepareResultForRender(message.result));
+	      return;
     }
     if (message.type === "editsApplied") {
       clearPendingEdits();
@@ -7210,6 +7229,79 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
     return String(state.columnComments[column] || "").trim();
   }
 
+  function prepareResultForRender(queryResult) {
+    if (state.connectionType !== "mqtt" || !isMqttMessageResult(queryResult)) {
+      return queryResult;
+    }
+    return mergeMqttMessageHistory(queryResult);
+  }
+
+  function isMqttMessageResult(queryResult) {
+    const command = String(queryResult?.command || "").toUpperCase();
+    const columns = queryResult?.columns || [];
+    return command === "SUBSCRIBE"
+      || command === "PUBLISH"
+      || (columns.includes("topic") && columns.includes("payload"));
+  }
+
+  function mergeMqttMessageHistory(queryResult) {
+    const key = getMqttMessageHistoryKey(queryResult);
+    const previousRows = mqttMessageHistory.get(key) || [];
+    const command = String(queryResult?.command || "").toUpperCase();
+    const messageKind = command === "PUBLISH" ? "published" : "received";
+    const rows = Array.isArray(queryResult?.rows) ? queryResult.rows : [];
+    const nextRows = rows.map((row, index) => ({
+      ...row,
+      __dbwMessageKind: row.__dbwMessageKind || messageKind,
+      __dbwMessageCommand: row.__dbwMessageCommand || command || "MQTT",
+      __dbwMessageSeq: Date.now() + index,
+    }));
+    const mergedRows = [...previousRows, ...nextRows].slice(-MQTT_MESSAGE_HISTORY_LIMIT);
+    mqttMessageHistory.set(key, mergedRows);
+    return {
+      ...queryResult,
+      command: "MQTT_MESSAGE_STREAM",
+      columns: mergeColumns(MQTT_MESSAGE_COLUMNS, queryResult?.columns || []),
+      rows: mergedRows,
+      rowCount: mergedRows.length,
+      metadata: {
+        ...(queryResult?.metadata || {}),
+        messageHistory: true,
+        historyLimit: MQTT_MESSAGE_HISTORY_LIMIT,
+        lastCommand: command || "MQTT",
+        historyKey: key,
+      },
+    };
+  }
+
+  function getMqttMessageHistoryKey(queryResult) {
+    const topic = state.selectedTable || queryResult?.metadata?.topic || extractMqttTopicFromCommand(state.lastSql) || "__query_console__";
+    return [state.connectionId || state.connectionName || "connection", state.database || "database", topic].join("::");
+  }
+
+  function extractMqttTopicFromCommand(commandText) {
+    const text = String(commandText || "").trim();
+    const match = text.match(/^(?:SUBSCRIBE|SUB|PUBLISH|PUB)\\s+("[^"]+"|'[^']+'|\\S+)/i);
+    if (!match) return "";
+    return unquoteCommandToken(match[1]);
+  }
+
+  function unquoteCommandToken(value) {
+    const text = String(value || "");
+    const quote = text[0];
+    if ((quote === '"' || quote === "'" || quote === String.fromCharCode(96)) && text[text.length - 1] === quote) {
+      if (quote === '"') {
+        try {
+          return JSON.parse(text);
+        } catch {
+          return text.slice(1, -1);
+        }
+      }
+      return text.slice(1, -1);
+    }
+    return text;
+  }
+
   function renderResult(queryResult) {
     state.currentResult = queryResult;
     state.sortColumn = queryResult.pagination?.sortColumn || "";
@@ -7300,14 +7392,17 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
   function renderMessageStreamResult(queryResult, rowsToRender, columns) {
     const rows = rowsToRender || [];
     const command = String(queryResult?.command || "").toUpperCase();
+    const lastCommand = String(queryResult?.metadata?.lastCommand || command || "").toUpperCase();
+    const historyMode = state.connectionType === "mqtt" && queryResult?.metadata?.messageHistory === true;
     const product = state.connectionType === "mqtt" ? "MQTT" : "Kafka";
     const action = state.connectionType === "mqtt"
-      ? (command === "PUBLISH" ? "已发布消息" : "订阅消息")
+      ? (historyMode ? "消息流" : command === "PUBLISH" ? "已发布消息" : "订阅消息")
       : (command === "PRODUCE" ? "已发送消息" : "消费消息");
     const head = '<div class="message-stream-head">'
       + '<div class="message-stream-title"><strong>' + escapeHtml(product + " " + action) + '</strong><span>' + escapeHtml(state.selectedTable || state.database || product) + '</span></div>'
       + '<div class="message-stream-actions">'
-      + '<span class="message-pill strong">' + escapeHtml(command || product) + '</span>'
+      + '<span class="message-pill strong">' + escapeHtml(historyMode ? "HISTORY" : command || product) + '</span>'
+      + (historyMode ? '<span class="message-pill">last ' + escapeHtml(lastCommand || "MQTT") + '</span>' : '')
       + '<span class="message-pill">' + rows.length + ' 条</span>'
       + (queryResult?.elapsedMs !== undefined ? '<span class="message-pill">' + escapeHtml(String(queryResult.elapsedMs)) + ' ms</span>' : '')
       + '</div></div>';
@@ -7363,6 +7458,8 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
 
   function getMessageSubtitle(row, command) {
     if (state.connectionType === "mqtt") {
+      if (row.__dbwMessageKind === "published") return "Published payload";
+      if (row.__dbwMessageKind === "received") return "Received payload";
       return command === "PUBLISH" ? "Published payload" : "Received payload";
     }
     if (command === "PRODUCE") {
@@ -7401,7 +7498,7 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
 
   function getMessageFoot(row, payload) {
     const time = row.timestamp ? formatValue(row.timestamp) : "";
-    const command = state.currentResult?.command ? String(state.currentResult.command) : "";
+    const command = row.__dbwMessageCommand || (state.currentResult?.metadata?.lastCommand ? String(state.currentResult.metadata.lastCommand) : state.currentResult?.command ? String(state.currentResult.command) : "");
     return [command, time, payload ? payload.length + " chars" : "empty"].filter(Boolean).join(" · ");
   }
 
