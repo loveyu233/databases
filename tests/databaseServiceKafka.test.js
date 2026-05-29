@@ -33,6 +33,13 @@ assert.deepEqual(parseKafkaCommand('PRODUCE orders.created KEY user-1 VALUE {"id
   value: '{"id":1}',
 });
 
+assert.deepEqual(parseKafkaCommand('PRODUCE orders.created KEY "user 1" VALUE "hello world"'), {
+  kind: "produce",
+  topic: "orders.created",
+  key: "user 1",
+  value: "hello world",
+});
+
 assert.deepEqual(parseKafkaCommand("CREATE TOPIC orders.created PARTITIONS 3 REPLICATION_FACTOR 2"), {
   kind: "createTopic",
   topic: "orders.created",
@@ -43,5 +50,8 @@ assert.deepEqual(parseKafkaCommand("CREATE TOPIC orders.created PARTITIONS 3 REP
 assert.equal(packageJson.dependencies.kafkajs, "^2.2.4");
 assert.ok(packageJson.description.includes("Kafka"));
 assert.ok(packageJson.keywords.includes("kafka"));
+assert.ok(packageJson.activationEvents.includes("onCommand:databaseWorkbench.sendKafkaMessage"));
+assert.ok(packageJson.contributes.commands.some((item) => item.command === "databaseWorkbench.sendKafkaMessage"));
+assert.ok(packageJson.contributes.menus["view/item/context"].some((item) => item.command === "databaseWorkbench.sendKafkaMessage" && item.when.includes("table\\.kafka")));
 
 console.log("ok - Kafka command parsing and package metadata");

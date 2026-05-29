@@ -48,6 +48,7 @@
     "onCommand:databaseWorkbench.filterDatabases",
     "onCommand:databaseWorkbench.createResource",
     "onCommand:databaseWorkbench.openTable",
+    "onCommand:databaseWorkbench.sendKafkaMessage",
     "onCommand:databaseWorkbench.editDatabase",
     "onCommand:databaseWorkbench.deleteDatabase",
     "onCommand:databaseWorkbench.addTable",
@@ -172,6 +173,11 @@
         "command": "databaseWorkbench.deleteTable",
         "title": "删除表/集合",
         "icon": "$(trash)"
+      },
+      {
+        "command": "databaseWorkbench.sendKafkaMessage",
+        "title": "发送 Kafka 消息",
+        "icon": "$(send)"
       },
       {
         "command": "databaseWorkbench.showMachineCode",
@@ -354,6 +360,11 @@
         {
           "command": "databaseWorkbench.editTable",
           "when": "view == databaseWorkbench.connections && viewItem =~ /databaseWorkbench\\.table\\.(mysql|postgres)/",
+          "group": "1_manage@1"
+        },
+        {
+          "command": "databaseWorkbench.sendKafkaMessage",
+          "when": "view == databaseWorkbench.connections && viewItem =~ /databaseWorkbench\\.table\\.kafka\\./",
           "group": "1_manage@1"
         },
         {

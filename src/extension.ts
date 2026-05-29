@@ -14,6 +14,7 @@ import { DatabaseWorkbenchPanel } from "./workbenchPanel";
 
 let outputChannel: vscode.OutputChannel | undefined;
 const createResourcePanels = new Map<string, vscode.WebviewPanel>();
+const kafkaMessagePanels = new Map<string, vscode.WebviewPanel>();
 const connectionEditorPanels = new Map<string, vscode.WebviewPanel>();
 const connectionExportPanels = new Map<string, vscode.WebviewPanel>();
 const GROUP_COLOR_OPTIONS: Array<{ color: ConnectionGroupColor; label: string }> = [
@@ -144,6 +145,9 @@ export function activate(context: vscode.ExtensionContext): void {
     })),
     vscode.commands.registerCommand("databaseWorkbench.editTable", (node) => runSafely("修改表结构失败", async () => {
       await editTable(context, store, databaseService, node);
+    })),
+    vscode.commands.registerCommand("databaseWorkbench.sendKafkaMessage", (node) => runSafely("发送 Kafka 消息失败", async () => {
+      await openKafkaMessagePanel(context, store, databaseService, asTableNode(node));
     })),
     vscode.commands.registerCommand("databaseWorkbench.deleteTable", (node) => runSafely("删除表失败", async () => {
       await deleteTable(store, databaseService, asTableNode(node));
@@ -1770,6 +1774,98 @@ async function deleteTable(
   vscode.window.showInformationMessage(`已删除${targetLabel} ${node.table}。`);
 }
 
+async function openKafkaMessagePanel(
+  context: vscode.ExtensionContext,
+  store: ConnectionStore,
+  databaseService: DatabaseService,
+  node?: ReturnType<typeof asTableNode>
+): Promise<void> {
+  if (!node) {
+    throw new Error("没有拿到 Topic 节点信息，请刷新左侧数据库树后重试。");
+  }
+  if (node.connection.type !== "kafka") {
+    vscode.window.showWarningMessage("发送消息暂时只支持 Kafka Topic。");
+    return;
+  }
+
+  const key = `${node.connection.id}:${node.database}:${node.table}:kafka-produce`;
+  const opened = kafkaMessagePanels.get(key);
+  if (opened) {
+    opened.reveal(vscode.ViewColumn.One);
+    return;
+  }
+
+  const panel = vscode.window.createWebviewPanel(
+    "databaseWorkbench.kafkaProduce",
+    `发送消息 · ${node.table}`,
+    vscode.ViewColumn.One,
+    { enableScripts: true, retainContextWhenHidden: true }
+  );
+  kafkaMessagePanels.set(key, panel);
+  panel.onDidDispose(() => kafkaMessagePanels.delete(key), null, context.subscriptions);
+  panel.webview.html = renderKafkaMessageHtml(node);
+  panel.webview.onDidReceiveMessage((message: { type?: string; payload?: Record<string, unknown> }) => {
+    void runSafely("发送 Kafka 消息失败", async () => {
+      if (message.type !== "sendKafkaMessage") {
+        return;
+      }
+      try {
+        await submitKafkaMessage(store, databaseService, panel, node, message.payload ?? {});
+      } catch (error) {
+        panel.webview.postMessage({ type: "kafkaMessageStatus", ok: false, message: `发送失败：${error instanceof Error ? error.message : String(error)}` });
+        throw error;
+      }
+    });
+  }, null, context.subscriptions);
+}
+
+async function submitKafkaMessage(
+  store: ConnectionStore,
+  databaseService: DatabaseService,
+  panel: vscode.WebviewPanel,
+  node: NonNullable<ReturnType<typeof asTableNode>>,
+  payload: Record<string, unknown>
+): Promise<void> {
+  const key = typeof payload.key === "string" ? payload.key.trim() : "";
+  const value = typeof payload.value === "string" ? payload.value : "";
+  const sql = buildKafkaProduceCommand(node.table, key, value);
+  if (!await showSqlConfirmDialog({
+    title: `确认向 Kafka Topic「${node.table}」发送消息吗？`,
+    sql,
+    confirmLabel: "确认发送",
+  })) {
+    panel.webview.postMessage({ type: "kafkaMessageStatus", ok: false, message: "已取消发送。" });
+    return;
+  }
+
+  panel.webview.postMessage({ type: "kafkaMessageStatus", loading: true, message: "正在发送 Kafka 消息..." });
+  const connection = await requireConnection(store, node.connection.id);
+  const result = await databaseService.query(connection, node.database, sql, getQueryConfigForCommand());
+  await vscode.commands.executeCommand("databaseWorkbench.refresh");
+  const message = formatKafkaProduceResult(result.rows);
+  panel.webview.postMessage({ type: "kafkaMessageStatus", ok: true, message });
+  vscode.window.setStatusBarMessage(`Database Workbench: Kafka Topic ${node.table} 消息已发送。`, 2500);
+}
+
+function buildKafkaProduceCommand(topic: string, key: string, value: string): string {
+  const keyClause = key ? ` KEY ${quoteKafkaCommandValue(key)}` : "";
+  return `PRODUCE ${quoteKafkaName(topic)}${keyClause} VALUE ${quoteKafkaCommandValue(value)};`;
+}
+
+function quoteKafkaCommandValue(value: string): string {
+  return JSON.stringify(value);
+}
+
+function formatKafkaProduceResult(rows: Array<Record<string, unknown>>): string {
+  const first = rows[0];
+  if (!first) {
+    return "Kafka 消息已发送。";
+  }
+  const partition = first.partition === undefined || first.partition === "" ? "-" : String(first.partition);
+  const offset = first.baseOffset === undefined || first.baseOffset === "" ? "-" : String(first.baseOffset);
+  return `Kafka 消息已发送：partition ${partition}，offset ${offset}。`;
+}
+
 async function openCreateResourcePanel(
   context: vscode.ExtensionContext,
   store: ConnectionStore,
@@ -2568,6 +2664,124 @@ function asInputString(value: unknown): string {
 
 function escapeSqlString(value: string): string {
   return value.replace(/'/g, "''");
+}
+
+function renderKafkaMessageHtml(node: NonNullable<ReturnType<typeof asTableNode>>): string {
+  const nonce = randomUUID().replace(/-/g, "");
+  return `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <style>
+    :root {
+      --bg: var(--vscode-editor-background);
+      --panel: color-mix(in srgb, var(--vscode-sideBar-background) 92%, var(--vscode-editor-background));
+      --panel-2: color-mix(in srgb, var(--vscode-sideBar-background) 78%, var(--vscode-editor-background));
+      --line: color-mix(in srgb, var(--vscode-panel-border) 78%, transparent);
+      --muted: var(--vscode-descriptionForeground);
+      --button: var(--vscode-button-background);
+      --button-fg: var(--vscode-button-foreground);
+      --danger: var(--vscode-errorForeground);
+      --ok: var(--vscode-testing-iconPassed, #4aa36b);
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; color: var(--vscode-foreground); background:
+      radial-gradient(circle at top right, color-mix(in srgb, var(--button) 12%, transparent), transparent 30rem),
+      var(--bg); font-family: var(--vscode-font-family); }
+    .page { min-height: 100vh; padding: 24px; display: grid; place-items: start center; }
+    .shell { width: min(920px, 100%); display: grid; gap: 16px; }
+    .hero { display: flex; justify-content: space-between; gap: 16px; align-items: flex-end; }
+    h1 { margin: 0 0 6px; font-size: 24px; letter-spacing: -.02em; }
+    .subtitle { color: var(--muted); font-size: 13px; line-height: 1.5; }
+    .badge { border: 1px solid var(--line); border-radius: 999px; padding: 5px 10px; color: var(--muted); background: color-mix(in srgb, var(--panel) 82%, transparent); font-size: 12px; white-space: nowrap; }
+    .card { border: 1px solid var(--line); border-radius: 16px; background: var(--panel); overflow: hidden; box-shadow: 0 18px 48px color-mix(in srgb, #000 14%, transparent); }
+    .form { padding: 18px; display: grid; gap: 16px; }
+    label { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 7px; color: var(--muted); font-size: 12px; }
+    input, textarea { width: 100%; border: 1px solid var(--vscode-input-border, transparent); border-radius: 10px; color: var(--vscode-input-foreground); background: var(--vscode-input-background); padding: 9px 11px; outline: none; font-family: var(--vscode-font-family); }
+    input { height: 36px; }
+    textarea { min-height: 260px; resize: vertical; font-family: var(--vscode-editor-font-family); line-height: 1.55; }
+    input:focus, textarea:focus { border-color: var(--vscode-focusBorder); }
+    .hint { margin-top: 6px; color: var(--muted); font-size: 12px; line-height: 1.45; }
+    .actions { display: flex; justify-content: flex-end; gap: 10px; align-items: center; padding: 14px 18px; border-top: 1px solid var(--line); background: color-mix(in srgb, var(--panel-2) 55%, transparent); }
+    .status { min-height: 22px; margin-right: auto; color: var(--muted); font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; }
+    .status.ok { color: var(--ok); }
+    .status.error { color: var(--danger); }
+    button { border: 0; border-radius: 10px; padding: 9px 14px; color: var(--button-fg); background: var(--button); cursor: pointer; font-size: 13px; }
+    button:hover { background: var(--vscode-button-hoverBackground); }
+    button.secondary { color: var(--vscode-button-secondaryForeground); background: var(--vscode-button-secondaryBackground); }
+    button.secondary:hover { background: var(--vscode-button-secondaryHoverBackground); }
+    @media (max-width: 720px) {
+      .page { padding: 12px; }
+      .hero { align-items: flex-start; flex-direction: column; }
+      textarea { min-height: 210px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <div class="shell">
+      <section class="hero">
+        <div>
+          <h1>发送 Kafka 消息</h1>
+          <div class="subtitle">向当前 Topic 写入一条测试消息，发送前会预览并确认 PRODUCE 命令。</div>
+        </div>
+        <div class="badge">${escapeHtml(node.connection.name)} · ${escapeHtml(node.table)}</div>
+      </section>
+      <section class="card">
+        <div class="form">
+          <div>
+            <label for="keyInput">消息 Key（可选）</label>
+            <input id="keyInput" placeholder="例如：user-1；留空则不设置 key" autofocus />
+            <div class="hint">Key 会按 Kafka 消息 key 写入，可用于分区路由或业务幂等。</div>
+          </div>
+          <div>
+            <label for="valueInput">消息内容</label>
+            <textarea id="valueInput" spellcheck="false" placeholder='例如：{"id":1,"status":"created"}'></textarea>
+            <div class="hint">支持 JSON 或普通文本；内容会原样作为 Kafka message value 发送，空内容会发送空字符串。</div>
+          </div>
+        </div>
+        <div class="actions">
+          <div class="status" id="status"></div>
+          <button class="secondary" id="resetBtn">清空</button>
+          <button id="sendBtn">发送消息</button>
+        </div>
+      </section>
+    </div>
+  </main>
+  <script nonce="${nonce}">
+    const vscode = acquireVsCodeApi();
+    const $ = (selector) => document.querySelector(selector);
+    const status = $("#status");
+    function setStatus(message, kind) {
+      status.textContent = message || "";
+      status.className = "status" + (kind ? " " + kind : "");
+    }
+    $("#sendBtn").addEventListener("click", () => {
+      setStatus("正在准备发送...", "");
+      vscode.postMessage({
+        type: "sendKafkaMessage",
+        payload: {
+          key: $("#keyInput").value || "",
+          value: $("#valueInput").value || "",
+        },
+      });
+    });
+    $("#resetBtn").addEventListener("click", () => {
+      $("#keyInput").value = "";
+      $("#valueInput").value = "";
+      setStatus("", "");
+    });
+    window.addEventListener("message", (event) => {
+      const message = event.data || {};
+      if (message.type === "kafkaMessageStatus") {
+        setStatus(message.message || "", message.ok ? "ok" : message.loading ? "" : "error");
+      }
+    });
+  </script>
+</body>
+</html>`;
 }
 
 function renderCreateResourceHtml(connection: DbConnectionConfig, targetLabel: string, actionLabel = "创建"): string {

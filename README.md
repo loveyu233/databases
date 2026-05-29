@@ -335,8 +335,9 @@ Kafka 操作说明：
 
 - 预览和快速查询默认使用 `CONSUME <topic> LIMIT N`，适合快速查看消息内容。
 - `FROM LATEST` 可用于等待新消息；默认从头开始消费，并使用临时 consumer group，不会影响已有业务消费组 offset。
-- 右键 Topic 可删除 Topic；连接右键“创建”可创建 Topic。
-- 表格不开放双击编辑，消息写入请使用 `PRODUCE` 命令。
+- 右键 Topic 可发送测试消息或删除 Topic；连接右键“创建”可创建 Topic。
+- 发送消息会打开独立页面，可填写可选 Key 和消息内容；确认弹窗会预览实际执行的 `PRODUCE` 命令。
+- 表格不开放双击编辑，复杂消息写入也可以在查询控制台手写 `PRODUCE` 命令。
 
 
 ### MQTT：连接、订阅 Topic 和发布消息
