@@ -44,4 +44,12 @@ assert.match(sqlEditor, /white-space:\s*pre-wrap/);
 assert.match(sqlEditor, /overflow-wrap:\s*anywhere/);
 assert.match(sqlEditor, /word-break:\s*break-word/);
 
+const sendMessageEditor = cssBlock(".send-message-json-wrap textarea");
+assert.match(sendMessageEditor, /font-weight:\s*400/);
+assert.match(sendMessageEditor, /font-style:\s*normal/);
+assert.match(sendMessageEditor, /letter-spacing:\s*normal/);
+assert.match(sendMessageEditor, /white-space:\s*pre-wrap/);
+assert.match(sendMessageEditor, /overflow-wrap:\s*anywhere/);
+assert.match(sendMessageEditor, /word-break:\s*break-word/);
+
 console.log("ok - Editable highlight styles keep caret metrics aligned");

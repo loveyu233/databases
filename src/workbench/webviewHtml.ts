@@ -1296,6 +1296,59 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
     font-family: var(--mono);
     line-height: 1.55;
   }
+  .send-message-json-wrap {
+    position: relative;
+    min-width: 0;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--input);
+    overflow: hidden;
+  }
+  .send-message-json-highlight {
+    position: absolute;
+    inset: 0;
+    margin: 0;
+    padding: 9px 11px;
+    color: var(--fg);
+    font-family: var(--mono);
+    font-size: 13px;
+    font-weight: 400;
+    font-style: normal;
+    letter-spacing: normal;
+    font-variant-ligatures: none;
+    font-kerning: none;
+    line-height: 1.55;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    overflow: hidden;
+    pointer-events: none;
+    tab-size: 2;
+  }
+  .send-message-json-wrap textarea {
+    position: relative;
+    z-index: 1;
+    border: 0;
+    background: transparent;
+    color: transparent;
+    -webkit-text-fill-color: transparent;
+    caret-color: var(--fg);
+    font-size: 13px;
+    font-weight: 400;
+    font-style: normal;
+    letter-spacing: normal;
+    font-variant-ligatures: none;
+    font-kerning: none;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    tab-size: 2;
+  }
+  .send-message-json-wrap textarea::selection { background: rgba(78, 151, 224, .24); }
+  .send-message-json-wrap textarea::placeholder {
+    color: var(--muted);
+    -webkit-text-fill-color: var(--muted);
+  }
   .relation-preview {
     border: 1px solid var(--line);
     border-radius: 10px;
@@ -1819,11 +1872,12 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
       <label class="export-row"><span>Topic</span><input class="field" id="sendMessageTopicInput" /></label>
       <label class="export-row" id="sendMessageKeyRow"><span>Key</span><input class="field" id="sendMessageKeyInput" placeholder="可选，例如 user-1" /></label>
       <label class="export-row" id="sendMessageQosRow"><span>QoS</span><select class="field" id="sendMessageQosInput"><option value="0">0 - 最多一次</option><option value="1">1 - 至少一次</option><option value="2">2 - 仅一次</option></select></label>
-      <label class="export-row send-message-value-row"><span>消息内容</span><textarea class="field" id="sendMessageValueInput" spellcheck="false" placeholder='例如：{"hello":"world"}'></textarea></label>
+      <label class="export-row send-message-value-row"><span>消息内容</span><div class="send-message-json-wrap"><pre class="send-message-json-highlight" id="sendMessageJsonHighlight" aria-hidden="true"></pre><textarea class="field" id="sendMessageValueInput" spellcheck="false" placeholder='例如：{"hello":"world"}'></textarea></div></label>
       <div class="relation-preview" id="sendMessagePreview"></div>
     </div>
     <div class="export-actions">
       <button class="secondary" id="cancelSendMessageBtn">取消</button>
+      <button class="secondary" id="formatSendMessageJsonBtn">格式化 JSON</button>
       <button id="confirmSendMessageBtn">发送消息</button>
     </div>
   </div>
@@ -2140,6 +2194,7 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
   const sendMessageQosRow = $("#sendMessageQosRow");
   const sendMessageQosInput = $("#sendMessageQosInput");
   const sendMessageValueInput = $("#sendMessageValueInput");
+  const sendMessageJsonHighlight = $("#sendMessageJsonHighlight");
   const sendMessagePreview = $("#sendMessagePreview");
   const rowContextMenu = $("#rowContextMenu");
   const codeSuggest = $("#codeSuggest");
@@ -2502,14 +2557,19 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
 	    $("#sendMessageBtn").addEventListener("click", openSendMessageDialog);
 	    $("#refreshBtn").addEventListener("click", () => refreshData({ confirmQuickWhere: true }));
 	    $("#cancelSendMessageBtn").addEventListener("click", closeSendMessageDialog);
+	    $("#formatSendMessageJsonBtn").addEventListener("click", formatSendMessageJson);
 	    $("#confirmSendMessageBtn").addEventListener("click", confirmSendMessage);
 	    sendMessageOverlay.addEventListener("click", (event) => {
 	      if (event.target === sendMessageOverlay) closeSendMessageDialog();
 	    });
 	    [sendMessageTopicInput, sendMessageKeyInput, sendMessageQosInput, sendMessageValueInput].forEach((item) => {
-	      if (item) item.addEventListener("input", updateSendMessagePreview);
+	      if (item) item.addEventListener("input", () => {
+	        if (item === sendMessageValueInput) updateSendMessageJsonHighlight();
+	        updateSendMessagePreview();
+	      });
 	      if (item && item.tagName === "SELECT") item.addEventListener("change", updateSendMessagePreview);
 	    });
+	    sendMessageValueInput.addEventListener("scroll", syncSendMessageJsonHighlightScroll);
 	    $("#cancelDiscardRefreshBtn").addEventListener("click", () => closeDiscardRefreshDialog());
 	    $("#confirmDiscardRefreshBtn").addEventListener("click", () => confirmDiscardRefresh());
 	    $("#refreshWithoutQuickBtn").addEventListener("click", () => confirmQuickRefresh(false));
@@ -4431,6 +4491,7 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
 	      sendMessageQosInput.value = "0";
 	      sendMessageKeyRow.style.display = kafka ? "grid" : "none";
 	      sendMessageQosRow.style.display = kafka ? "none" : "grid";
+	      updateSendMessageJsonHighlight();
 	      updateSendMessagePreview();
 	      sendMessageOverlay.classList.add("open");
 	      setTimeout(() => (sendMessageTopicInput.value ? sendMessageValueInput : sendMessageTopicInput).focus(), 0);
@@ -4444,6 +4505,35 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
 	      if (!sendMessagePreview) return;
 	      const command = buildSendMessageCommand({ validate: false });
 	      sendMessagePreview.innerHTML = '<div>预览命令：</div><strong>' + escapeHtml(command || "-") + '</strong>';
+	    }
+
+	    function updateSendMessageJsonHighlight() {
+	      sendMessageJsonHighlight.innerHTML = renderJsonHighlightedText(sendMessageValueInput.value || "");
+	      syncSendMessageJsonHighlightScroll();
+	    }
+
+	    function syncSendMessageJsonHighlightScroll() {
+	      sendMessageJsonHighlight.scrollTop = sendMessageValueInput.scrollTop;
+	      sendMessageJsonHighlight.scrollLeft = sendMessageValueInput.scrollLeft;
+	    }
+
+	    function formatSendMessageJson() {
+	      const text = sendMessageValueInput.value || "";
+	      if (!text.trim()) {
+	        setStatus("消息内容为空，无法格式化 JSON。", true);
+	        sendMessageValueInput.focus();
+	        return;
+	      }
+	      try {
+	        sendMessageValueInput.value = JSON.stringify(JSON.parse(text), null, 2);
+	        updateSendMessageJsonHighlight();
+	        updateSendMessagePreview();
+	        setStatus("消息内容已格式化为 JSON。", false);
+	        sendMessageValueInput.focus();
+	      } catch (error) {
+	        setStatus("消息内容不是有效 JSON，无法格式化：" + getErrorMessage(error), true);
+	        sendMessageValueInput.focus();
+	      }
 	    }
 
 	    function confirmSendMessage() {

@@ -60,5 +60,13 @@ const webviewSource = fs.readFileSync("src/workbench/webviewHtml.ts", "utf8");
 assert.ok(webviewSource.includes('id="sendMessageBtn"'));
 assert.ok(webviewSource.includes('state.connectionType === "mqtt"'));
 assert.ok(webviewSource.includes("PUBLISH "));
+assert.ok(webviewSource.includes('id="formatSendMessageJsonBtn"'));
+assert.ok(webviewSource.includes("function formatSendMessageJson()"));
+assert.ok(webviewSource.includes("sendMessageJsonHighlight"));
+
+const mqttClientSource = fs.readFileSync("src/database/clients/mqtt.ts", "utf8");
+assert.ok(mqttClientSource.includes("columns: MQTT_MESSAGE_COLUMNS"));
+assert.ok(mqttClientSource.includes("normalizePublishedMqttMessage"));
+assert.ok(!mqttClientSource.includes("payloadSize: Buffer.byteLength(command.payload)"));
 
 console.log("ok - MQTT command parsing and package metadata");

@@ -109,13 +109,14 @@ export class MqttWorkbenchClient implements DbClient {
       return this.withClient(async (client) => {
         const options: IClientPublishOptions = { qos: command.qos, retain: command.retain };
         const packet = await client.publishAsync(command.topic, command.payload, options);
-        return buildRowsResult([{
-          topic: command.topic,
-          qos: command.qos,
-          retain: command.retain,
-          payloadSize: Buffer.byteLength(command.payload),
-          result: packet?.cmd || "published",
-        }], "PUBLISH", 1);
+        return {
+          columns: MQTT_MESSAGE_COLUMNS,
+          rows: [normalizePublishedMqttMessage(command.topic, command.payload, command.qos, command.retain, packet)],
+          rowCount: 1,
+          affectedRows: 1,
+          command: "PUBLISH",
+          elapsedMs: 0,
+        };
       });
     }
     return buildRowsResult([], "MQTT");
@@ -338,6 +339,27 @@ function normalizeMqttMessage(topic: string, payload: Buffer, packet: IPublishPa
     json: parseJsonPayload(text),
     size: payload.length,
     messageId: packet.messageId ?? "",
+  };
+}
+
+function normalizePublishedMqttMessage(
+  topic: string,
+  payload: string,
+  qos: 0 | 1 | 2,
+  retain: boolean,
+  packet: { messageId?: number } | undefined
+): Record<string, unknown> {
+  const bytes = Buffer.from(payload, "utf8");
+  return {
+    topic,
+    qos,
+    retain,
+    dup: false,
+    timestamp: new Date().toISOString(),
+    payload,
+    json: parseJsonPayload(payload),
+    size: bytes.length,
+    messageId: packet?.messageId ?? "",
   };
 }
 
