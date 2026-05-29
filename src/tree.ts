@@ -8,6 +8,7 @@ const CONNECTION_DRAG_MIME = "application/vnd.databaseWorkbench.connectionIds";
 const GROUP_DECORATION_SCHEME = "database-workbench-group";
 const GROUP_LABEL_MARK = "▌";
 const GROUP_DECORATION_BADGE = "组";
+const GROUP_SPACER_PREFIX = "group-spacer:";
 const CONNECTION_ICON_FILES: Record<DatabaseType, string> = {
   mysql: "mysql.svg",
   postgres: "postgres.svg",
@@ -30,6 +31,7 @@ const GROUP_ICON_FILES: Record<ConnectionGroupColor, string> = {
 
 export type TreeNode =
   | { kind: "group"; group: ConnectionGroup }
+  | { kind: "groupSpacer"; id: string }
   | { kind: "connection"; connection: DbConnectionConfig }
   | { kind: "databaseFilter"; connection: DbConnectionConfig; scope: DatabaseFilterScope; total: number; selected: number }
   | { kind: "database"; connection: DbConnectionConfig; database: string }
@@ -59,6 +61,15 @@ export class ConnectionsTreeProvider implements vscode.TreeDataProvider<TreeNode
   }
 
   getTreeItem(node: TreeNode): vscode.TreeItem {
+    if (node.kind === "groupSpacer") {
+      const item = new vscode.TreeItem(" ", vscode.TreeItemCollapsibleState.None);
+      item.id = `${GROUP_SPACER_PREFIX}${node.id}`;
+      item.contextValue = "databaseWorkbench.groupSpacer";
+      item.iconPath = this.getTreeIcon("spacer.svg", "blank");
+      item.accessibilityInformation = { label: "分组间距", role: "treeitem" };
+      return item;
+    }
+
     if (node.kind === "group") {
       const connections = this.store.getAll().filter((connection) => connection.groupId === node.group.id);
       const item = new vscode.TreeItem(buildGroupTreeLabel(node.group.name), vscode.TreeItemCollapsibleState.Expanded);
@@ -151,7 +162,7 @@ export class ConnectionsTreeProvider implements vscode.TreeDataProvider<TreeNode
       const connections = this.store.getAll();
       const groupIds = new Set(groups.map((group) => group.id));
       return [
-        ...this.sortPinnedFirst(groups.map((group): TreeNode => this.getCachedNode({ kind: "group", group }))),
+        ...this.withGroupTopSpacing(this.sortPinnedFirst(groups.map((group) => this.getCachedNode({ kind: "group", group })))),
         ...this.sortPinnedFirst(connections
           .filter((connection) => !connection.groupId || !groupIds.has(connection.groupId))
           .map((connection): TreeNode => this.getCachedNode({ kind: "connection", connection }))),
@@ -288,6 +299,10 @@ export class ConnectionsTreeProvider implements vscode.TreeDataProvider<TreeNode
   }
 
   getParent(node: TreeNode): vscode.ProviderResult<TreeNode> {
+    if (node.kind === "groupSpacer") {
+      return undefined;
+    }
+
     if (node.kind === "group") {
       return undefined;
     }
@@ -451,6 +466,12 @@ export class ConnectionsTreeProvider implements vscode.TreeDataProvider<TreeNode
       .sort((left, right) => left.rank - right.rank || left.index - right.index)
       .map((item) => item.node);
   }
+
+  private withGroupTopSpacing(nodes: Array<{ kind: "group"; group: ConnectionGroup }>): TreeNode[] {
+    return nodes.flatMap((node, index) => index === 0
+      ? [node]
+      : [{ kind: "groupSpacer", id: node.group.id }, node]);
+  }
 }
 
 export class ConnectionGroupDecorationProvider implements vscode.FileDecorationProvider {
@@ -507,6 +528,9 @@ export function asTableNode(value: unknown): ({ kind: "table"; connection: DbCon
 }
 
 export function getTreeNodePinKey(node: TreeNode): string {
+  if (node.kind === "groupSpacer") {
+    return `${GROUP_SPACER_PREFIX}${node.id}`;
+  }
   if (node.kind === "group") {
     return `group:${node.group.id}`;
   }

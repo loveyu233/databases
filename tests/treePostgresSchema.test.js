@@ -65,6 +65,18 @@ const databaseService = {
 };
 
 (async () => {
+  const groupedProvider = new ConnectionsTreeProvider({
+    ...store,
+    getGroups: () => [
+      { id: "dev", name: "开发", color: "blue" },
+      { id: "test", name: "测试", color: "green" },
+      { id: "prod", name: "生产", color: "red" },
+    ],
+    getAll: () => [],
+  }, databaseService);
+  const rootNodes = await groupedProvider.getChildren();
+  assert.deepEqual(rootNodes.map((node) => node.kind), ["group", "groupSpacer", "group", "groupSpacer", "group"], "第一个顶部分组前不应加间距，其余分组前应加间距");
+
   const provider = new ConnectionsTreeProvider(store, databaseService);
   const databaseNode = { kind: "database", connection, database: "pg_type_test" };
   const schemaNodes = await provider.getChildren(databaseNode);
