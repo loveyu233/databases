@@ -365,7 +365,7 @@ UNSUBSCRIBE test/#
 
 MQTT 操作说明：
 
-- 预览和快速查询默认使用 `SUBSCRIBE <topic> LIMIT N TIMEOUT 10000`，适合临时查看消息；同一个订阅 Topic 的结果区会累积展示最近收到/发送的消息，避免每次刷新或发送后只剩最新一条。
+- 预览和快速查询默认使用 `SUBSCRIBE <topic> LIMIT N TIMEOUT 10000`，适合临时查看消息；同一个订阅 Topic 的结果区会按时间倒序累积展示最近收到/发送的消息，避免每次刷新或发送后只剩最新一条。
 - 在 `subscriptions` 订阅空间右键“创建”可添加订阅 Topic；右键订阅 Topic 可从连接配置中移除。
 - 打开订阅 Topic 标签页后，顶部“刷新数据”前的“发送消息”按钮可打开弹窗；可以指定发布 Topic、QoS 和消息内容，消息内容支持 JSON 高亮与格式化，弹窗会预览实际执行的 `PUBLISH` 命令。
 - 发布 Topic 不允许包含 `+` 或 `#` 通配符；如果当前订阅 Topic 是通配符，需要在弹窗里手动填写实际发布 Topic。

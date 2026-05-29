@@ -657,7 +657,7 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
   .message-pill.strong { color: var(--fg); border-color: color-mix(in srgb, var(--button) 45%, var(--line)); background: color-mix(in srgb, var(--button) 12%, transparent); }
   .message-card {
     border: 1px solid var(--line);
-    border-radius: 16px;
+    border-radius: 14px;
     background: color-mix(in srgb, var(--panel) 88%, var(--bg));
     box-shadow: 0 16px 38px rgba(0,0,0,.18);
     overflow: hidden;
@@ -666,28 +666,29 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
-    gap: 12px;
-    padding: 12px 14px;
+    gap: 10px;
+    padding: 9px 12px;
     border-bottom: 1px solid rgba(127,127,127,.18);
     background: rgba(255,255,255,.018);
   }
-  .message-topic { min-width: 0; display: grid; gap: 5px; }
+  .message-topic { min-width: 0; display: grid; gap: 3px; }
   .message-topic strong {
     color: var(--fg);
     font-family: var(--mono);
     font-size: 13px;
     overflow-wrap: anywhere;
   }
-  .message-topic span { color: var(--muted); font-size: 12px; }
-  .message-meta-line { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
-  .message-body { padding: 12px 14px; display: grid; gap: 12px; }
+  .message-topic span { color: var(--muted); font-size: 12px; line-height: 1.45; overflow-wrap: anywhere; }
+  .message-meta-line { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; align-items: center; }
+  .message-meta-line button { padding: 4px 8px; font-size: 11px; }
+  .message-body { padding: 10px 12px; display: grid; gap: 8px; }
   .message-payload {
     margin: 0;
-    max-height: 360px;
+    max-height: 320px;
     overflow: auto;
     border: 1px solid rgba(127,127,127,.20);
-    border-radius: 12px;
-    padding: 12px;
+    border-radius: 10px;
+    padding: 10px;
     color: var(--fg);
     background: rgba(0,0,0,.18);
     font-family: var(--mono);
@@ -697,15 +698,6 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
     overflow-wrap: anywhere;
     word-break: break-word;
   }
-  .message-foot {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-    color: var(--muted);
-    font-size: 12px;
-  }
-  .message-foot button { padding: 5px 9px; font-size: 11px; }
   .message-empty {
     border: 1px dashed color-mix(in srgb, var(--button) 38%, var(--line));
     border-radius: 16px;
@@ -7257,12 +7249,13 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
       __dbwMessageSeq: Date.now() + index,
     }));
     const mergedRows = [...previousRows, ...nextRows].slice(-MQTT_MESSAGE_HISTORY_LIMIT);
+    const displayRows = sortMqttMessageRowsForDisplay(mergedRows);
     mqttMessageHistory.set(key, mergedRows);
     return {
       ...queryResult,
       command: "MQTT_MESSAGE_STREAM",
       columns: mergeColumns(MQTT_MESSAGE_COLUMNS, queryResult?.columns || []),
-      rows: mergedRows,
+      rows: displayRows,
       rowCount: mergedRows.length,
       metadata: {
         ...(queryResult?.metadata || {}),
@@ -7272,6 +7265,27 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
         historyKey: key,
       },
     };
+  }
+
+  function sortMqttMessageRowsForDisplay(rows) {
+    return [...(rows || [])].sort((left, right) => compareMqttMessageTimeDesc(left, right));
+  }
+
+  function compareMqttMessageTimeDesc(left, right) {
+    const leftTime = getMqttMessageTimestamp(left);
+    const rightTime = getMqttMessageTimestamp(right);
+    if (leftTime !== rightTime) return rightTime - leftTime;
+    return getMqttMessageSeq(right) - getMqttMessageSeq(left);
+  }
+
+  function getMqttMessageTimestamp(row) {
+    const timestamp = Date.parse(String(row?.timestamp || ""));
+    return Number.isFinite(timestamp) ? timestamp : getMqttMessageSeq(row);
+  }
+
+  function getMqttMessageSeq(row) {
+    const seq = Number(row?.__dbwMessageSeq || 0);
+    return Number.isFinite(seq) ? seq : 0;
   }
 
   function getMqttMessageHistoryKey(queryResult) {
@@ -7444,11 +7458,11 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
     const meta = getMessageMeta(row);
     const payloadHtml = isJsonLikeText(payload) ? renderJsonHighlightedText(prettyJsonText(payload) || payload) : escapeHtml(payload || "(empty payload)");
     const foot = getMessageFoot(row, payload);
+    const subtitleLine = [subtitle, foot].filter(Boolean).join(" · ");
     return '<article class="message-card" data-row-index="' + rowIndex + '">'
-      + '<div class="message-card-head"><div class="message-topic"><strong>' + escapeHtml(topic) + '</strong><span>' + escapeHtml(subtitle) + '</span></div>'
-      + '<div class="message-meta-line">' + meta.map((item) => '<span class="message-pill">' + escapeHtml(item) + '</span>').join("") + '</div></div>'
-      + '<div class="message-body"><pre class="message-payload">' + payloadHtml + '</pre>'
-      + '<div class="message-foot"><span>' + escapeHtml(foot) + '</span><button class="secondary" data-copy-message-payload="' + rowIndex + '">复制消息内容</button></div></div>'
+      + '<div class="message-card-head"><div class="message-topic"><strong>' + escapeHtml(topic) + '</strong><span>' + escapeHtml(subtitleLine) + '</span></div>'
+      + '<div class="message-meta-line">' + meta.map((item) => '<span class="message-pill">' + escapeHtml(item) + '</span>').join("") + '<button class="secondary" data-copy-message-payload="' + rowIndex + '">复制消息内容</button></div></div>'
+      + '<div class="message-body"><pre class="message-payload">' + payloadHtml + '</pre></div>'
       + '</article>';
   }
 
