@@ -2,7 +2,7 @@
 
 Database Workbench 是一个在 VS Code 内使用的数据库工作台。它把连接管理、结构浏览、数据预览、查询编辑、数据修改、导入导出、操作日志和 AI 辅助放到同一个侧边栏与标签页工作流里。
 
-当前支持：**MySQL、PostgreSQL、Redis、Elasticsearch、MongoDB、TDengine、Kafka、MQTT**。
+当前支持：**MySQL、PostgreSQL、Redis、Elasticsearch、MongoDB、TDengine、Kafka、MQTT、etcd**。
 
 > Pro 只解锁 AI、操作日志、表结构对比等高级入口，不包含大模型额度或内置 API Key。使用 AI 前仍需要自行配置 OpenAI、DeepSeek、通义千问、豆包、Ollama 等 OpenAI 兼容接口。
 
@@ -10,21 +10,21 @@ Database Workbench 是一个在 VS Code 内使用的数据库工作台。它把�
 
 ## 支持能力矩阵
 
-| 能力 | MySQL | PostgreSQL | Redis | Elasticsearch | MongoDB | TDengine | Kafka | MQTT |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 连接管理 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| 分组 / 置顶 / 导入导出连接 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| 资源浏览 | 库 / 表 | 库 / schema / 表 | DB / Key | 索引 | 数据库 / 集合 | 库 / 超级表 / 表 | Topic | 订阅 Topic |
-| 快速查询 | WHERE 片段 | WHERE 片段 | Key 搜索 / INSPECT | Query DSL / query_string | JSON Filter | WHERE 时间条件 | CONSUME Topic | SUBSCRIBE Topic |
-| 查询控制台 | SQL | SQL | Redis 命令 | HTTP Query DSL / ES SQL | Mongo shell 风格命令 | TDengine SQL | Kafka 命令 | MQTT 命令 |
-| 数据预览 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅，消费消息 | ✅，订阅消息 |
-| 双击编辑 | ✅ | ✅ | ✅ | ✅ | ✅，按 `_id` | - | - | - |
-| 新增 / 删除 | ✅ | ✅ | 部分 Key/成员 | ✅ | ✅，按 `_id` | - | 创建 / 删除 Topic，发送消息 | 添加 / 移除订阅，发布消息 |
-| 创建资源 | 数据库 / 表 | 数据库 / schema 表 | - | 索引 | 数据库 / 集合 | 数据库 | Topic | 订阅 Topic |
-| 修改表结构 | ✅ | ✅ | - | - | - | - | - | - |
-| 表结构对比，Pro | ✅ | ✅ | - | - | - | - | - | - |
-| 操作日志，Pro | ✅ | ✅ | ✅ | ✅ | ✅ | ✅，SQL 变更 | - | - |
-| AI 辅助，Pro | SQL | SQL | 命令 | Query DSL / ES SQL | MongoDB 命令 | TDengine SQL | Kafka 命令 | MQTT 命令 |
+| 能力 | MySQL | PostgreSQL | Redis | Elasticsearch | MongoDB | TDengine | Kafka | MQTT | etcd |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 连接管理 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 分组 / 置顶 / 导入导出连接 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 资源浏览 | 库 / 表 | 库 / schema / 表 | DB / Key | 索引 | 数据库 / 集合 | 库 / 超级表 / 表 | Topic | 订阅 Topic | Key 空间 / Key |
+| 快速查询 | WHERE 片段 | WHERE 片段 | Key 搜索 / INSPECT | Query DSL / query_string | JSON Filter | WHERE 时间条件 | CONSUME Topic | SUBSCRIBE Topic | GET Key / PREFIX 前缀 |
+| 查询控制台 | SQL | SQL | Redis 命令 | HTTP Query DSL / ES SQL | Mongo shell 风格命令 | TDengine SQL | Kafka 命令 | MQTT 命令 | etcd 命令 |
+| 数据预览 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅，消费消息 | ✅，订阅消息 | ✅，Key/value |
+| 双击编辑 | ✅ | ✅ | ✅ | ✅ | ✅，按 `_id` | - | - | - | - |
+| 新增 / 删除 | ✅ | ✅ | 部分 Key/成员 | ✅ | ✅，按 `_id` | - | 创建 / 删除 Topic，发送消息 | 添加 / 移除订阅，发布消息 | 创建 / 删除 Key |
+| 创建资源 | 数据库 / 表 | 数据库 / schema 表 | - | 索引 | 数据库 / 集合 | 数据库 | Topic | 订阅 Topic | Key |
+| 修改表结构 | ✅ | ✅ | - | - | - | - | - | - | - |
+| 表结构对比，Pro | ✅ | ✅ | - | - | - | - | - | - | - |
+| 操作日志，Pro | ✅ | ✅ | ✅ | ✅ | ✅ | ✅，SQL 变更 | - | - | - |
+| AI 辅助，Pro | SQL | SQL | 命令 | Query DSL / ES SQL | MongoDB 命令 | TDengine SQL | Kafka 命令 | MQTT 命令 | etcd 命令 |
 
 ## 目录
 
@@ -45,11 +45,11 @@ Database Workbench 是一个在 VS Code 内使用的数据库工作台。它把�
 
 - **统一连接树**：按分组、连接、数据库 / Schema / DB / 索引 / 集合展示资源。
 - **一致的工作台体验**：点击左侧资源后，右侧标签页展示预览、快速条件、SQL / 命令编辑器、AI 时间线和结果表格。
-- **多数据源支持**：MySQL、PostgreSQL、Redis、Elasticsearch、MongoDB、TDengine、Kafka、MQTT 使用同一套操作习惯。
+- **多数据源支持**：MySQL、PostgreSQL、Redis、Elasticsearch、MongoDB、TDengine、Kafka、MQTT、etcd 使用同一套操作习惯。
 - **可视化数据编辑**：双击编辑、JSON 格式化与高亮、枚举/布尔快捷按钮、快速新增、右键删除和批量删除。
 - **结构管理**：MySQL / PostgreSQL 支持创建表、修改表、SQL 建表导入、复制结构、触发器、自定义类型等。
 - **安全确认**：变更类 SQL / 命令执行前会弹出格式化确认预览；MySQL / PostgreSQL 多条 SQL 执行会使用事务包裹。
-- **AI 辅助**：基于当前表结构、Redis Key、ES Mapping、MongoDB 集合结构、TDengine 时序表结构、Kafka Topic 或 MQTT Topic 信息生成查询和分析错误。
+- **AI 辅助**：基于当前表结构、Redis Key、ES Mapping、MongoDB 集合结构、TDengine 时序表结构、Kafka Topic、MQTT Topic 或 etcd Key 信息生成查询和分析错误。
 - **操作日志**：记录数据变更和结构变更，支持查看前后数据、标签和回滚。
 
 ## 快速开始
@@ -57,10 +57,10 @@ Database Workbench 是一个在 VS Code 内使用的数据库工作台。它把�
 1. 安装插件后，打开 VS Code 左侧 **Database Workbench**。
 2. 点击连接树标题栏的 `+`。
 3. 选择「添加数据库连接」。
-4. 选择类型：MySQL / PostgreSQL / Redis / Elasticsearch / MongoDB / TDengine / Kafka / MQTT。
-5. 填写 host、port、username、password、默认数据库或认证库等信息；MQTT 的初始订阅 Topic 可以留空。
+4. 选择类型：MySQL / PostgreSQL / Redis / Elasticsearch / MongoDB / TDengine / Kafka / MQTT / etcd。
+5. 填写 host、port、username、password、默认数据库或认证库等信息；MQTT 的初始订阅 Topic、etcd 的 Key 前缀筛选都可以留空。
 6. 点击「测试连接」。
-7. 展开连接，点击数据库、表、索引、集合、Redis DB、Kafka Topic；MQTT 可在 `subscriptions` 订阅空间右键添加订阅 Topic 后点击打开。
+7. 展开连接，点击数据库、表、索引、集合、Redis DB、Kafka Topic、etcd Key；MQTT 可在 `subscriptions` 订阅空间右键添加订阅 Topic 后点击打开。
 8. 在右侧标签页中查询、编辑、导出或使用 AI。
 
 命令面板也可以直接执行：
@@ -102,10 +102,14 @@ Database Workbench
 │  │  └─ topics
 │  │     ├─ orders.created
 │  │     └─ user.events
-│  └─ MQTT 本地连接
-│     └─ subscriptions
-│        ├─ sensors/+/temperature
-│        └─ test/#
+│  ├─ MQTT 本地连接
+│  │  └─ subscriptions
+│  │     ├─ sensors/+/temperature
+│  │     └─ test/#
+│  └─ etcd 本地连接
+│     └─ keys
+│        ├─ /config/app
+│        └─ /services/api
 ```
 
 - 分组可修改名称和颜色。
@@ -117,8 +121,8 @@ Database Workbench
 
 ```text
 顶部：刷新 / 自动刷新 / 复制结构 / 修改结构 / 选择显示字段 / 操作日志
-快速条件：WHERE 片段、TDengine 时间条件、ES 条件、MongoDB JSON Filter、Redis Key 搜索
-SQL / 命令 / AI：完整 SQL、TDengine SQL、Redis 命令、ES 请求、MongoDB 命令、Kafka 命令、MQTT 命令、AI 时间线
+快速条件：WHERE 片段、TDengine 时间条件、ES 条件、MongoDB JSON Filter、Redis Key 搜索、etcd Key 前缀
+SQL / 命令 / AI：完整 SQL、TDengine SQL、Redis 命令、ES 请求、MongoDB 命令、Kafka 命令、MQTT 命令、etcd 命令、AI 时间线
 结果表格：预览、排序、分页、横向滚动、编辑、右键菜单
 ```
 
@@ -205,6 +209,33 @@ ZRANGE rank 0 20 WITHSCORES
 ```
 
 为避免阻塞 Redis，插件会提示 `KEYS`、无界范围读取、大 Key 删除等高风险命令，并建议更安全的 SCAN / 分页方案。
+
+### etcd：Key 浏览、前缀查询和配置写入
+
+etcd 默认连接 `host:2379`。本地无认证时用户名和密码都可以留空；开启 SSL 后会使用 `https` 连接。连接配置中的“Key 前缀筛选”可以留空，也可以填写 `/config/`、`/services/` 这类前缀，左侧树会只展示匹配前缀的 Key。
+
+左侧树会在 `keys` Key 空间下展示 Key。点击 Key 后，右侧默认执行 `GET` 并展示 `key`、`value`、`version`、`createRevision`、`modRevision`、`lease`、`size` 等信息。
+
+查询控制台支持的常用 etcd 命令：
+
+```text
+SHOW KEYS
+SHOW KEYS PREFIX /config/ LIMIT 30
+PREFIX /services/ LIMIT 30
+SCAN /feature/ LIMIT 20
+GET /config/app
+PUT /config/app VALUE {"enabled":true}
+DELETE /config/app
+DELETE_PREFIX /config/
+```
+
+etcd 操作说明：
+
+- 快速条件留空时读取当前 Key；填写前缀时会执行 `PREFIX "<前缀>" LIMIT N`。
+- 连接或 `keys` Key 空间右键“创建”可新增 Key，并填写初始 Value。
+- 右键 Key 可删除该 Key；`DELETE_PREFIX` 只建议在明确确认前缀范围后手写执行。
+- 复制结构会生成可复用的 `PUT key VALUE value` 命令。
+- 表格不开放双击编辑，修改配置建议通过创建 Key 弹窗或查询控制台显式执行 `PUT`。
 
 ### Elasticsearch：索引、Mapping 和 Query DSL
 
@@ -376,7 +407,7 @@ MQTT 操作说明：
 
 ## AI 辅助，Pro
 
-激活 Pro 并配置 AI 后，可以在 MySQL、PostgreSQL、Redis、Elasticsearch、MongoDB、TDengine、Kafka、MQTT 中使用 AI。
+激活 Pro 并配置 AI 后，可以在 MySQL、PostgreSQL、Redis、Elasticsearch、MongoDB、TDengine、Kafka、MQTT、etcd 中使用 AI。
 
 AI 能力包括：
 
@@ -387,6 +418,7 @@ AI 能力包括：
 - 根据 TDengine 时序表结构生成时间范围、INTERVAL 和聚合 SQL。
 - 根据 Kafka Topic 信息生成消费、描述 Topic 或发送测试消息命令。
 - 根据 MQTT Topic 信息生成订阅或发布测试消息命令。
+- 根据 etcd Key 信息生成前缀查询、GET 或 PUT 配置命令。
 - 根据错误信息分析失败原因。
 - 根据自然语言辅助创建表结构草案。
 - 对上一次 AI 结果继续追问和改写。
@@ -584,7 +616,7 @@ Database Workbench: 取消激活（测试使用）
 - 连接密码保存在 VS Code `SecretStorage`。
 - 普通连接信息保存在 VS Code 扩展全局状态中。
 - 导出的连接 JSON 可能包含密码。
-- AI 请求会发送表结构、Key / 索引 / 集合 / 时序表摘要和你的需求描述，默认不发送查询结果数据行。
+- AI 请求会发送表结构、Key / 索引 / 集合 / 时序表 / Topic 摘要和你的需求描述，默认不发送查询结果数据行。
 - 操作日志保存在本机，可能包含修改前后的真实业务数据。
 - Pro 许可证保存在 VS Code `SecretStorage`，插件不会联网校验许可证。
 - Elasticsearch 自签名证书需要手动开启 `allowInsecureTls`，远程或不可信网络环境不建议开启。
@@ -598,7 +630,7 @@ src/
 ├─ database/
 │  ├─ service.ts              # 数据库应用服务入口
 │  ├─ core/                   # DbClient、事务判断、通用工具
-│  └─ clients/                # mysql / postgres / redis / elasticsearch / mongodb / tdengine
+│  └─ clients/                # mysql / postgres / redis / elasticsearch / mongodb / tdengine / kafka / mqtt / etcd
 ├─ workbench/
 │  ├─ logic.ts                # 查询、结构 SQL、导出、回滚等纯逻辑
 │  └─ webviewHtml.ts          # 右侧工作台 HTML / CSS / 前端脚本

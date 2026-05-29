@@ -1,11 +1,22 @@
 import * as vscode from "vscode";
 import { DatabaseService } from "./database/service";
 import { ConnectionStore } from "./storage";
-import { ConnectionGroup, ConnectionGroupColor, DatabaseNode, DbConnectionConfig } from "./types";
+import { ConnectionGroup, ConnectionGroupColor, DatabaseNode, DatabaseType, DbConnectionConfig } from "./types";
 
-type DatabaseFilterScope = "database" | "index" | "topic" | "subscription";
+type DatabaseFilterScope = "database" | "index" | "topic" | "subscription" | "key";
 const CONNECTION_DRAG_MIME = "application/vnd.databaseWorkbench.connectionIds";
 const GROUP_DECORATION_SCHEME = "database-workbench-group";
+const CONNECTION_ICON_FILES: Record<DatabaseType, string> = {
+  mysql: "mysql.svg",
+  postgres: "postgres.svg",
+  redis: "redis.svg",
+  elasticsearch: "elasticsearch.svg",
+  mongodb: "mongodb.svg",
+  tdengine: "tdengine.svg",
+  kafka: "kafka.svg",
+  mqtt: "mqtt.svg",
+  etcd: "etcd.svg",
+};
 
 export type TreeNode =
   | { kind: "group"; group: ConnectionGroup }
@@ -29,7 +40,8 @@ export class ConnectionsTreeProvider implements vscode.TreeDataProvider<TreeNode
 
   constructor(
     private readonly store: ConnectionStore,
-    private readonly databaseService: DatabaseService
+    private readonly databaseService: DatabaseService,
+    private readonly extensionUri?: vscode.Uri
   ) {}
 
   refresh(node?: TreeNode): void {
@@ -57,12 +69,12 @@ export class ConnectionsTreeProvider implements vscode.TreeDataProvider<TreeNode
       item.description = `${pinned ? "置顶 · " : ""}${node.connection.type}://${node.connection.host}:${node.connection.port}${countText}`;
       item.tooltip = `${pinned ? "已置顶。\n" : ""}${node.connection.username}@${node.connection.host}:${node.connection.port}`;
       item.contextValue = `databaseWorkbench.connection.${node.connection.type}.${pinned ? "pinned" : "unpinned"}`;
-      item.iconPath = new vscode.ThemeIcon("server-environment");
+      item.iconPath = this.getConnectionIcon(node.connection.type);
       return item;
     }
 
     if (node.kind === "databaseFilter") {
-      const target = node.scope === "index" ? "索引" : node.scope === "topic" ? "Topic" : node.scope === "subscription" ? "订阅 Topic" : getDatabaseDescription(node.connection.type);
+      const target = node.scope === "index" ? "索引" : node.scope === "topic" ? "Topic" : node.scope === "subscription" ? "订阅 Topic" : node.scope === "key" ? "Key" : getDatabaseDescription(node.connection.type);
       const item = new vscode.TreeItem(`[${node.selected}/${node.total}] 选择显示${target}`, vscode.TreeItemCollapsibleState.None);
       item.tooltip = `选择哪些${target}显示在左侧连接树中`;
       item.contextValue = "databaseWorkbench.databaseFilter";
@@ -84,7 +96,7 @@ export class ConnectionsTreeProvider implements vscode.TreeDataProvider<TreeNode
       item.description = `${pinned ? "置顶 · " : ""}${getDatabaseDescription(node.connection.type)}`;
       item.tooltip = pinned ? `已置顶：${node.database}` : node.database;
       item.contextValue = `databaseWorkbench.database.${node.connection.type}.${pinned ? "pinned" : "unpinned"}`;
-      item.iconPath = new vscode.ThemeIcon(node.connection.type === "redis" ? "server-process" : "database");
+      item.iconPath = new vscode.ThemeIcon(node.connection.type === "redis" ? "server-process" : node.connection.type === "etcd" ? "key" : "database");
       if (node.connection.type === "redis") {
         item.command = {
           command: "databaseWorkbench.openDatabase",
@@ -112,10 +124,10 @@ export class ConnectionsTreeProvider implements vscode.TreeDataProvider<TreeNode
       ? `${pinned ? "已置顶。\n" : ""}${node.table}\n${node.comment.trim()}`
       : `${pinned ? "已置顶： " : ""}${node.table}`;
     item.contextValue = `databaseWorkbench.table.${node.connection.type}.${pinned ? "pinned" : "unpinned"}`;
-    item.iconPath = new vscode.ThemeIcon(node.connection.type === "redis" ? "symbol-key" : node.connection.type === "elasticsearch" ? "symbol-array" : node.connection.type === "mongodb" ? "symbol-object" : node.connection.type === "tdengine" ? "pulse" : node.connection.type === "kafka" || node.connection.type === "mqtt" ? "radio-tower" : "table");
+    item.iconPath = new vscode.ThemeIcon(node.connection.type === "redis" || node.connection.type === "etcd" ? "symbol-key" : node.connection.type === "elasticsearch" ? "symbol-array" : node.connection.type === "mongodb" ? "symbol-object" : node.connection.type === "tdengine" ? "pulse" : node.connection.type === "kafka" || node.connection.type === "mqtt" ? "radio-tower" : "table");
     item.command = {
       command: "databaseWorkbench.openTable",
-      title: node.connection.type === "mongodb" ? "查看集合信息" : node.connection.type === "tdengine" ? "查看时序表信息" : node.connection.type === "kafka" ? "查看 Topic 消息" : node.connection.type === "mqtt" ? "订阅 Topic 消息" : "查看表信息",
+      title: node.connection.type === "mongodb" ? "查看集合信息" : node.connection.type === "tdengine" ? "查看时序表信息" : node.connection.type === "kafka" ? "查看 Topic 消息" : node.connection.type === "mqtt" ? "订阅 Topic 消息" : node.connection.type === "etcd" ? "查看 Key 信息" : "查看表信息",
       arguments: [node],
     };
     return item;
@@ -175,6 +187,15 @@ export class ConnectionsTreeProvider implements vscode.TreeDataProvider<TreeNode
             ...this.sortPinnedFirst(databases.map((database): TreeNode => this.getCachedNode({ kind: "database", connection: node.connection, database }))),
           ];
         }
+        if (connection.type === "etcd") {
+          const keys = (await this.databaseService.listTableSummaries(connection, "keys")).map((item) => item.name);
+          const selectedKeys = await this.resolveSelectedNames(connection.id, keys);
+          this.updateConnectionCount(node, selectedKeys.length, keys.length);
+          return [
+            this.getCachedNode({ kind: "databaseFilter", connection: node.connection, scope: "key", selected: selectedKeys.length, total: keys.length }),
+            ...this.sortPinnedFirst(databases.map((database): TreeNode => this.getCachedNode({ kind: "database", connection: node.connection, database }))),
+          ];
+        }
 
         const selectedDatabases = await this.resolveSelectedNames(connection.id, databases);
         this.updateConnectionCount(node, selectedDatabases.length, databases.length);
@@ -209,7 +230,7 @@ export class ConnectionsTreeProvider implements vscode.TreeDataProvider<TreeNode
             tableCount: schemaTables.length,
           })));
         }
-        const visibleTables = node.connection.type === "elasticsearch" || node.connection.type === "kafka" || node.connection.type === "mqtt"
+        const visibleTables = node.connection.type === "elasticsearch" || node.connection.type === "kafka" || node.connection.type === "mqtt" || node.connection.type === "etcd"
           ? filterBySavedNames(tables, this.store.getDatabaseFilter(node.connection.id))
           : tables;
         return this.sortPinnedFirst(visibleTables.map((table) => this.getCachedNode({
@@ -335,6 +356,13 @@ export class ConnectionsTreeProvider implements vscode.TreeDataProvider<TreeNode
     this.refresh();
     const verb = targetGroupId ? `移动到分组「${target?.kind === "group" ? target.group.name : ""}」` : "移出分组";
     vscode.window.setStatusBarMessage(`Database Workbench: 已${verb} ${connectionIds.length} 个连接。`, 2500);
+  }
+
+  private getConnectionIcon(type: DatabaseType): vscode.ThemeIcon | vscode.Uri {
+    if (!this.extensionUri) {
+      return new vscode.ThemeIcon(getConnectionFallbackIcon(type));
+    }
+    return vscode.Uri.joinPath(this.extensionUri, "assets", "icons", CONNECTION_ICON_FILES[type]);
   }
 
   private async resolveSelectedNames(connectionId: string, available: string[]): Promise<string[]> {
@@ -575,6 +603,7 @@ function getDatabaseDescription(type: DbConnectionConfig["type"]): string {
   if (type === "tdengine") return "数据库";
   if (type === "kafka") return "Topic 空间";
   if (type === "mqtt") return "订阅空间";
+  if (type === "etcd") return "Key 空间";
   return "数据库";
 }
 
@@ -585,7 +614,18 @@ function getTableDescription(type: DbConnectionConfig["type"]): string {
   if (type === "tdengine") return "时序表";
   if (type === "kafka") return "Topic";
   if (type === "mqtt") return "订阅 Topic";
+  if (type === "etcd") return "Key";
   return "表";
+}
+
+function getConnectionFallbackIcon(type: DatabaseType): string {
+  if (type === "redis" || type === "etcd") return "symbol-key";
+  if (type === "elasticsearch") return "symbol-array";
+  if (type === "mongodb") return "symbol-object";
+  if (type === "tdengine") return "pulse";
+  if (type === "kafka" || type === "mqtt") return "radio-tower";
+  if (type === "postgres") return "elephant";
+  return "database";
 }
 
 function filterBySavedNames<T extends { name: string }>(items: T[], saved: string[] | undefined): T[] {

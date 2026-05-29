@@ -2438,10 +2438,13 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
 	      "CONSUME", "FROM BEGINNING", "FROM LATEST", "LIMIT", "TIMEOUT", "PRODUCE", "KEY", "VALUE",
 	      "CREATE TOPIC", "PARTITIONS", "REPLICATION_FACTOR", "DELETE TOPIC"
 	    ];
-	    const mqttKeywords = [
-	      "SHOW SUBSCRIPTIONS", "PING", "SUBSCRIBE", "SUB", "UNSUBSCRIBE", "UNSUB",
-	      "PUBLISH", "PUB", "PAYLOAD", "MESSAGE", "VALUE", "QOS", "RETAIN", "LIMIT", "TIMEOUT"
-	    ];
+		    const mqttKeywords = [
+		      "SHOW SUBSCRIPTIONS", "PING", "SUBSCRIBE", "SUB", "UNSUBSCRIBE", "UNSUB",
+		      "PUBLISH", "PUB", "PAYLOAD", "MESSAGE", "VALUE", "QOS", "RETAIN", "LIMIT", "TIMEOUT"
+		    ];
+		    const etcdKeywords = [
+		      "SHOW KEYS", "PREFIX", "SCAN", "GET", "PUT", "SET", "VALUE", "DELETE", "DEL", "DELETE_PREFIX", "LIMIT"
+		    ];
   const logTagColorOptions = [
     { key: "red", label: "红色" },
     { key: "orange", label: "橙色" },
@@ -2982,7 +2985,7 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
     state.sortDirection = "asc";
     const executableSql = getExecutableSqlFromEditor();
     if (!executableSql) {
-      setStatus(state.connectionType === "redis" ? "请先输入需要执行的 Redis 命令。" : state.connectionType === "elasticsearch" ? "请先输入需要执行的 Elasticsearch 查询。" : state.connectionType === "mongodb" ? "请先输入需要执行的 MongoDB 命令。" : state.connectionType === "kafka" ? "请先输入需要执行的 Kafka 命令。" : state.connectionType === "mqtt" ? "请先输入需要执行的 MQTT 命令。" : state.connectionType === "tdengine" ? "请先输入需要执行的 TDengine SQL。" : "请先输入或生成需要执行的 SQL。", true);
+      setStatus(state.connectionType === "redis" ? "请先输入需要执行的 Redis 命令。" : state.connectionType === "elasticsearch" ? "请先输入需要执行的 Elasticsearch 查询。" : state.connectionType === "mongodb" ? "请先输入需要执行的 MongoDB 命令。" : state.connectionType === "kafka" ? "请先输入需要执行的 Kafka 命令。" : state.connectionType === "mqtt" ? "请先输入需要执行的 MQTT 命令。" : state.connectionType === "etcd" ? "请先输入需要执行的 etcd 命令。" : state.connectionType === "tdengine" ? "请先输入需要执行的 TDengine SQL。" : "请先输入或生成需要执行的 SQL。", true);
       return;
     }
     preserveSqlInputOnNextResult = true;
@@ -3027,18 +3030,19 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
     pendingAiTimelineId = "";
     renderAiTimeline();
   });
-	    $("#formatBtn").addEventListener("click", () => {
-	      sqlInput.value = formatEditorText(sqlInput.value);
-	      updateSqlInputHighlight(sqlInput);
-	      sqlInput.focus();
+  $("#formatBtn").addEventListener("click", () => {
+    sqlInput.value = formatEditorText(sqlInput.value);
+    updateSqlInputHighlight(sqlInput);
+    sqlInput.focus();
     moveCursorToEnd(sqlInput);
   });
 
-	    function formatEditorText(value) {
-	      if (state.connectionType === "elasticsearch") return formatElasticRequestText(value);
-	      if (state.connectionType === "mongodb") return formatMongoCommandText(value);
-	      return formatSqlText(value);
-	    }
+  function formatEditorText(value) {
+    if (state.connectionType === "elasticsearch") return formatElasticRequestText(value);
+    if (state.connectionType === "mongodb") return formatMongoCommandText(value);
+    if (state.connectionType === "redis" || state.connectionType === "kafka" || state.connectionType === "mqtt" || state.connectionType === "etcd") return String(value || "");
+    return formatSqlText(value);
+  }
 
   function formatSqlText(sql) {
     const text = String(sql || "").trim();
@@ -3694,7 +3698,7 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
 	    function renderHighlightedEditorSql(value, mode) {
 	      const text = String(value || "");
 	      if (!text) return "";
-	      if (state.connectionType === "redis" || state.connectionType === "elasticsearch" || state.connectionType === "kafka" || state.connectionType === "mqtt") {
+		      if (state.connectionType === "redis" || state.connectionType === "elasticsearch" || state.connectionType === "kafka" || state.connectionType === "mqtt" || state.connectionType === "etcd") {
 	        return escapeHtml(text);
 	      }
 	      return renderHighlightedConfirmSql(text, { seedCurrentTable: mode === "where" });
@@ -3714,7 +3718,7 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
   function buildCodeCompletion(input, mode, force) {
     const cursor = input.selectionStart ?? input.value.length;
     const before = input.value.slice(0, cursor);
-	      const supportsAiTags = state.connectionType === "mysql" || state.connectionType === "postgres" || state.connectionType === "redis" || state.connectionType === "elasticsearch" || state.connectionType === "mongodb" || state.connectionType === "tdengine" || state.connectionType === "kafka" || state.connectionType === "mqtt";
+		      const supportsAiTags = state.connectionType === "mysql" || state.connectionType === "postgres" || state.connectionType === "redis" || state.connectionType === "elasticsearch" || state.connectionType === "mongodb" || state.connectionType === "tdengine" || state.connectionType === "kafka" || state.connectionType === "mqtt" || state.connectionType === "etcd";
     const tableTag = (mode === "sql" || mode === "ai-prompt") && supportsAiTags ? findTableTagAtCursor(input.value, cursor) : null;
     if (tableTag) {
       const tagToken = getTableTagCompletionToken(input.value, tableTag.contentStart, cursor);
@@ -3749,7 +3753,7 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
     let items = [];
     if (mode === "ai-prompt") {
       if (tableTag) {
-        items = getTableCompletions({ quote: false, kind: state.connectionType === "redis" ? "Redis Key" : state.connectionType === "elasticsearch" ? "ES Index" : state.connectionType === "tdengine" ? "TDengine 表" : state.connectionType === "kafka" ? "Kafka Topic" : state.connectionType === "mqtt" ? "MQTT Topic" : "表" });
+	        items = getTableCompletions({ quote: false, kind: state.connectionType === "redis" ? "Redis Key" : state.connectionType === "elasticsearch" ? "ES Index" : state.connectionType === "tdengine" ? "TDengine 表" : state.connectionType === "kafka" ? "Kafka Topic" : state.connectionType === "mqtt" ? "MQTT Topic" : state.connectionType === "etcd" ? "etcd Key" : "表" });
       } else if (aiTag) {
         items = state.connectionType === "redis"
           ? getTableCompletions({ quote: false, kind: "Redis Key" })
@@ -3773,10 +3777,14 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
 	        items = aiTag
 	          ? [...getTableCompletions({ quote: false, kind: "Kafka Topic" }), ...getFieldCompletions({ quote: false })]
 	          : buildKafkaCompletionItems(mode);
-	      } else if ((mode === "sql" || mode === "where") && state.connectionType === "mqtt") {
-	        items = aiTag
-	          ? [...getTableCompletions({ quote: false, kind: "MQTT Topic" }), ...getFieldCompletions({ quote: false })]
-	          : buildMqttCompletionItems(mode);
+		      } else if ((mode === "sql" || mode === "where") && state.connectionType === "mqtt") {
+		        items = aiTag
+		          ? [...getTableCompletions({ quote: false, kind: "MQTT Topic" }), ...getFieldCompletions({ quote: false })]
+		          : buildMqttCompletionItems(mode);
+		      } else if ((mode === "sql" || mode === "where") && state.connectionType === "etcd") {
+		        items = aiTag
+		          ? [...getTableCompletions({ quote: false, kind: "etcd Key" }), ...getFieldCompletions({ quote: false })]
+		          : buildEtcdCompletionItems(mode);
     } else if (mode === "schema-type") {
       items = (state.connectionType === "tdengine" ? tdengineDataTypes : state.connectionType === "postgres" ? postgresDataTypes : mysqlDataTypes).map((value) => completionItem(value, value, "类型"));
     } else if (mode === "schema-default") {
@@ -3933,8 +3941,8 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
 	      return [...(mode === "sql" ? getAiTagCompletions() : []), ...templates, ...topicItems, ...keywordItems];
 	    }
 
-	    function buildMqttCompletionItems(mode) {
-	      const topic = state.selectedTable || (state.tables?.[0]?.name) || "test/topic";
+		    function buildMqttCompletionItems(mode) {
+		      const topic = state.selectedTable || (state.tables?.[0]?.name) || "test/topic";
 	      const quotedTopic = JSON.stringify(topic);
 	      const topicItems = getTableCompletions({ quote: false, kind: "MQTT Topic" });
 	      const keywordItems = mqttKeywords.map((keyword) => completionItem(keyword, keyword + " ", "MQTT 关键字"));
@@ -3947,10 +3955,32 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
 	        completionItem(state.queryConsole ? "订阅当前 Topic" : "持续订阅当前 Topic", subscribeTemplate, "MQTT 模板"),
 	        completionItem("发布测试消息", 'PUBLISH ' + quotedTopic + ' QOS 0 PAYLOAD {"hello":"world"}', "MQTT 模板"),
 	      ];
-	      return [...(mode === "sql" ? getAiTagCompletions() : []), ...templates, ...topicItems, ...keywordItems];
-	    }
+		      return [...(mode === "sql" ? getAiTagCompletions() : []), ...templates, ...topicItems, ...keywordItems];
+		    }
 
-	    function getMongoCommandCompletions(mode) {
+		    function buildEtcdCompletionItems(mode) {
+		      const key = state.selectedTable || (state.tables?.[0]?.name) || "/config/app";
+		      const quotedKey = JSON.stringify(key);
+		      const keyItems = getTableCompletions({ quote: false, kind: "etcd Key" });
+		      const keywordItems = etcdKeywords.map((keyword) => completionItem(keyword, keyword + " ", "etcd 关键字"));
+		      const templates = [
+		        completionItem("SHOW KEYS", "SHOW KEYS LIMIT " + (state.defaultLimit || 30), "etcd 命令"),
+		        completionItem("GET 当前 Key", "GET " + quotedKey, "etcd 模板"),
+		        completionItem("PREFIX 查询", "PREFIX " + JSON.stringify(getEtcdKeyPrefix(key)) + " LIMIT " + (state.defaultLimit || 30), "etcd 模板"),
+		        completionItem("PUT 当前 Key", "PUT " + quotedKey + " VALUE {}", "etcd 模板", "写入当前 Key", -1),
+		        completionItem("DELETE 当前 Key", "DELETE " + quotedKey, "etcd 模板"),
+		      ];
+		      return [...(mode === "sql" ? getAiTagCompletions() : []), ...templates, ...keyItems, ...keywordItems];
+		    }
+
+		    function getEtcdKeyPrefix(key) {
+		      const text = String(key || "");
+		      const index = text.lastIndexOf("/");
+		      if (index <= 0) return text;
+		      return text.slice(0, index + 1);
+		    }
+
+		    function getMongoCommandCompletions(mode) {
 	      const collection = state.selectedTable || (state.tables?.[0]?.name) || "collection";
 	      const quotedCollection = JSON.stringify(collection);
 	      if (mode === "where") {
@@ -4019,18 +4049,25 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
 	          ...getFieldCompletions({ quote: false }),
 	        ];
 	      }
-	      if (state.connectionType === "mqtt") {
-	        return [
-	          ...getAiTagCompletions(),
-	          ...getTableCompletions({ quote: false, kind: "MQTT Topic" }),
-	          ...getFieldCompletions({ quote: false }),
-	        ];
-	      }
-	      return [...getAiTagCompletions(), ...getTableCompletions(), ...getFieldCompletions()];
-	    }
+		      if (state.connectionType === "mqtt") {
+		        return [
+		          ...getAiTagCompletions(),
+		          ...getTableCompletions({ quote: false, kind: "MQTT Topic" }),
+		          ...getFieldCompletions({ quote: false }),
+		        ];
+		      }
+		      if (state.connectionType === "etcd") {
+		        return [
+		          ...getAiTagCompletions(),
+		          ...getTableCompletions({ quote: false, kind: "etcd Key" }),
+		          ...getFieldCompletions({ quote: false }),
+		        ];
+		      }
+		      return [...getAiTagCompletions(), ...getTableCompletions(), ...getFieldCompletions()];
+		    }
 
-  function keywordCompletions() {
-	      const keywords = state.connectionType === "mongodb" ? mongoKeywords : state.connectionType === "kafka" ? kafkaKeywords : state.connectionType === "mqtt" ? mqttKeywords : state.connectionType === "tdengine" ? tdengineKeywords : state.connectionType === "postgres" ? postgresKeywords : mysqlKeywords;
+	  function keywordCompletions() {
+		      const keywords = state.connectionType === "mongodb" ? mongoKeywords : state.connectionType === "kafka" ? kafkaKeywords : state.connectionType === "mqtt" ? mqttKeywords : state.connectionType === "etcd" ? etcdKeywords : state.connectionType === "tdengine" ? tdengineKeywords : state.connectionType === "postgres" ? postgresKeywords : mysqlKeywords;
 	      return keywords.map((keyword) => completionItem(keyword, keyword + " ", "关键字"));
 	    }
 
@@ -4046,7 +4083,7 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
 
   function getTableCompletions(options = {}) {
     const shouldQuote = options.quote !== false;
-	      const kind = options.kind || (state.connectionType === "redis" ? "Redis Key" : state.connectionType === "elasticsearch" ? "ES Index" : state.connectionType === "mongodb" ? "Mongo 集合" : state.connectionType === "kafka" ? "Kafka Topic" : state.connectionType === "mqtt" ? "MQTT Topic" : state.connectionType === "tdengine" ? "TDengine 表" : "表");
+		      const kind = options.kind || (state.connectionType === "redis" ? "Redis Key" : state.connectionType === "elasticsearch" ? "ES Index" : state.connectionType === "mongodb" ? "Mongo 集合" : state.connectionType === "kafka" ? "Kafka Topic" : state.connectionType === "mqtt" ? "MQTT Topic" : state.connectionType === "etcd" ? "etcd Key" : state.connectionType === "tdengine" ? "TDengine 表" : "表");
     return (state.tables || []).map((table) => completionItem(table.name, shouldQuote ? quoteCompletionIdentifier(table.name) : table.name, kind, table.comment || ""));
   }
 
@@ -4218,7 +4255,7 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
 
   function isSqlReservedWord(value) {
     const word = String(value || "").toUpperCase();
-	      const keywords = state.connectionType === "mongodb" ? mongoKeywords : state.connectionType === "kafka" ? kafkaKeywords : state.connectionType === "mqtt" ? mqttKeywords : state.connectionType === "tdengine" ? tdengineKeywords : state.connectionType === "postgres" ? postgresKeywords : mysqlKeywords;
+		      const keywords = state.connectionType === "mongodb" ? mongoKeywords : state.connectionType === "kafka" ? kafkaKeywords : state.connectionType === "mqtt" ? mqttKeywords : state.connectionType === "etcd" ? etcdKeywords : state.connectionType === "tdengine" ? tdengineKeywords : state.connectionType === "postgres" ? postgresKeywords : mysqlKeywords;
     return keywords.some((keyword) => keyword.split(" ")[0] === word) || ["ON", "WHERE", "LEFT", "RIGHT", "INNER", "GROUP", "ORDER", "LIMIT"].includes(word);
   }
 
@@ -4228,7 +4265,7 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
 
   function quoteCompletionIdentifier(value) {
     const text = String(value || "");
-	      if (state.connectionType === "redis" || state.connectionType === "elasticsearch" || state.connectionType === "mongodb" || state.connectionType === "kafka" || state.connectionType === "mqtt") {
+		      if (state.connectionType === "redis" || state.connectionType === "elasticsearch" || state.connectionType === "mongodb" || state.connectionType === "kafka" || state.connectionType === "mqtt" || state.connectionType === "etcd") {
 	        return text;
 	      }
     const quote = state.connectionType === "postgres" ? '"' : String.fromCharCode(96);
@@ -4721,32 +4758,33 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
     }
 
     vscode.postMessage({ type: "copyTableDdl", table: state.selectedTable });
-	      setStatus(state.connectionType === "redis" ? "正在读取 Key 信息..." : state.connectionType === "elasticsearch" ? "正在读取索引结构..." : state.connectionType === "mongodb" ? "正在读取集合结构..." : state.connectionType === "kafka" ? "正在读取 Topic 结构..." : state.connectionType === "mqtt" ? "正在读取订阅信息..." : state.connectionType === "tdengine" ? "正在读取时序表结构..." : "正在读取建表 SQL...", false);
+      setStatus(state.connectionType === "redis" ? "正在读取 Key 信息..." : state.connectionType === "elasticsearch" ? "正在读取索引结构..." : state.connectionType === "mongodb" ? "正在读取集合结构..." : state.connectionType === "kafka" ? "正在读取 Topic 结构..." : state.connectionType === "mqtt" ? "正在读取订阅信息..." : state.connectionType === "etcd" ? "正在读取 Key 信息..." : state.connectionType === "tdengine" ? "正在读取时序表结构..." : "正在读取建表 SQL...", false);
 	    }
 
 	    function applyConnectionMode() {
 	      const redis = state.connectionType === "redis";
 	      const es = state.connectionType === "elasticsearch";
 	      const mongo = state.connectionType === "mongodb";
-	      const tdengine = state.connectionType === "tdengine";
-	      const kafka = state.connectionType === "kafka";
-	      const mqtt = state.connectionType === "mqtt";
-	      $("#sendMessageBtn").style.display = kafka || mqtt ? "" : "none";
-	      $("#sendMessageBtn").textContent = "发送消息";
-	      $("#copyStructureBtn").textContent = es ? "复制索引结构" : mongo ? "复制集合结构" : tdengine ? "复制时序表结构" : kafka ? "复制 Topic 结构" : mqtt ? "复制订阅命令" : redis ? "复制 Key 信息" : "复制表结构";
-	      $("#copyStructureBtn").style.display = redis ? "none" : "";
-	      $("#editStructureBtn").style.display = redis || es || mongo || tdengine || kafka || mqtt ? "none" : "";
-	      $("#quickAddBtn").style.display = redis || es || tdengine || kafka || mqtt ? "none" : "";
-	      $("#operationLogBtn").style.display = redis || es || kafka || mqtt ? "none" : "";
-	      fieldPicker.style.display = redis || kafka || mqtt ? "none" : "";
-	      $("#fieldPickerBtn").textContent = es || mongo || tdengine || kafka || mqtt ? "选择显示字段" : redis ? "选择显示列" : "选择显示字段";
-	      $("#toggleSqlBtn").textContent = $("#sqlDrawer").classList.contains("open")
-	        ? (redis ? "收起命令 / AI" : es ? "收起查询 / AI" : mongo ? "收起命令 / AI" : kafka ? "收起 Kafka / AI" : mqtt ? "收起 MQTT / AI" : tdengine ? "收起 SQL / AI" : "收起 SQL / AI")
-	        : (redis ? "打开命令 / AI" : es ? "打开查询 / AI" : mongo ? "打开命令 / AI" : kafka ? "打开 Kafka / AI" : mqtt ? "打开 MQTT / AI" : tdengine ? "打开 SQL / AI" : "打开 SQL / AI");
-	      $("#runSqlBtn").textContent = redis ? "执行命令" : es ? "执行请求" : mongo ? "执行命令" : kafka ? "执行 Kafka 命令" : mqtt ? "执行 MQTT 命令" : tdengine ? "执行 TDengine SQL" : "执行 SQL";
+		      const tdengine = state.connectionType === "tdengine";
+		      const kafka = state.connectionType === "kafka";
+		      const mqtt = state.connectionType === "mqtt";
+		      const etcd = state.connectionType === "etcd";
+		      $("#sendMessageBtn").style.display = kafka || mqtt ? "" : "none";
+		      $("#sendMessageBtn").textContent = "发送消息";
+		      $("#copyStructureBtn").textContent = es ? "复制索引结构" : mongo ? "复制集合结构" : tdengine ? "复制时序表结构" : kafka ? "复制 Topic 结构" : mqtt ? "复制订阅命令" : etcd ? "复制 Key 信息" : redis ? "复制 Key 信息" : "复制表结构";
+		      $("#copyStructureBtn").style.display = redis ? "none" : "";
+		      $("#editStructureBtn").style.display = redis || es || mongo || tdengine || kafka || mqtt || etcd ? "none" : "";
+		      $("#quickAddBtn").style.display = redis || es || tdengine || kafka || mqtt || etcd ? "none" : "";
+		      $("#operationLogBtn").style.display = redis || es || kafka || mqtt || etcd ? "none" : "";
+		      fieldPicker.style.display = redis || kafka || mqtt ? "none" : "";
+		      $("#fieldPickerBtn").textContent = es || mongo || tdengine || kafka || mqtt || etcd ? "选择显示字段" : redis ? "选择显示列" : "选择显示字段";
+		      $("#toggleSqlBtn").textContent = $("#sqlDrawer").classList.contains("open")
+		        ? (redis ? "收起命令 / AI" : es ? "收起查询 / AI" : mongo ? "收起命令 / AI" : kafka ? "收起 Kafka / AI" : mqtt ? "收起 MQTT / AI" : etcd ? "收起 etcd / AI" : tdengine ? "收起 SQL / AI" : "收起 SQL / AI")
+		        : (redis ? "打开命令 / AI" : es ? "打开查询 / AI" : mongo ? "打开命令 / AI" : kafka ? "打开 Kafka / AI" : mqtt ? "打开 MQTT / AI" : etcd ? "打开 etcd / AI" : tdengine ? "打开 SQL / AI" : "打开 SQL / AI");
+		      $("#runSqlBtn").textContent = redis ? "执行命令" : es ? "执行请求" : mongo ? "执行命令" : kafka ? "执行 Kafka 命令" : mqtt ? "执行 MQTT 命令" : etcd ? "执行 etcd 命令" : tdengine ? "执行 TDengine SQL" : "执行 SQL";
 	      $("#formatBtn").textContent = es ? "格式化 JSON" : mongo ? "格式化 Mongo" : "格式化";
 	      const sqlLabel = document.querySelector('label[for="sqlInput"]');
-	      if (sqlLabel) sqlLabel.textContent = redis ? "Redis 命令" : es ? "Elasticsearch 查询" : mongo ? "MongoDB 命令" : kafka ? "Kafka 命令" : mqtt ? "MQTT 命令" : tdengine ? "TDengine SQL 编辑器" : "SQL 编辑器";
+		      if (sqlLabel) sqlLabel.textContent = redis ? "Redis 命令" : es ? "Elasticsearch 查询" : mongo ? "MongoDB 命令" : kafka ? "Kafka 命令" : mqtt ? "MQTT 命令" : etcd ? "etcd 命令" : tdengine ? "TDengine SQL 编辑器" : "SQL 编辑器";
 	      whereInput.placeholder = redis
 	        ? "Key 过滤：留空显示全部，例如 user:*、session:*"
 	        : es
@@ -4755,9 +4793,11 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
 	            ? '快速查询：MongoDB Filter，例如 { "status": "active" }'
 	            : kafka
 	              ? '快速命令：留空消费当前 Topic，例如 CONSUME "orders" LIMIT 20'
-	              : mqtt
-	                ? '快速订阅：留空会持续订阅当前 Topic，例如 SUBSCRIBE "sensors/#" LIMIT 20 LIVE'
-	                : tdengine
+		              : mqtt
+		                ? '快速订阅：留空会持续订阅当前 Topic，例如 SUBSCRIBE "sensors/#" LIMIT 20 LIVE'
+		                : etcd
+		                  ? '快速查询：留空读取当前 Key；输入前缀时会执行 PREFIX "/config/" LIMIT 30'
+		                : tdengine
 	                ? "快速条件：例如 ts >= now - 1d AND current > 10"
 	                : "快速条件：例如 status = 'paid' AND id > 100";
 	      sqlInput.placeholder = redis
@@ -4768,9 +4808,11 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
 	            ? '这里保持纯净，只放当前要执行的 MongoDB 命令，例如 db.getCollection("users").find({}).limit(30)。AI 提问请写到右侧时间线输入框。'
 	            : kafka
 	              ? '这里保持纯净，只放当前要执行的 Kafka 命令，例如 SHOW TOPICS、DESCRIBE TOPIC orders、CONSUME orders LIMIT 20 或 PRODUCE orders KEY user-1 VALUE {"id":1}。AI 提问请写到右侧时间线输入框。'
-	              : mqtt
-	                ? '这里保持纯净，只放当前要执行的 MQTT 命令，例如 SHOW SUBSCRIPTIONS、SUBSCRIBE sensors/# LIMIT 20 或 PUBLISH sensors/1 PAYLOAD {"hello":"world"}。AI 提问请写到右侧时间线输入框。'
-	                : tdengine
+		              : mqtt
+		                ? '这里保持纯净，只放当前要执行的 MQTT 命令，例如 SHOW SUBSCRIPTIONS、SUBSCRIBE sensors/# LIMIT 20 或 PUBLISH sensors/1 PAYLOAD {"hello":"world"}。AI 提问请写到右侧时间线输入框。'
+		                : etcd
+		                  ? '这里保持纯净，只放当前要执行的 etcd 命令，例如 SHOW KEYS、GET /config/app、PREFIX /config/ LIMIT 30 或 PUT /config/app VALUE {"enabled":true}。AI 提问请写到右侧时间线输入框。'
+		                : tdengine
 	                ? "这里保持纯净，只放当前要执行的 TDengine SQL，例如 SELECT * FROM meters LIMIT 30。AI 提问请写到右侧时间线输入框。"
 	                : "这里保持纯净，只放当前要执行的 SQL。AI 提问请写到右侧时间线输入框。";
 	      aiPromptInput.placeholder = redis
@@ -4781,9 +4823,11 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
 	            ? "例如：@ai{查询 status 为 active 的用户}，或 @gen{生成测试文档}，用 @table{collection} 指定集合。"
 	            : kafka
 	              ? "例如：@ai{消费 orders 最近 20 条消息}，或 @gen{向 orders 发送一条测试消息}，用 @table{orders} 指定 Topic。"
-	              : mqtt
-	                ? "例如：@ai{订阅 sensors/# 最近 20 条消息}，或 @gen{向 sensors/1 发送一条测试消息}，用 @table{sensors/#} 指定 Topic。"
-	                : tdengine
+		              : mqtt
+		                ? "例如：@ai{订阅 sensors/# 最近 20 条消息}，或 @gen{向 sensors/1 发送一条测试消息}，用 @table{sensors/#} 指定 Topic。"
+		                : etcd
+		                  ? "例如：@ai{查询 /config/ 下的 Key}，或 @gen{写入一个测试配置 Key}，用 @table{/config/app} 指定 Key。"
+		                : tdengine
 	                ? "例如：@ai{查询最近 1 小时平均电流}，或 @table{meters} 指定时序表结构。"
 	                : "例如：查询当前表 created_at 为空的数据；或 @ai{把当前 SQL 改成按 created_at 倒序}；用 @table{users} 添加额外表结构。";
     applyQueryConsoleMode();
@@ -4799,7 +4843,7 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
     $("#sqlDrawer").classList.add("open");
     $("#tableTitle").textContent = "查询控制台";
     $("#tableTitle").title = state.connectionName + " / " + state.database + " / 查询控制台";
-	      const objectLabel = state.connectionType === "mongodb" ? " 个集合" : state.connectionType === "tdengine" ? " 张时序表" : " 张表";
+		      const objectLabel = state.connectionType === "mongodb" ? " 个集合" : state.connectionType === "tdengine" ? " 张时序表" : state.connectionType === "etcd" ? " 个 Key" : " 张表";
 	      $("#summary").innerHTML = '<span class="pill">' + state.database + '</span><span class="pill">' + state.tables.length + objectLabel + '</span>';
   }
 
@@ -7074,7 +7118,7 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
     updateExportButton();
     renderPagination(null);
     applyQueryConsoleMode();
-	      const consoleName = state.connectionType === "mongodb" ? "MongoDB 命令" : state.connectionType === "kafka" ? "Kafka 命令" : state.connectionType === "mqtt" ? "MQTT 命令" : state.connectionType === "tdengine" ? "TDengine SQL" : "SQL";
+		      const consoleName = state.connectionType === "mongodb" ? "MongoDB 命令" : state.connectionType === "kafka" ? "Kafka 命令" : state.connectionType === "mqtt" ? "MQTT 命令" : state.connectionType === "etcd" ? "etcd 命令" : state.connectionType === "tdengine" ? "TDengine SQL" : "SQL";
 	      setStatus("查询控制台已就绪：输入 " + consoleName + " 或让 AI 生成后执行。", false);
 	      result.innerHTML = '<div class="empty"><strong>查询控制台</strong>这里只有 ' + escapeHtml(consoleName) + ' / AI 编辑器和执行结果预览。你可以直接编写查询，也可以在右侧“继续告诉 AI”里描述需求。</div>';
   }
@@ -7091,7 +7135,7 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
     updateExportButton();
     renderPagination(null);
     $("#tableTitle").textContent = "选择一张表";
-	      $("#summary").innerHTML = '<span class="pill">' + state.tables.length + (state.connectionType === "mongodb" ? ' 个集合' : state.connectionType === "kafka" ? ' 个 Topic' : state.connectionType === "mqtt" ? ' 个订阅 Topic' : state.connectionType === "tdengine" ? ' 张时序表' : ' 张表') + '</span>';
+		      $("#summary").innerHTML = '<span class="pill">' + state.tables.length + (state.connectionType === "mongodb" ? ' 个集合' : state.connectionType === "kafka" ? ' 个 Topic' : state.connectionType === "mqtt" ? ' 个订阅 Topic' : state.connectionType === "etcd" ? ' 个 Key' : state.connectionType === "tdengine" ? ' 张时序表' : ' 张表') + '</span>';
     if (state.queryConsole) {
       renderQueryConsoleIntro();
     }
@@ -7183,7 +7227,7 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
     $("#summary").innerHTML = table.comment
       ? '<span class="pill table-comment" title="' + escapeHtml(table.comment) + '">' + escapeHtml(table.comment) + '</span>'
       : "";
-	      const noun = state.connectionType === "redis" ? "Key" : state.connectionType === "elasticsearch" ? "索引" : state.connectionType === "mongodb" ? "集合" : state.connectionType === "kafka" ? "Topic" : state.connectionType === "mqtt" ? "订阅 Topic" : state.connectionType === "tdengine" ? "时序表" : "表";
+		      const noun = state.connectionType === "redis" ? "Key" : state.connectionType === "elasticsearch" ? "索引" : state.connectionType === "mongodb" ? "集合" : state.connectionType === "kafka" ? "Topic" : state.connectionType === "mqtt" ? "订阅 Topic" : state.connectionType === "etcd" ? "Key" : state.connectionType === "tdengine" ? "时序表" : "表";
     result.innerHTML = '<div class="empty"><strong>正在读取预览数据</strong>已选择' + escapeHtml(noun) + ' ' + escapeHtml(table.name) + '，请稍候。</div>';
     renderPagination(null);
     setStatus("已选择" + noun + " " + table.name + "，正在读取预览数据...", false);
@@ -8646,18 +8690,20 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
 	      relationBtn.title = canRelation ? "用选中行字段值去查询另一张表/集合" : "关联查询仅支持 MySQL/PostgreSQL/MongoDB/TDengine 数据预览结果";
   }
 
-  function canDeleteContextRows(row) {
-    if (state.connectionType === "redis") return Boolean(row?.key);
-    if (state.connectionType === "tdengine") return false;
+	  function canDeleteContextRows(row) {
+	    if (state.connectionType === "redis") return Boolean(row?.key);
+	    if (state.connectionType === "etcd") return false;
+	    if (state.connectionType === "tdengine") return false;
     if (hasPendingEdits()) return false;
     if (!state.primaryKeys.length) return false;
     const selectedRows = state.rowSelection.selected.length ? state.rowSelection.selected : [activeContextRowIndex];
     return selectedRows.every((rowIndex) => getPrimaryValuesForRow(state.currentResult?.rows?.[rowIndex], { silent: true }));
   }
 
-  function getDeleteDisabledReason(row) {
-    if (state.connectionType === "redis") return row?.key ? "" : "当前行没有 Redis Key";
-    if (state.connectionType === "tdengine") return "TDengine 时序表暂不支持右键删除行，请使用 SQL 控制台执行。";
+	  function getDeleteDisabledReason(row) {
+	    if (state.connectionType === "redis") return row?.key ? "" : "当前行没有 Redis Key";
+	    if (state.connectionType === "etcd") return "etcd Key 请通过左侧 Key 右键删除，或在命令编辑器执行 DELETE。";
+	    if (state.connectionType === "tdengine") return "TDengine 时序表暂不支持右键删除行，请使用 SQL 控制台执行。";
     if (hasPendingEdits()) return "请先提交当前修改后再删除";
     if (!state.primaryKeys.length) return "当前表没有读取到主键，无法按行删除";
     return "选中行缺少主键字段，无法删除";
@@ -9413,7 +9459,7 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
     if (state.connectionType === "elasticsearch") {
       return Boolean(row?._id) && !["_index", "_id", "_score"].includes(column);
     }
-    if (state.connectionType === "tdengine" || state.connectionType === "kafka" || state.connectionType === "mqtt") {
+	    if (state.connectionType === "tdengine" || state.connectionType === "kafka" || state.connectionType === "mqtt" || state.connectionType === "etcd") {
       return false;
     }
     return state.connectionType !== "redis"
@@ -10374,22 +10420,26 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
     if (state.connectionType === "tdengine") {
       return "请结合当前 TDengine 时序表结构生成或改写 SQL，只返回最终可执行 SQL，不要解释，不要使用 Markdown 代码块。默认生成只读查询，优先使用时间范围、INTERVAL、PARTITION BY、聚合函数。";
     }
-	    if (state.connectionType === "kafka") {
-	      return "请结合当前 Kafka Topic 信息生成或改写 Kafka 命令，只返回一条最终可执行命令，不要解释，不要使用 Markdown 代码块。默认生成只读命令，例如 SHOW TOPICS、DESCRIBE TOPIC 或 CONSUME topic LIMIT 20；需要写入测试数据时使用 PRODUCE topic KEY key VALUE json。";
-	    }
-	    if (state.connectionType === "mqtt") {
-	      return "请结合当前 MQTT Topic 信息生成或改写 MQTT 命令，只返回一条最终可执行命令，不要解释，不要使用 Markdown 代码块。默认生成订阅命令，例如 SHOW SUBSCRIPTIONS 或 SUBSCRIBE topic LIMIT 20；需要写入测试数据时使用 PUBLISH topic PAYLOAD json。";
-	    }
+    if (state.connectionType === "kafka") {
+      return "请结合当前 Kafka Topic 信息生成或改写 Kafka 命令，只返回一条最终可执行命令，不要解释，不要使用 Markdown 代码块。默认生成只读命令，例如 SHOW TOPICS、DESCRIBE TOPIC 或 CONSUME topic LIMIT 20；需要写入测试数据时使用 PRODUCE topic KEY key VALUE json。";
+    }
+    if (state.connectionType === "mqtt") {
+      return "请结合当前 MQTT Topic 信息生成或改写 MQTT 命令，只返回一条最终可执行命令，不要解释，不要使用 Markdown 代码块。默认生成订阅命令，例如 SHOW SUBSCRIPTIONS 或 SUBSCRIBE topic LIMIT 20；需要写入测试数据时使用 PUBLISH topic PAYLOAD json。";
+    }
+    if (state.connectionType === "etcd") {
+      return "请结合当前 etcd Key 信息生成或改写 etcd 命令，只返回一条最终可执行命令，不要解释，不要使用 Markdown 代码块。默认生成只读命令，例如 SHOW KEYS、GET key 或 PREFIX prefix LIMIT 20；需要写入配置时使用 PUT key VALUE value。";
+    }
     return "请结合当前数据库表结构生成或改写 SQL，只返回最终可执行 SQL，不要解释，不要使用 Markdown 代码块。";
   }
 
   function getAiRewriteFallback() {
     if (state.connectionType === "redis") return "请根据当前 Redis Key 信息生成或优化这条 Redis 命令";
     if (state.connectionType === "elasticsearch") return "请根据当前索引结构生成或优化这段 Elasticsearch 查询";
-	    if (state.connectionType === "tdengine") return "请根据当前 TDengine 时序表结构生成或优化这段 SQL";
-	    if (state.connectionType === "kafka") return "请根据当前 Kafka Topic 信息生成或优化这条 Kafka 命令";
-	    if (state.connectionType === "mqtt") return "请根据当前 MQTT Topic 信息生成或优化这条 MQTT 命令";
-	    return "请根据当前表结构生成或优化这段 SQL";
+    if (state.connectionType === "tdengine") return "请根据当前 TDengine 时序表结构生成或优化这段 SQL";
+    if (state.connectionType === "kafka") return "请根据当前 Kafka Topic 信息生成或优化这条 Kafka 命令";
+    if (state.connectionType === "mqtt") return "请根据当前 MQTT Topic 信息生成或优化这条 MQTT 命令";
+    if (state.connectionType === "etcd") return "请根据当前 etcd Key 信息生成或优化这条 etcd 命令";
+    return "请根据当前表结构生成或优化这段 SQL";
   }
 
 
@@ -10403,12 +10453,15 @@ export function renderWorkbenchHtml(webview: vscode.Webview): string {
     if (state.connectionType === "tdengine") {
       return "请根据当前 TDengine 时序表结构生成用于写入测试数据的一条 INSERT SQL，只返回 SQL，不要解释，不要使用 Markdown 代码块。";
     }
-	    if (state.connectionType === "kafka") {
-	      return "请根据当前 Kafka Topic 信息生成用于写入测试数据的一条 PRODUCE 命令，只返回一条最终可执行命令，不要解释，不要使用 Markdown 代码块。格式示例：PRODUCE topic KEY test-key VALUE {\\"hello\\":\\"world\\"}。";
-	    }
-	    if (state.connectionType === "mqtt") {
-	      return "请根据当前 MQTT Topic 信息生成用于写入测试数据的一条 PUBLISH 命令，只返回一条最终可执行命令，不要解释，不要使用 Markdown 代码块。格式示例：PUBLISH topic QOS 0 PAYLOAD {\\"hello\\":\\"world\\"}。";
-	    }
+    if (state.connectionType === "kafka") {
+      return "请根据当前 Kafka Topic 信息生成用于写入测试数据的一条 PRODUCE 命令，只返回一条最终可执行命令，不要解释，不要使用 Markdown 代码块。格式示例：PRODUCE topic KEY test-key VALUE {\\"hello\\":\\"world\\"}。";
+    }
+    if (state.connectionType === "mqtt") {
+      return "请根据当前 MQTT Topic 信息生成用于写入测试数据的一条 PUBLISH 命令，只返回一条最终可执行命令，不要解释，不要使用 Markdown 代码块。格式示例：PUBLISH topic QOS 0 PAYLOAD {\\"hello\\":\\"world\\"}。";
+    }
+    if (state.connectionType === "etcd") {
+      return "请根据当前 etcd Key 信息生成用于写入测试数据的一条 PUT 命令，只返回一条最终可执行命令，不要解释，不要使用 Markdown 代码块。格式示例：PUT /config/app VALUE {\\"enabled\\":true}。";
+    }
     return "请根据当前数据库表结构生成用于插入测试数据的 SQL，只返回一条最终可执行 SQL，不要解释，不要使用 Markdown 代码块。即使需求要求生成多条测试数据，也必须合并成一条 INSERT 语句，使用多组 VALUES，例如 INSERT INTO table (col) VALUES (...), (...), (...); 不要返回多条 INSERT。默认情况下，生成 INSERT 语句时应省略主键字段、带默认值字段、自动生成字段和自动更新时间字段，让数据库自动生成；例如 id 是主键、created_at 有 DEFAULT CURRENT_TIMESTAMP 时，默认不要写入 INSERT 字段列表。但如果本次需求中明确点名或强调某个字段必须有指定数据，即使它是主键、带默认值或自动生成字段，也必须在 INSERT 字段列表中显式写入并给出符合需求的值。";
   }
 

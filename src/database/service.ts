@@ -1,4 +1,5 @@
 import { DbConnectionWithSecret, QueryResult, TableInfo, TableSummary } from "../types";
+import { EtcdWorkbenchClient } from "./clients/etcd";
 import { ElasticsearchWorkbenchClient } from "./clients/elasticsearch";
 import { KafkaWorkbenchClient } from "./clients/kafka";
 import { MongoWorkbenchClient } from "./clients/mongodb";
@@ -82,6 +83,11 @@ export class DatabaseService {
     if (connection.type === "mqtt") {
       const size = limit < 0 ? 100 : Math.max(1, limit);
       const command = `SUBSCRIBE ${JSON.stringify(table)} LIMIT ${size} TIMEOUT 10000`;
+      const result = await withClient(connection, database, (client) => client.query(command, limit));
+      return { sql: command, result };
+    }
+    if (connection.type === "etcd") {
+      const command = `GET ${JSON.stringify(table)}`;
       const result = await withClient(connection, database, (client) => client.query(command, limit));
       return { sql: command, result };
     }
@@ -237,6 +243,9 @@ async function createClient(connection: DbConnectionWithSecret, database?: strin
   }
   if (connection.type === "mqtt") {
     return MqttWorkbenchClient.connect(connection, database);
+  }
+  if (connection.type === "etcd") {
+    return EtcdWorkbenchClient.connect(connection, database);
   }
 
   return ElasticsearchWorkbenchClient.connect(connection);
