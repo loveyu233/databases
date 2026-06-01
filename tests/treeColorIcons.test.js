@@ -3,6 +3,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const treeSource = fs.readFileSync(path.join(__dirname, "../src/tree.ts"), "utf8");
+const packageJson = require("../package.json");
 const treeIconDir = path.join(__dirname, "../assets/icons/tree");
 const expectedIcons = [
   "group-red.svg",
@@ -43,5 +44,8 @@ assert.ok(treeSource.includes('new vscode.FileDecoration(GROUP_DECORATION_BADGE'
 assert.ok(treeSource.includes("分组 · ${connections.length} 个连接"));
 assert.ok(treeSource.includes("withGroupTopSpacing"));
 assert.ok(treeSource.includes('kind: "groupSpacer"'));
+assert.ok(packageJson.activationEvents.includes("onCommand:databaseWorkbench.searchConnections"));
+assert.ok(packageJson.contributes.commands.some((item) => item.command === "databaseWorkbench.searchConnections" && item.icon === "$(search)"));
+assert.ok(packageJson.contributes.menus["view/title"].some((item) => item.command === "databaseWorkbench.searchConnections" && item.group === "navigation@-1"));
 
 console.log("ok - 侧边栏彩色语义图标资源和映射");

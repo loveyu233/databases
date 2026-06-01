@@ -37,6 +37,7 @@
   ],
   "activationEvents": [
     "onView:databaseWorkbench.connections",
+    "onCommand:databaseWorkbench.searchConnections",
     "onCommand:databaseWorkbench.addConnection",
     "onCommand:databaseWorkbench.refresh",
     "onCommand:databaseWorkbench.refreshNode",
@@ -74,6 +75,11 @@
   "main": "./out/extension.js",
   "contributes": {
     "commands": [
+      {
+        "command": "databaseWorkbench.searchConnections",
+        "title": "Database Workbench: 搜索连接",
+        "icon": "$(search)"
+      },
       {
         "command": "databaseWorkbench.addConnection",
         "title": "Database Workbench: 添加数据库连接",
@@ -260,6 +266,11 @@
     },
     "menus": {
       "view/title": [
+        {
+          "command": "databaseWorkbench.searchConnections",
+          "when": "view == databaseWorkbench.connections",
+          "group": "navigation@-1"
+        },
         {
           "command": "databaseWorkbench.showAddMenu",
           "when": "view == databaseWorkbench.connections",

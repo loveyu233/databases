@@ -32,6 +32,7 @@ const GROUP_ICON_FILES: Record<ConnectionGroupColor, string> = {
 export type TreeNode =
   | { kind: "group"; group: ConnectionGroup }
   | { kind: "groupSpacer"; id: string }
+  | { kind: "searchEmpty"; query: string }
   | { kind: "connection"; connection: DbConnectionConfig }
   | { kind: "databaseFilter"; connection: DbConnectionConfig; scope: DatabaseFilterScope; total: number; selected: number }
   | { kind: "database"; connection: DbConnectionConfig; database: string }
@@ -45,6 +46,7 @@ export type ActiveTreeSelection =
 export class ConnectionsTreeProvider implements vscode.TreeDataProvider<TreeNode>, vscode.TreeDragAndDropController<TreeNode> {
   private readonly onDidChangeTreeDataEmitter = new vscode.EventEmitter<TreeNode | undefined | null | void>();
   readonly onDidChangeTreeData = this.onDidChangeTreeDataEmitter.event;
+  private connectionSearchQuery = "";
   private readonly connectionCounts = new Map<string, { selected: number; total: number }>();
   private readonly nodeCache = new Map<string, TreeNode>();
   readonly dragMimeTypes = [CONNECTION_DRAG_MIME];
@@ -56,11 +58,37 @@ export class ConnectionsTreeProvider implements vscode.TreeDataProvider<TreeNode
     private readonly extensionUri?: vscode.Uri
   ) {}
 
+  getConnectionSearchQuery(): string {
+    return this.connectionSearchQuery;
+  }
+
+  setConnectionSearchQuery(query: string): void {
+    const nextQuery = normalizeConnectionSearchQuery(query);
+    if (this.connectionSearchQuery === nextQuery) {
+      return;
+    }
+    this.connectionSearchQuery = nextQuery;
+    this.refresh();
+  }
+
   refresh(node?: TreeNode): void {
     this.onDidChangeTreeDataEmitter.fire(node);
   }
 
   getTreeItem(node: TreeNode): vscode.TreeItem {
+    if (node.kind === "searchEmpty") {
+      const item = new vscode.TreeItem("未找到匹配连接", vscode.TreeItemCollapsibleState.None);
+      item.description = `“${node.query}”`;
+      item.tooltip = "没有匹配的连接。点击后可重新搜索，或清空搜索内容恢复全部连接。";
+      item.contextValue = "databaseWorkbench.connectionSearchEmpty";
+      item.iconPath = new vscode.ThemeIcon("search");
+      item.command = {
+        command: "databaseWorkbench.searchConnections",
+        title: "重新搜索连接",
+      };
+      return item;
+    }
+
     if (node.kind === "groupSpacer") {
       const item = new vscode.TreeItem(" ", vscode.TreeItemCollapsibleState.None);
       item.id = `${GROUP_SPACER_PREFIX}${node.id}`;
@@ -71,11 +99,15 @@ export class ConnectionsTreeProvider implements vscode.TreeDataProvider<TreeNode
     }
 
     if (node.kind === "group") {
-      const connections = this.store.getAll().filter((connection) => connection.groupId === node.group.id);
+      const connections = this.getGroupConnections(node.group);
+      const visibleConnections = this.getVisibleGroupConnections(node.group, connections);
       const item = new vscode.TreeItem(buildGroupTreeLabel(node.group.name), vscode.TreeItemCollapsibleState.Expanded);
       const pinned = this.isPinned(node);
       item.id = getTreeNodePinKey(node);
-      item.description = `${pinned ? "置顶 · " : ""}分组 · ${connections.length} 个连接`;
+      const countText = this.hasConnectionSearchQuery()
+        ? `筛选 · ${visibleConnections.length}/${connections.length} 个连接`
+        : `分组 · ${connections.length} 个连接`;
+      item.description = `${pinned ? "置顶 · " : ""}${countText}`;
       item.tooltip = `分组：${node.group.name}\n${pinned ? "已置顶。\n" : ""}可把连接拖拽到此分组中。`;
       item.contextValue = `databaseWorkbench.group.node.${pinned ? "pinned" : "unpinned"}`;
       item.iconPath = this.getGroupIcon(node.group.color);
@@ -161,17 +193,22 @@ export class ConnectionsTreeProvider implements vscode.TreeDataProvider<TreeNode
       const groups = this.store.getGroups();
       const connections = this.store.getAll();
       const groupIds = new Set(groups.map((group) => group.id));
-      return [
-        ...this.withGroupTopSpacing(this.sortPinnedFirst(groups.map((group) => this.getCachedNode({ kind: "group", group })))),
+      const visibleGroups = groups.filter((group) => this.shouldShowGroup(group, connections));
+      const nodes: TreeNode[] = [
+        ...this.withGroupTopSpacing(this.sortPinnedFirst(visibleGroups.map((group) => this.getCachedNode({ kind: "group", group })))),
         ...this.sortPinnedFirst(connections
           .filter((connection) => !connection.groupId || !groupIds.has(connection.groupId))
+          .filter((connection) => this.matchesConnectionSearch(connection))
           .map((connection): TreeNode => this.getCachedNode({ kind: "connection", connection }))),
       ];
+      if (!nodes.length && this.hasConnectionSearchQuery()) {
+        return [{ kind: "searchEmpty", query: this.connectionSearchQuery }];
+      }
+      return nodes;
     }
 
     if (node.kind === "group") {
-      return this.sortPinnedFirst(this.store.getAll()
-        .filter((connection) => connection.groupId === node.group.id)
+      return this.sortPinnedFirst(this.getVisibleGroupConnections(node.group)
         .map((connection): TreeNode => this.getCachedNode({ kind: "connection", connection })));
     }
 
@@ -299,6 +336,10 @@ export class ConnectionsTreeProvider implements vscode.TreeDataProvider<TreeNode
   }
 
   getParent(node: TreeNode): vscode.ProviderResult<TreeNode> {
+    if (node.kind === "searchEmpty") {
+      return undefined;
+    }
+
     if (node.kind === "groupSpacer") {
       return undefined;
     }
@@ -445,6 +486,36 @@ export class ConnectionsTreeProvider implements vscode.TreeDataProvider<TreeNode
     }
   }
 
+  private hasConnectionSearchQuery(): boolean {
+    return Boolean(this.connectionSearchQuery);
+  }
+
+  private getGroupConnections(group: ConnectionGroup): DbConnectionConfig[] {
+    return this.store.getAll().filter((connection) => connection.groupId === group.id);
+  }
+
+  private getVisibleGroupConnections(group: ConnectionGroup, connections = this.getGroupConnections(group)): DbConnectionConfig[] {
+    if (!this.hasConnectionSearchQuery() || this.matchesGroupSearch(group)) {
+      return connections;
+    }
+    return connections.filter((connection) => this.matchesConnectionSearch(connection, group));
+  }
+
+  private shouldShowGroup(group: ConnectionGroup, connections: DbConnectionConfig[]): boolean {
+    if (!this.hasConnectionSearchQuery() || this.matchesGroupSearch(group)) {
+      return true;
+    }
+    return connections.some((connection) => connection.groupId === group.id && this.matchesConnectionSearch(connection, group));
+  }
+
+  private matchesGroupSearch(group: ConnectionGroup): boolean {
+    return matchesConnectionSearchQuery(this.connectionSearchQuery, group.name);
+  }
+
+  private matchesConnectionSearch(connection: DbConnectionConfig, group?: ConnectionGroup): boolean {
+    return matchesConnectionSearchQuery(this.connectionSearchQuery, buildConnectionSearchText(connection, group));
+  }
+
   private isPinned(node: TreeNode): boolean {
     return this.store.isPinnedNodeKey(getTreeNodePinKey(node));
   }
@@ -528,6 +599,9 @@ export function asTableNode(value: unknown): ({ kind: "table"; connection: DbCon
 }
 
 export function getTreeNodePinKey(node: TreeNode): string {
+  if (node.kind === "searchEmpty") {
+    return `connection-search-empty:${encodePinPart(node.query)}`;
+  }
   if (node.kind === "groupSpacer") {
     return `${GROUP_SPACER_PREFIX}${node.id}`;
   }
@@ -705,6 +779,49 @@ function getConnectionFallbackIcon(type: DatabaseType): string {
 
 function getConnectionTypeLabel(type: DatabaseType): string {
   return type === "etcd" ? "ETCD" : type;
+}
+
+function normalizeConnectionSearchQuery(value: string): string {
+  return String(value || "").trim();
+}
+
+function matchesConnectionSearchQuery(query: string, text: string): boolean {
+  const terms = normalizeSearchText(query).split(/\s+/).filter(Boolean);
+  if (!terms.length) {
+    return true;
+  }
+  const searchText = normalizeSearchText(text);
+  return terms.every((term) => searchText.includes(term));
+}
+
+function buildConnectionSearchText(connection: DbConnectionConfig, group?: ConnectionGroup): string {
+  return [
+    connection.name,
+    connection.type,
+    getConnectionTypeLabel(connection.type),
+    getConnectionTypeSearchAliases(connection.type),
+    connection.host,
+    String(connection.port),
+    connection.username,
+    connection.database,
+    group?.name,
+  ].filter(Boolean).join(" ");
+}
+
+function normalizeSearchText(value: string): string {
+  return String(value || "").toLocaleLowerCase();
+}
+
+function getConnectionTypeSearchAliases(type: DatabaseType): string {
+  if (type === "mysql") return "MySQL";
+  if (type === "postgres") return "PostgreSQL postgres pgsql";
+  if (type === "redis") return "Redis";
+  if (type === "elasticsearch") return "Elasticsearch ES";
+  if (type === "mongodb") return "MongoDB Mongo";
+  if (type === "tdengine") return "TDengine TD";
+  if (type === "kafka") return "Kafka";
+  if (type === "mqtt") return "MQTT";
+  return "ETCD etcd";
 }
 
 function filterBySavedNames<T extends { name: string }>(items: T[], saved: string[] | undefined): T[] {

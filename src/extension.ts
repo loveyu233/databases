@@ -58,6 +58,9 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("databaseWorkbench.showAddMenu", () => runSafely("打开添加菜单失败", async () => {
       await showAddMenu(context, store, databaseService, treeProvider, groupDecorationProvider);
     })),
+    vscode.commands.registerCommand("databaseWorkbench.searchConnections", () => runSafely("搜索连接失败", async () => {
+      await searchConnections(treeProvider);
+    })),
     vscode.commands.registerCommand("databaseWorkbench.exportConnections", () => runSafely("导出连接失败", async () => {
       await openConnectionsExportPanel(context, store);
     })),
@@ -218,6 +221,27 @@ async function refreshTreeNode(
 
   treeProvider.refresh();
   vscode.window.setStatusBarMessage("Database Workbench: 已刷新连接树。", 2000);
+}
+
+async function searchConnections(treeProvider: ConnectionsTreeProvider): Promise<void> {
+  const currentQuery = treeProvider.getConnectionSearchQuery();
+  const value = await vscode.window.showInputBox({
+    title: "搜索连接",
+    prompt: currentQuery
+      ? "输入关键词更新筛选；留空并回车可清除当前筛选。"
+      : "输入关键词筛选左侧连接；支持连接名、类型、Host、端口、用户名、默认库和分组名。",
+    placeHolder: "例如：prod mysql 127.0.0.1",
+    value: currentQuery,
+    valueSelection: currentQuery ? [0, currentQuery.length] : undefined,
+  });
+  if (value === undefined) {
+    return;
+  }
+  treeProvider.setConnectionSearchQuery(value);
+  const nextQuery = treeProvider.getConnectionSearchQuery();
+  vscode.window.setStatusBarMessage(nextQuery
+    ? `Database Workbench: 正在筛选连接「${nextQuery}」。`
+    : "Database Workbench: 已清除连接搜索。", 2500);
 }
 
 async function showAddMenu(
