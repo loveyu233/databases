@@ -45,7 +45,10 @@ assert.ok(treeSource.includes("分组 · ${connections.length} 个连接"));
 assert.ok(treeSource.includes("withGroupTopSpacing"));
 assert.ok(treeSource.includes('kind: "groupSpacer"'));
 assert.ok(packageJson.activationEvents.includes("onCommand:databaseWorkbench.searchConnections"));
+assert.ok(packageJson.activationEvents.includes("onCommand:databaseWorkbench.clearConnectionSearch"));
 assert.ok(packageJson.contributes.commands.some((item) => item.command === "databaseWorkbench.searchConnections" && item.icon === "$(search)"));
-assert.ok(packageJson.contributes.menus["view/title"].some((item) => item.command === "databaseWorkbench.searchConnections" && item.group === "navigation@-1"));
+assert.ok(packageJson.contributes.commands.some((item) => item.command === "databaseWorkbench.clearConnectionSearch" && item.title.includes("已搜索")));
+assert.ok(packageJson.contributes.menus["view/title"].some((item) => item.command === "databaseWorkbench.searchConnections" && item.when.includes("!databaseWorkbench.connectionSearchActive")));
+assert.ok(packageJson.contributes.menus["view/title"].some((item) => item.command === "databaseWorkbench.clearConnectionSearch" && item.when.includes("databaseWorkbench.connectionSearchActive")));
 
 console.log("ok - 侧边栏彩色语义图标资源和映射");

@@ -38,6 +38,7 @@
   "activationEvents": [
     "onView:databaseWorkbench.connections",
     "onCommand:databaseWorkbench.searchConnections",
+    "onCommand:databaseWorkbench.clearConnectionSearch",
     "onCommand:databaseWorkbench.addConnection",
     "onCommand:databaseWorkbench.refresh",
     "onCommand:databaseWorkbench.refreshNode",
@@ -79,6 +80,11 @@
         "command": "databaseWorkbench.searchConnections",
         "title": "Database Workbench: 搜索连接",
         "icon": "$(search)"
+      },
+      {
+        "command": "databaseWorkbench.clearConnectionSearch",
+        "title": "Database Workbench: 已搜索，点击清除",
+        "icon": "$(search-stop)"
       },
       {
         "command": "databaseWorkbench.addConnection",
@@ -268,7 +274,12 @@
       "view/title": [
         {
           "command": "databaseWorkbench.searchConnections",
-          "when": "view == databaseWorkbench.connections",
+          "when": "view == databaseWorkbench.connections && !databaseWorkbench.connectionSearchActive",
+          "group": "navigation@-1"
+        },
+        {
+          "command": "databaseWorkbench.clearConnectionSearch",
+          "when": "view == databaseWorkbench.connections && databaseWorkbench.connectionSearchActive",
           "group": "navigation@-1"
         },
         {

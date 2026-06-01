@@ -16,6 +16,7 @@ let outputChannel: vscode.OutputChannel | undefined;
 const createResourcePanels = new Map<string, vscode.WebviewPanel>();
 const connectionEditorPanels = new Map<string, vscode.WebviewPanel>();
 const connectionExportPanels = new Map<string, vscode.WebviewPanel>();
+const CONNECTION_SEARCH_ACTIVE_CONTEXT = "databaseWorkbench.connectionSearchActive";
 const GROUP_COLOR_OPTIONS: Array<{ color: ConnectionGroupColor; label: string }> = [
   { color: "red", label: "红色" },
   { color: "orange", label: "橙色" },
@@ -37,6 +38,7 @@ export function activate(context: vscode.ExtensionContext): void {
     treeDataProvider: treeProvider,
     dragAndDropController: treeProvider,
   });
+  void updateConnectionSearchContext(treeProvider);
 
   context.subscriptions.push(
     outputChannel,
@@ -60,6 +62,9 @@ export function activate(context: vscode.ExtensionContext): void {
     })),
     vscode.commands.registerCommand("databaseWorkbench.searchConnections", () => runSafely("搜索连接失败", async () => {
       await searchConnections(treeProvider);
+    })),
+    vscode.commands.registerCommand("databaseWorkbench.clearConnectionSearch", () => runSafely("清除连接搜索失败", async () => {
+      await clearConnectionSearch(treeProvider);
     })),
     vscode.commands.registerCommand("databaseWorkbench.exportConnections", () => runSafely("导出连接失败", async () => {
       await openConnectionsExportPanel(context, store);
@@ -238,10 +243,21 @@ async function searchConnections(treeProvider: ConnectionsTreeProvider): Promise
     return;
   }
   treeProvider.setConnectionSearchQuery(value);
+  await updateConnectionSearchContext(treeProvider);
   const nextQuery = treeProvider.getConnectionSearchQuery();
   vscode.window.setStatusBarMessage(nextQuery
     ? `Database Workbench: 正在筛选连接「${nextQuery}」。`
     : "Database Workbench: 已清除连接搜索。", 2500);
+}
+
+async function clearConnectionSearch(treeProvider: ConnectionsTreeProvider): Promise<void> {
+  treeProvider.setConnectionSearchQuery("");
+  await updateConnectionSearchContext(treeProvider);
+  vscode.window.setStatusBarMessage("Database Workbench: 已清除连接搜索。", 2500);
+}
+
+async function updateConnectionSearchContext(treeProvider: ConnectionsTreeProvider): Promise<void> {
+  await vscode.commands.executeCommand("setContext", CONNECTION_SEARCH_ACTIVE_CONTEXT, Boolean(treeProvider.getConnectionSearchQuery()));
 }
 
 async function showAddMenu(
