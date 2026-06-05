@@ -5,3 +5,12 @@ out/
 .license-private/
 
 logs/
+
+# Local editor/workflow files
+.vscode/
+.learnings/
+
+# Non-source documentation generated or maintained outside the public code upload
+CHANGELOG.md
+LICENSE
+docs/
