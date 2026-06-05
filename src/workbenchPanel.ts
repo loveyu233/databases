@@ -5,7 +5,6 @@ import * as vscode from "vscode";
 import { generateCreateTableSqlByPrompt, generateSqlByPrompt, translateDatabaseErrorToChinese } from "./ai";
 import { createMqttLiveSubscription, MQTT_MESSAGE_COLUMNS, parseMqttCommand, type MqttLiveSubscription } from "./database/clients/mqtt";
 import { DatabaseService } from "./database/service";
-import { hasProFeature, requireProFeature } from "./license/offlineLicense";
 import { OperationLogService, type CreateOperationLogInput } from "./logService";
 import { ConnectionStore } from "./storage";
 import {
@@ -1358,11 +1357,11 @@ export class DatabaseWorkbenchPanel {
       });
     } catch (error) {
       await this.completeFailedOperationLog(logId, error, sqlPreview);
-      const canExplainWithAi = isAiConfigured() && await this.hasProFeature("ai");
+      const canExplainWithAi = isAiConfigured() && await this.isFeatureEnabled("ai");
       if (!canExplainWithAi) {
         this.panel.webview.postMessage({ type: "schemaDraftError", message: getErrorMessage(error) });
         if (isAiConfigured()) {
-          void this.requireProFeature("ai", "AI 错误解释");
+          void this.isFeatureEnabled("ai", "AI 错误解释");
         }
         return;
       }
@@ -1399,7 +1398,7 @@ export class DatabaseWorkbenchPanel {
 
   private async formatDatabaseError(error: unknown, sql: string, aiConfig = getAiConfig()): Promise<string> {
     const rawMessage = error instanceof Error ? error.message : String(error);
-    if (!isAiConfigured(aiConfig) || !await this.hasProFeature("ai")) {
+    if (!isAiConfigured(aiConfig) || !await this.isFeatureEnabled("ai")) {
       return rawMessage;
     }
 
@@ -1805,7 +1804,7 @@ export class DatabaseWorkbenchPanel {
   }
 
   private async generateSql(prompt: string, tableNames: string[] = []): Promise<void> {
-    if (!await this.requireProFeature("ai", "AI 生成 SQL")) {
+    if (!await this.isFeatureEnabled("ai", "AI 生成 SQL")) {
       return;
     }
 
@@ -1828,7 +1827,7 @@ export class DatabaseWorkbenchPanel {
   }
 
   private async generateCreateTableDraft(prompt: string): Promise<void> {
-    if (!await this.requireProFeature("ai", "AI 辅助建表")) {
+    if (!await this.isFeatureEnabled("ai", "AI 辅助建表")) {
       return;
     }
     if (this.connection.type !== "mysql" && this.connection.type !== "postgres") {
@@ -1874,7 +1873,7 @@ export class DatabaseWorkbenchPanel {
   }
 
   private async loadOperationLogs(table: string): Promise<void> {
-    if (!await this.requireProFeature("logs", "操作日志查看")) {
+    if (!await this.isFeatureEnabled("logs", "操作日志查看")) {
       this.panel.webview.postMessage({ type: "operationLogs", logs: [] });
       return;
     }
@@ -1906,7 +1905,7 @@ export class DatabaseWorkbenchPanel {
   }
 
   private async rollbackOperationLog(logId: string, confirmed: boolean): Promise<void> {
-    if (!await this.requireProFeature("logs", "操作日志回滚")) {
+    if (!await this.isFeatureEnabled("logs", "操作日志回滚")) {
       return;
     }
 
@@ -1990,10 +1989,10 @@ export class DatabaseWorkbenchPanel {
   }
 
   private async analyzeOperationLogError(logId: string): Promise<void> {
-    if (!await this.requireProFeature("logs", "操作日志分析")) {
+    if (!await this.isFeatureEnabled("logs", "操作日志分析")) {
       return;
     }
-    if (!await this.requireProFeature("ai", "AI 分析日志错误")) {
+    if (!await this.isFeatureEnabled("ai", "AI 分析日志错误")) {
       return;
     }
 
@@ -2016,7 +2015,7 @@ export class DatabaseWorkbenchPanel {
   }
 
   private async markOperationLog(logId: string, label: string, color: string): Promise<void> {
-    if (!await this.requireProFeature("logs", "操作日志标记")) {
+    if (!await this.isFeatureEnabled("logs", "操作日志标记")) {
       return;
     }
 
@@ -2039,7 +2038,7 @@ export class DatabaseWorkbenchPanel {
   private async completeFailedOperationLog(logId: string | undefined, error: unknown, sql: string): Promise<void> {
     const errorMessage = getErrorMessage(error);
     let aiAnalysis: string | undefined;
-    if (isAiConfigured() && await this.hasProFeature("ai")) {
+    if (isAiConfigured() && await this.isFeatureEnabled("ai")) {
       try {
         aiAnalysis = await this.formatLogDatabaseError(error, sql);
       } catch {
@@ -2166,11 +2165,11 @@ export class DatabaseWorkbenchPanel {
   private async postError(area: "schema" | "query" | "ai", error: unknown): Promise<void> {
     const rawMessage = error instanceof Error ? error.message : String(error);
     if (area === "query" && this.lastQueryErrorSql.trim()) {
-      const canExplainWithAi = isAiConfigured() && await this.hasProFeature("ai");
+      const canExplainWithAi = isAiConfigured() && await this.isFeatureEnabled("ai");
       if (!canExplainWithAi) {
         this.panel.webview.postMessage({ type: "error", area, message: rawMessage });
         if (isAiConfigured()) {
-          void this.requireProFeature("ai", "AI 错误解释");
+          void this.isFeatureEnabled("ai", "AI 错误解释");
         }
         return;
       }
@@ -2208,18 +2207,14 @@ export class DatabaseWorkbenchPanel {
   }
 
   private async createPendingOperationLog(input: CreateOperationLogInput): Promise<string | undefined> {
-    if (!await this.hasProFeature("logs")) {
+    if (!await this.isFeatureEnabled("logs")) {
       return undefined;
     }
     return this.operationLogService.createPendingLog(input);
   }
 
-  private async hasProFeature(feature: "ai" | "logs"): Promise<boolean> {
-    return hasProFeature(this.context, feature);
-  }
-
-  private async requireProFeature(feature: "ai" | "logs", featureName: string): Promise<boolean> {
-    return requireProFeature(this.context, feature, featureName);
+  private async isFeatureEnabled(feature: "ai" | "logs", featureName?: string): Promise<boolean> {
+    return true;
   }
 
   private renderHtml(webview: vscode.Webview): string {

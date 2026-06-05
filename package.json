@@ -59,10 +59,6 @@
     "onCommand:databaseWorkbench.compareSchema",
     "onCommand:databaseWorkbench.editTable",
     "onCommand:databaseWorkbench.deleteTable",
-    "onCommand:databaseWorkbench.showMachineCode",
-    "onCommand:databaseWorkbench.activatePro",
-    "onCommand:databaseWorkbench.deactivateProForTesting",
-    "onCommand:databaseWorkbench.showProStatus",
     "onCommand:databaseWorkbench.showAddMenu",
     "onCommand:databaseWorkbench.addGroup",
     "onCommand:databaseWorkbench.renameGroup",
@@ -185,26 +181,6 @@
         "command": "databaseWorkbench.deleteTable",
         "title": "删除表/集合",
         "icon": "$(trash)"
-      },
-      {
-        "command": "databaseWorkbench.showMachineCode",
-        "title": "Database Workbench: 显示机器码",
-        "icon": "$(key)"
-      },
-      {
-        "command": "databaseWorkbench.activatePro",
-        "title": "Database Workbench: 激活 Pro",
-        "icon": "$(unlock)"
-      },
-      {
-        "command": "databaseWorkbench.deactivateProForTesting",
-        "title": "Database Workbench: 取消激活（测试使用）",
-        "icon": "$(debug-disconnect)"
-      },
-      {
-        "command": "databaseWorkbench.showProStatus",
-        "title": "Database Workbench: 查看 Pro 状态",
-        "icon": "$(verified)"
       },
       {
         "command": "databaseWorkbench.showAddMenu",
@@ -439,12 +415,6 @@
     "configuration": {
       "title": "Database Workbench",
       "properties": {
-        "databaseWorkbench.pro.machineCode": {
-          "type": "string",
-          "default": "",
-          "order": 0,
-          "markdownDescription": "Pro 离线授权机器码操作项。点击 [复制机器码](command:databaseWorkbench.showMachineCode) 会自动复制当前机器码到剪贴板；拿到作者发放的许可证后，可点击 [激活 Pro](command:databaseWorkbench.activatePro)。此设置项无需填写。"
-        },
         "databaseWorkbench.ai.provider": {
           "type": "string",
           "default": "openai",
@@ -662,12 +632,6 @@
           "maximum": 100000,
           "description": "每个连接/数据库/表最多保留多少条操作日志，超过后自动清理更早记录，降低日志文件体积和内存占用。"
         },
-        "databaseWorkbench.pro.deactivateForTesting": {
-          "type": "string",
-          "default": "",
-          "order": 9999,
-          "markdownDescription": "测试使用：点击 [取消激活](command:databaseWorkbench.deactivateProForTesting) 会删除本机保存的 Pro 许可证，让插件回到非激活状态。此设置项无需填写。"
-        },
         "databaseWorkbench.table.dataGridFontSize": {
           "type": "number",
           "default": 12,
@@ -756,7 +720,7 @@
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "test:schema-sync": "npm run compile && node tests/schemaSync.test.js && node tests/schemaCompareWebview.test.js && node tests/workbenchPanelPostgresEnum.test.js && node tests/treePostgresSchema.test.js && node tests/elasticsearchTreeAndEmptyResult.test.js && node tests/workbenchPanelRelationQuery.test.js && node tests/workbenchSqlConfirmFormat.test.js && node tests/workbenchPanelSqlCreateImport.test.js && node tests/editableHighlightStyle.test.js && node tests/workbenchReadonlyCellCopy.test.js && node tests/createPanelsAutoClose.test.js && node tests/databaseServiceTransactions.test.js && node tests/databaseServiceMongo.test.js && node tests/databaseServiceTdengine.test.js && node tests/databaseServiceKafka.test.js && node tests/databaseServiceMqtt.test.js && node tests/databaseServiceEtcd.test.js && node tests/treeColorIcons.test.js",
+    "test:schema-sync": "npm run compile && node tests/schemaSync.test.js && node tests/schemaCompareWebview.test.js && node tests/workbenchPanelPostgresEnum.test.js && node tests/treePostgresSchema.test.js && node tests/elasticsearchTreeAndEmptyResult.test.js && node tests/workbenchPanelRelationQuery.test.js && node tests/workbenchSqlConfirmFormat.test.js && node tests/workbenchPanelSqlCreateImport.test.js && node tests/editableHighlightStyle.test.js && node tests/workbenchReadonlyCellCopy.test.js && node tests/createPanelsAutoClose.test.js && node tests/databaseServiceTransactions.test.js && node tests/databaseServiceMongo.test.js && node tests/databaseServiceTdengine.test.js && node tests/databaseServiceKafka.test.js && node tests/databaseServiceMqtt.test.js && node tests/databaseServiceEtcd.test.js && node tests/treeColorIcons.test.js && node tests/freeAccess.test.js",
     "package": "vsce package --allow-missing-repository"
   },
   "dependencies": {
@@ -779,5 +743,5 @@
     "typescript": "^5.8.3"
   },
   "icon": "assets/icon.png",
-  "pricing": "Trial"
+  "pricing": "Free"
 }

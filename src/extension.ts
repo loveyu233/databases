@@ -4,7 +4,6 @@ import * as vscode from "vscode";
 import { testAiConnection } from "./ai";
 import { parseMqttTopicFilters } from "./database/clients/mqtt";
 import { DatabaseService } from "./database/service";
-import { registerOfflineLicenseCommands, requireProFeature } from "./license/offlineLicense";
 import { SchemaComparePanel } from "./schemaComparePanel";
 import { showSqlConfirmDialog } from "./sqlConfirmDialog";
 import { ConnectionStore, normalizeConnectionGroupColor } from "./storage";
@@ -28,7 +27,7 @@ const GROUP_COLOR_OPTIONS: Array<{ color: ConnectionGroupColor; label: string }>
 
 export function activate(context: vscode.ExtensionContext): void {
   outputChannel = vscode.window.createOutputChannel("Database Workbench");
-  outputChannel.appendLine("Database Workbench 已激活。");
+  outputChannel.appendLine("Database Workbench 已启动。");
 
   const store = new ConnectionStore(context);
   const databaseService = new DatabaseService();
@@ -42,7 +41,6 @@ export function activate(context: vscode.ExtensionContext): void {
 
   context.subscriptions.push(
     outputChannel,
-    ...registerOfflineLicenseCommands(context),
     connectionsTreeView,
     vscode.window.registerFileDecorationProvider(groupDecorationProvider),
     DatabaseWorkbenchPanel.onDidChangeActiveTreeSelection((selection) => {
@@ -108,11 +106,9 @@ export function activate(context: vscode.ExtensionContext): void {
       await testConnection(store, databaseService, asConnectionNode(node)?.connection);
     })),
     vscode.commands.registerCommand("databaseWorkbench.configureAi", () => runSafely("配置 AI 失败", async () => {
-      if (!await requireProFeature(context, "ai", "AI 配置")) return;
       await configureAi();
     })),
     vscode.commands.registerCommand("databaseWorkbench.testAiConfig", () => runSafely("测试 AI 配置失败", async () => {
-      if (!await requireProFeature(context, "ai", "AI 配置测试")) return;
       await testAiConfiguration();
     })),
     vscode.commands.registerCommand("databaseWorkbench.filterDatabases", (node) => runSafely("筛选显示数据库失败", async () => {
@@ -1712,9 +1708,6 @@ async function compareSchema(
   }
   if (databaseNode.connection.type !== "mysql" && databaseNode.connection.type !== "postgres") {
     vscode.window.showWarningMessage("表结构对比暂时只支持 MySQL 和 PostgreSQL。");
-    return;
-  }
-  if (!await requireProFeature(context, "schemaCompare", "表结构对比")) {
     return;
   }
 

@@ -4,7 +4,7 @@ Database Workbench 是一个在 VS Code 内使用的数据库工作台。它把�
 
 当前支持：**MySQL、PostgreSQL、Redis、Elasticsearch、MongoDB、TDengine、Kafka、MQTT、ETCD**。
 
-> Pro 只解锁 AI、操作日志、表结构对比等高级入口，不包含大模型额度或内置 API Key。使用 AI 前仍需要自行配置 OpenAI、DeepSeek、通义千问、豆包、Ollama 等 OpenAI 兼容接口。
+> 所有插件功能默认免费可用。使用 AI 前仍需要自行配置 OpenAI、DeepSeek、通义千问、豆包、Ollama 等 OpenAI 兼容接口和自己的模型额度。
 
 项目地址：[https://github.com/loveyu233/databases](https://github.com/loveyu233/databases)
 
@@ -22,9 +22,9 @@ Database Workbench 是一个在 VS Code 内使用的数据库工作台。它把�
 | 新增 / 删除 | ✅ | ✅ | 部分 Key/成员 | ✅ | ✅，按 `_id` | - | 创建 / 删除 Topic，发送消息 | 添加 / 移除订阅，发布消息 | 创建 / 删除 Key |
 | 创建资源 | 数据库 / 表 | 数据库 / schema 表 | - | 索引 | 数据库 / 集合 | 数据库 | Topic | 订阅 Topic | Key |
 | 修改表结构 | ✅ | ✅ | - | - | - | - | - | - | - |
-| 表结构对比，Pro | ✅ | ✅ | - | - | - | - | - | - | - |
-| 操作日志，Pro | ✅ | ✅ | ✅ | ✅ | ✅ | ✅，SQL 变更 | - | - | - |
-| AI 辅助，Pro | SQL | SQL | 命令 | Query DSL / ES SQL | MongoDB 命令 | TDengine SQL | Kafka 命令 | MQTT 命令 | ETCD 命令 |
+| 表结构对比 | ✅ | ✅ | - | - | - | - | - | - | - |
+| 操作日志 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅，SQL 变更 | - | - | - |
+| AI 辅助 | SQL | SQL | 命令 | Query DSL / ES SQL | MongoDB 命令 | TDengine SQL | Kafka 命令 | MQTT 命令 | ETCD 命令 |
 
 ## 目录
 
@@ -32,9 +32,9 @@ Database Workbench 是一个在 VS Code 内使用的数据库工作台。它把�
 - [快速开始](#快速开始)
 - [界面与操作习惯](#界面与操作习惯)
 - [各数据库使用示例](#各数据库使用示例)
-- [AI 辅助，Pro](#ai-辅助pro)
-- [操作日志，Pro](#操作日志pro)
-- [表结构对比，Pro](#表结构对比pro)
+- [AI 辅助](#ai-辅助)
+- [操作日志](#操作日志)
+- [表结构对比](#表结构对比)
 - [连接分组、置顶、导入导出](#连接分组置顶导入导出)
 - [设置项](#设置项)
 - [数据与隐私](#数据与隐私)
@@ -69,8 +69,6 @@ Database Workbench 是一个在 VS Code 内使用的数据库工作台。它把�
 ```text
 Database Workbench: 添加数据库连接
 Database Workbench: 配置 AI
-Database Workbench: 显示机器码
-Database Workbench: 激活 Pro
 ```
 
 ## 界面与操作习惯
@@ -406,9 +404,9 @@ MQTT 操作说明：
 - 发布 Topic 不允许包含 `+` 或 `#` 通配符；如果当前订阅 Topic 是通配符，需要在弹窗里手动填写实际发布 Topic。
 - 表格不开放双击编辑，复杂消息写入也可以在查询控制台手写 `PUBLISH` 命令。
 
-## AI 辅助，Pro
+## AI 辅助
 
-激活 Pro 并配置 AI 后，可以在 MySQL、PostgreSQL、Redis、Elasticsearch、MongoDB、TDengine、Kafka、MQTT、ETCD 中使用 AI。
+配置 AI 后，可以在 MySQL、PostgreSQL、Redis、Elasticsearch、MongoDB、TDengine、Kafka、MQTT、ETCD 中直接使用 AI。
 
 AI 能力包括：
 
@@ -458,7 +456,7 @@ Database Workbench: 测试 AI 配置
 }
 ```
 
-## 操作日志，Pro
+## 操作日志
 
 > 使用操作日志前，请确保本机安装 SQLite。日志以 SQLite 文件保存在本机。
 
@@ -478,7 +476,7 @@ Database Workbench: 测试 AI 配置
 - 查看修改前 / 修改后 / 当前数据对比。
 - 对支持回滚的记录生成回滚 SQL 或命令并执行。
 
-## 表结构对比，Pro
+## 表结构对比
 
 MySQL / PostgreSQL 数据库节点右键可以打开「对比表结构」。
 
@@ -506,25 +504,9 @@ MySQL / PostgreSQL 数据库节点右键可以打开「对比表结构」。
 
 > 导出的连接 JSON 可能包含密码，请妥善保存，不要提交到代码仓库。
 
-## Pro 离线激活
+## 交流与反馈
 
-Database Workbench 采用离线机器绑定许可证。激活过程不需要联网，许可证绑定当前机器。
-
-获取机器码：
-
-```text
-Database Workbench: 显示机器码
-```
-
-激活 Pro：
-
-```text
-Database Workbench: 激活 Pro
-Database Workbench: 查看 Pro 状态
-Database Workbench: 取消激活（测试使用）
-```
-
-也可以在 Pro 功能弹窗中复制机器码。购买激活码、交流使用经验或反馈 Bug，可以加入 QQ 交流群并联系群主。
+所有功能默认免费可用。如果需要交流使用经验或反馈 Bug，可以加入 QQ 交流群。
 
 <p align="center">
   <a href="https://github.com/loveyu233/databases/blob/main/images/qq.jpg">
@@ -572,7 +554,7 @@ Database Workbench: 取消激活（测试使用）
 - `dataGridFontSize`：结果表格字号。
 - `sqlConfirmFontSize`：SQL 确认弹窗字号。
 
-### AI，Pro
+### AI
 
 ```json
 {
@@ -588,7 +570,7 @@ Database Workbench: 取消激活（测试使用）
 }
 ```
 
-### 日志，Pro
+### 日志
 
 ```json
 {
@@ -619,7 +601,6 @@ Database Workbench: 取消激活（测试使用）
 - 导出的连接 JSON 可能包含密码。
 - AI 请求会发送表结构、Key / 索引 / 集合 / 时序表 / Topic 摘要和你的需求描述，默认不发送查询结果数据行。
 - 操作日志保存在本机，可能包含修改前后的真实业务数据。
-- Pro 许可证保存在 VS Code `SecretStorage`，插件不会联网校验许可证。
 - Elasticsearch 自签名证书需要手动开启 `allowInsecureTls`，远程或不可信网络环境不建议开启。
 
 ## 项目结构
@@ -647,13 +628,13 @@ src/
 
 ## 常见问题
 
-### 没激活 Pro，会影响基础查询吗？
+### 功能是否全部免费？
 
-不会。连接管理、资源浏览、基础查询、数据预览、基础编辑、MySQL / PostgreSQL 表结构编辑等基础能力可以直接使用。AI、操作日志和表结构对比需要 Pro。
+是。AI、操作日志、表结构对比等功能都已默认开放，插件内不需要额外授权步骤。
 
-### 激活 Pro 后 AI 为什么还不能用？
+### AI 为什么还不能用？
 
-Pro 只解锁 AI 功能入口，不提供模型额度或通用 API Key。你需要自行准备大模型供应商的 API Key，并在「配置 AI」里填写 Base URL、API Key 和模型名。
+AI 功能入口已免费开放，但插件不提供模型额度或通用 API Key。你需要自行准备大模型供应商的 API Key，并在「配置 AI」里填写 Base URL、API Key 和模型名。
 
 ### AI 生成的 SQL / 命令可以直接执行吗？
 
@@ -700,7 +681,3 @@ MongoDB 数据库只有在创建集合或写入文档后才会真正存在。插
 ### 操作日志会不会占用很多空间？
 
 如果频繁修改大表，日志会增长。可以调整 `databaseWorkbench.log.maxEntriesPerTable`，也可以把日志目录改到更安全、更大的磁盘位置，并定期清理。
-
-### Pro 许可证为什么不能直接复制到另一台电脑？
-
-Pro 许可证绑定机器码。更换电脑、重装系统或 VS Code 环境变化后，机器码可能变化，需要联系作者重新发放许可证。
