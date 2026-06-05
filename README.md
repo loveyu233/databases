@@ -4,7 +4,7 @@ Database Workbench 是一个在 VS Code 内使用的数据库工作台。它把�
 
 当前支持：**MySQL、PostgreSQL、Redis、Elasticsearch、MongoDB、TDengine、Kafka、MQTT、ETCD**。
 
-> 所有插件功能默认免费可用。使用 AI 前仍需要自行配置 OpenAI、DeepSeek、通义千问、豆包、Ollama 等 OpenAI 兼容接口和自己的模型额度。
+> **免费说明**：所有插件功能默认免费可用，AI 辅助、操作日志、表结构对比等入口都直接开放；使用 AI 前仍需要自行配置 OpenAI、DeepSeek、通义千问、豆包、Ollama 等 OpenAI 兼容接口和自己的模型额度。
 
 项目地址：[https://github.com/loveyu233/databases](https://github.com/loveyu233/databases)
 
@@ -29,6 +29,7 @@ Database Workbench 是一个在 VS Code 内使用的数据库工作台。它把�
 ## 目录
 
 - [核心特性](#核心特性)
+- [免费说明](#免费说明)
 - [快速开始](#快速开始)
 - [界面与操作习惯](#界面与操作习惯)
 - [各数据库使用示例](#各数据库使用示例)
@@ -52,6 +53,13 @@ Database Workbench 是一个在 VS Code 内使用的数据库工作台。它把�
 - **安全确认**：变更类 SQL / 命令执行前会弹出格式化确认预览；MySQL / PostgreSQL 多条 SQL 执行会使用事务包裹。
 - **AI 辅助**：基于当前表结构、Redis Key、ES Mapping、MongoDB 集合结构、TDengine 时序表结构、Kafka Topic、MQTT Topic 或 ETCD Key 信息生成查询和分析错误。
 - **操作日志**：记录数据变更和结构变更，支持查看前后数据、标签和回滚。
+
+## 免费说明
+
+- 插件内所有入口默认开放，包括 AI 辅助、操作日志、表结构对比、连接分组、导入导出和多数据源查询。
+- AI 功能本身可直接使用，但模型服务、API Key、调用额度需要你自行准备并在「配置 AI」中填写。
+- 操作日志保存在本机目录，默认不会上传；如果记录了真实业务数据，请根据团队安全规范选择日志目录。
+- 导出的连接 JSON 可能包含密码，建议只在可信环境中保存和导入，不要提交到代码仓库。
 
 ## 快速开始
 
